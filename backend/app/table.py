@@ -369,6 +369,10 @@ class RenameBody(BaseModel):
     name: str = Field(min_length=1, max_length=24)
 
 
+class DisplayBody(BaseModel):
+    display: bool = True
+
+
 @router.post("/rooms")
 def create_room(body: CreateBody):
     if body.mode not in MODES:
@@ -648,6 +652,44 @@ async def rename(code: str, body: RenameBody, x_player_token: str | None = Heade
     q("UPDATE players SET name = ? WHERE id = ?", (new, player["id"]))
     if not player["is_display"]:
         log_event(room["code"], f"{player['name']} is now known as {new}")
+    await broadcast(room["code"])
+    return {"ok": True}
+
+
+@router.post("/rooms/{code}/display")
+async def set_display(code: str, body: DisplayBody, x_player_token: str | None = Header(default=None)):
+    """Turn this device into the shared table display (or back into a player).
+    Reachable from inside the room, since a QR scan auto-joins as a player."""
+    room = get_room(code)
+    player = get_player(code, x_player_token)
+    if player["left_game"]:
+        raise HTTPException(403, "you have left this room")
+    if bool(player["is_display"]) == body.display:
+        return {"ok": True}
+    if not body.display and norm_status(room["status"]) != "lobby":
+        raise HTTPException(409, "can only take a seat from the lobby")
+    if body.display:
+        # a display holds no game state; give up the seat and the host role
+        q(
+            "UPDATE players SET is_display = 1, card_id = NULL, revealed = 0, "
+            "life = NULL, eliminated = 0, is_host = 0 WHERE id = ?",
+            (player["id"],),
+        )
+        q("DELETE FROM cmd_damage WHERE room_code = ? AND (defender_id = ? OR attacker_id = ?)",
+          (room["code"], player["id"], player["id"]))
+        if player["is_host"]:
+            nxt = q(
+                "SELECT id FROM players WHERE room_code = ? AND left_game = 0 AND is_display = 0 "
+                "ORDER BY joined_at, id LIMIT 1",
+                (room["code"],),
+            ).fetchone()
+            if nxt:
+                q("UPDATE players SET is_host = 1 WHERE id = ?", (nxt["id"],))
+        log_event(room["code"], f"{player['name']} is now the table display")
+    else:
+        q("UPDATE players SET is_display = 0 WHERE id = ?", (player["id"],))
+        log_event(room["code"], f"{player['name']} took a seat")
+    touch(room["code"])
     await broadcast(room["code"])
     return {"ok": True}
 

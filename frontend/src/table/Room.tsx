@@ -155,6 +155,19 @@ function RoomInner({ code, token }: { code: string; token: string }) {
     await leaveNow();
   }
 
+  async function toggleDisplay(display: boolean) {
+    if (!state) return;
+    const msg = display
+      ? "Use this device as the shared table display? It gives up its seat in the game."
+      : "Take a seat as a player?";
+    if (!window.confirm(msg)) return;
+    try {
+      await api(`/rooms/${code}/display`, { method: "POST", token, body: { display } });
+    } catch (e) {
+      window.alert(e instanceof ApiError ? e.message : "Could not switch");
+    }
+  }
+
   async function renameSelf() {
     if (!state) return;
     const nm = window.prompt("Your name", state.me.name)?.trim();
@@ -189,6 +202,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         state={state}
         code={code}
         token={token}
+        onTakeSeat={state.room.status === "lobby" ? () => void toggleDisplay(false) : undefined}
         onLeave={() => void leave("Disconnect this display?")}
       />
     );
@@ -206,6 +220,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
           code={code}
           name={state.me.name}
           onRename={() => void renameSelf()}
+          onDisplay={() => void toggleDisplay(true)}
           onLeave={() => void leave("Leave this room?")}
           leaveLabel="Leave room"
         />
@@ -238,6 +253,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         code={code}
         name={state.me.name}
         onRename={() => void renameSelf()}
+        onDisplay={() => void toggleDisplay(true)}
         onLeave={() => void leave(leaveMsg())}
       />
       <div className="toasts" onPointerDown={(e) => e.stopPropagation()}>

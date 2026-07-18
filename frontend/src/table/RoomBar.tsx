@@ -4,12 +4,16 @@ export default function RoomBar({
   code,
   name,
   onRename,
+  onDisplay,
+  displayLabel,
   onLeave,
   leaveLabel = "Leave game",
 }: {
   code: string;
   name: string;
   onRename?: () => void;
+  onDisplay?: () => void;
+  displayLabel?: string;
   onLeave: () => void;
   leaveLabel?: string;
 }) {
@@ -47,6 +51,16 @@ export default function RoomBar({
               }}
             >
               Rename
+            </button>
+          )}
+          {onDisplay && (
+            <button
+              onClick={() => {
+                setOpen(false);
+                onDisplay();
+              }}
+            >
+              {displayLabel ?? "Use as table display"}
             </button>
           )}
           <button

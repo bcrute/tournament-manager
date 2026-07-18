@@ -6,11 +6,13 @@ export default function DisplayView({
   state,
   code,
   token,
+  onTakeSeat,
   onLeave,
 }: {
   state: RoomState;
   code: string;
   token: string;
+  onTakeSeat?: () => void;
   onLeave: () => void;
 }) {
   const [editing, setEditing] = useState<{ pid: number; name: string } | null>(null);
@@ -31,6 +33,11 @@ export default function DisplayView({
           {state.room.mode === "treachery" ? "⚔ Treachery" : "♥ Life"}
           {ended && " — game over"}
         </span>
+        {onTakeSeat && (
+          <button className="ghost" onClick={onTakeSeat}>
+            Take a seat
+          </button>
+        )}
         <button className="ghost" onClick={onLeave}>
           Disconnect
         </button>
