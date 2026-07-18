@@ -32,7 +32,7 @@ export default function DisplayView({
           {ended && " — game over"}
         </span>
         <button className="ghost" onClick={onLeave}>
-          disconnect
+          Disconnect
         </button>
       </header>
 

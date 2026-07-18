@@ -6,6 +6,7 @@ import { createBackGuard } from "./backGuard";
 import { clearSession, loadSession } from "./session";
 import DisplayView from "./DisplayView";
 import LifePanel from "./LifePanel";
+import RoomBar from "./RoomBar";
 import SlideToUnveil from "./SlideToUnveil";
 import { useRoom } from "./useRoom";
 import { useWakeLock } from "./useWakeLock";
@@ -61,14 +62,26 @@ function RoomInner({ code, token }: { code: string; token: string }) {
     window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 7000);
   };
 
-  // double back (swipe/button) exits the game without hunting for the Leave button
+  // Double back is a bonus shortcut only — the ⋮ menu is the real exit, because a
+  // back-swipe in a QR-launched tab can leave the site entirely (OS-level, uncatchable).
   const backGuard = useRef(createBackGuard()).current;
   const onBackRef = useRef<() => void>(() => {});
   useEffect(() => {
-    history.pushState({ tableRoom: code }, "");
+    const arm = () => {
+      if (history.state?.tableRoom !== code) history.pushState({ tableRoom: code }, "");
+    };
+    arm();
     const onPop = () => onBackRef.current();
+    // keep the sentinel topped up: bfcache restores and tab switches can drop it
+    const onShow = () => arm();
     window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
+    window.addEventListener("pageshow", onShow);
+    document.addEventListener("visibilitychange", onShow);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      window.removeEventListener("pageshow", onShow);
+      document.removeEventListener("visibilitychange", onShow);
+    };
   }, [code]);
 
   // toasts for mid-game reveals and the first-turn announcement (tracked by stable pid, not name)
@@ -157,15 +170,23 @@ function RoomInner({ code, token }: { code: string; token: string }) {
     );
   }
 
+  const leaveMsg = () =>
+    state.room.mode === "treachery" && state.room.status === "playing"
+      ? "Leave mid-game? Your identity will be revealed to the table."
+      : "Leave and forget this game?";
+
   if (state.room.status === "lobby") {
     return (
-      <Lobby
-        state={state}
-        code={code}
-        token={token}
-        onLeave={() => void leave("Leave this room?")}
-        onRename={() => void renameSelf()}
-      />
+      <>
+        <RoomBar
+          code={code}
+          name={state.me.name}
+          onRename={() => void renameSelf()}
+          onLeave={() => void leave("Leave this room?")}
+          leaveLabel="Leave room"
+        />
+        <Lobby state={state} code={code} token={token} onRename={() => void renameSelf()} />
+      </>
     );
   }
 
@@ -176,6 +197,12 @@ function RoomInner({ code, token }: { code: string; token: string }) {
 
   return (
     <div className="tr-room">
+      <RoomBar
+        code={code}
+        name={state.me.name}
+        onRename={() => void renameSelf()}
+        onLeave={() => void leave(leaveMsg())}
+      />
       <div className="toasts" onPointerDown={(e) => e.stopPropagation()}>
         {toasts.map((t) => (
           <button
@@ -226,13 +253,6 @@ function RoomInner({ code, token }: { code: string; token: string }) {
               : undefined
           }
           onReopen={state.me.isHost && ended ? () => void act("/reopen") : undefined}
-          onLeave={() =>
-            void leave(
-              !ended && treachery
-                ? "Leave mid-game? Your identity will be revealed to the table."
-                : "Leave and forget this game?",
-            )
-          }
         />
       )}
 
@@ -259,13 +279,11 @@ function Lobby({
   state,
   code,
   token,
-  onLeave,
   onRename,
 }: {
   state: RoomState;
   code: string;
   token: string;
-  onLeave: () => void;
   onRename: () => void;
 }) {
   const joinUrl = `${location.origin}/table?join=${code}`;
@@ -374,11 +392,6 @@ function Lobby({
         </section>
       )}
 
-      <footer>
-        <button className="ghost" onClick={onLeave}>
-          Leave room
-        </button>
-      </footer>
     </main>
   );
 }
@@ -474,13 +487,11 @@ function TableView({
   onZoom,
   onEnd,
   onReopen,
-  onLeave,
 }: {
   state: RoomState;
   onZoom: (p: PlayerInfo) => void;
   onEnd?: () => void;
   onReopen?: () => void;
-  onLeave: () => void;
 }) {
   const treachery = state.room.mode === "treachery";
   const ended = state.room.status === "ended";
@@ -540,9 +551,6 @@ function TableView({
             Back to lobby
           </button>
         )}
-        <button className="ghost" onClick={onLeave}>
-          Leave
-        </button>
       </footer>
     </main>
   );

@@ -5,6 +5,93 @@
   font-size: 0.85rem;
 }
 
+/* Persistent room bar (the reliable exit — back-swipe is only a bonus) */
+.room-bar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: calc(0.45rem + env(safe-area-inset-top)) 0.8rem 0.45rem;
+  background: rgba(20, 16, 28, 0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid #241c33;
+}
+
+.bar-code {
+  font-size: 0.95rem;
+  letter-spacing: 0.18em;
+  color: #c9a84c;
+}
+
+.bar-name {
+  color: #8a7fa0;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: auto;
+}
+
+.bar-menu-btn {
+  border: none;
+  background: none;
+  color: #b8b0c8;
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0.3rem 0.6rem;
+  border-radius: 8px;
+}
+
+.bar-menu {
+  position: absolute;
+  top: 100%;
+  right: 0.6rem;
+  min-width: 10rem;
+  background: #1d1628;
+  border: 1px solid #322747;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.bar-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: #e8e4f0;
+  padding: 0.8rem 1rem;
+  font-size: 1rem;
+}
+
+.bar-menu button + button {
+  border-top: 1px solid #241c33;
+}
+
+.bar-menu button.danger {
+  color: #e06c75;
+}
+
+/* the role screen is fixed-position, so its bar floats above it */
+.tr-room > .room-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+}
+
+.role-screen {
+  padding-top: 3rem;
+}
+
+.toasts {
+  top: calc(3.2rem + env(safe-area-inset-top));
+}
+
 .rename-btn {
   font-size: 0.85rem;
   padding: 0.15rem 0.5rem;
