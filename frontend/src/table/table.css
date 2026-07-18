@@ -851,6 +851,20 @@ button.ghost {
   }
 }
 
+.stale-pill {
+  position: fixed;
+  z-index: 46;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(4rem + env(safe-area-inset-bottom));
+  background: rgba(34, 26, 48, 0.95);
+  border: 1px solid #5e552c;
+  color: #d0c470;
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.8rem;
+}
+
 .countdown-banner {
   position: fixed;
   left: 50%;

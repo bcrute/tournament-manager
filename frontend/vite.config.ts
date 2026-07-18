@@ -16,6 +16,7 @@ export default defineConfig({
         "src/table/useWakeLock.ts",
         "src/table/carousel.ts",
         "src/table/useAutoHide.ts",
+        "src/table/fetchPolicy.ts",
       ],
       thresholds: {
         statements: 90,

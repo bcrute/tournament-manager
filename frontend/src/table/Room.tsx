@@ -44,7 +44,7 @@ type Tab = "card" | "life" | "table";
 
 function RoomInner({ code, token }: { code: string; token: string }) {
   const navigate = useNavigate();
-  const { state, gone, error } = useRoom(code, token);
+  const { state, gone, error, stale } = useRoom(code, token);
   const [tab, setTab] = useState<Tab | null>(null);
   const [cardIndex, setCardIndex] = useState(0);
   const [zoomPid, setZoomPid] = useState<number | null>(null);
@@ -271,6 +271,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         ))}
       </div>
       {zoomPlayer && <CardZoom p={zoomPlayer} onClose={() => setZoomPid(null)} />}
+      {stale && <div className="stale-pill">reconnecting…</div>}
       {countdown !== null && countdown > 0 && (
         <div className="countdown-banner">
           Game over — returning to the room in {countdown}…
