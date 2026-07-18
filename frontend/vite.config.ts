@@ -14,6 +14,7 @@ export default defineConfig({
         "src/table/useDebouncedDelta.ts",
         "src/table/backGuard.ts",
         "src/table/useWakeLock.ts",
+        "src/table/carousel.ts",
       ],
       thresholds: {
         statements: 90,

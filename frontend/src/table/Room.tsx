@@ -3,6 +3,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, ApiError, PlayerInfo, RoomState } from "./api";
 import { createBackGuard } from "./backGuard";
+import { CarouselEntry, carouselEntries, clampIndex, indexOfPid, step } from "./carousel";
 import { clearSession, loadSession } from "./session";
 import DisplayView from "./DisplayView";
 import LifePanel from "./LifePanel";
@@ -44,6 +45,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   const navigate = useNavigate();
   const { state, gone, error } = useRoom(code, token);
   const [tab, setTab] = useState<Tab | null>(null);
+  const [cardIndex, setCardIndex] = useState(0);
   const [zoomPid, setZoomPid] = useState<number | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const prev = useRef<{ status: string; pids: Set<number>; first: number | null } | null>(null);
@@ -98,6 +100,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
     if (p && p.status === "lobby" && state.room.status === "playing") {
       // a fresh deal: land on the default screen (card in treachery), not last game's tab
       setTab(null);
+      setCardIndex(0);
     }
     if (p && state.room.firstPid !== null && p.first !== state.room.firstPid && p.status === "lobby" && state.room.status === "playing") {
       const who = state.room.firstPlayer;
@@ -194,6 +197,19 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   const ended = state.room.status === "ended";
   const activeTab: Tab = ended ? "table" : (tab ?? (treachery ? "card" : "life"));
   const zoomPlayer = zoomPid !== null ? state.players.find((p) => p.pid === zoomPid && p.card) : undefined;
+  const entries = carouselEntries(state.players);
+  const safeIndex = clampIndex(cardIndex, entries.length);
+
+  // tapping a reveal toast carries you to that player's card in the carousel
+  const showCardOf = (pid: number) => {
+    const i = indexOfPid(carouselEntries(state.players), pid);
+    if (i >= 0) {
+      setCardIndex(i);
+      setTab("card");
+    } else {
+      setZoomPid(pid);
+    }
+  };
 
   return (
     <div className="tr-room">
@@ -210,7 +226,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
             className="toast"
             onClick={() => {
               setToasts((all) => all.filter((x) => x.id !== t.id));
-              if (t.zoomPid !== undefined) setZoomPid(t.zoomPid);
+              if (t.zoomPid !== undefined) showCardOf(t.zoomPid);
             }}
           >
             {t.text}
@@ -220,7 +236,13 @@ function RoomInner({ code, token }: { code: string; token: string }) {
       {zoomPlayer && <CardZoom p={zoomPlayer} onClose={() => setZoomPid(null)} />}
 
       {activeTab === "card" && treachery && (
-        <RoleScreen state={state} onUnveil={() => act("/unveil").then(() => undefined)} />
+        <RoleScreen
+          state={state}
+          entries={entries}
+          index={safeIndex}
+          setIndex={setCardIndex}
+          onUnveil={() => act("/unveil").then(() => undefined)}
+        />
       )}
       {activeTab === "life" && (
         <main className="tr-life-page">
@@ -396,29 +418,89 @@ function Lobby({
   );
 }
 
-function RoleScreen({ state, onUnveil }: { state: RoomState; onUnveil: () => Promise<void> }) {
+function RoleScreen({
+  state,
+  entries,
+  index,
+  setIndex,
+  onUnveil,
+}: {
+  state: RoomState;
+  entries: CarouselEntry[];
+  index: number;
+  setIndex: (i: number) => void;
+  onUnveil: () => Promise<void>;
+}) {
   const [peek, setPeek] = useState(false);
+  const start = useRef<{ x: number; y: number } | null>(null);
+  const swiping = useRef(false);
+
+  const entry = entries[index] ?? entries[0];
   const me = state.me;
-  const card = me.card;
-  const show = me.revealed || peek;
+  // my own card stays hidden until I unveil it; other entries are public by definition
+  const showFace = entry ? !entry.isMe || me.revealed || peek : false;
+  const card = entry?.card;
+
+  function onPointerDown(e: React.PointerEvent) {
+    start.current = { x: e.clientX, y: e.clientY };
+    swiping.current = false;
+    if (entry?.isMe && !me.revealed) setPeek(true);
+  }
+
+  function onPointerMove(e: React.PointerEvent) {
+    if (!start.current) return;
+    const dx = e.clientX - start.current.x;
+    const dy = e.clientY - start.current.y;
+    if (!swiping.current && Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
+      swiping.current = true; // a swipe, not a peek
+      setPeek(false);
+    }
+  }
+
+  function onPointerUp(e: React.PointerEvent) {
+    const s = start.current;
+    start.current = null;
+    setPeek(false);
+    if (!s || !swiping.current || entries.length < 2) return;
+    const dx = e.clientX - s.x;
+    if (Math.abs(dx) > 50) setIndex(step(index, dx < 0 ? 1 : -1, entries.length));
+  }
 
   return (
     <div
       className="role-screen"
-      onPointerDown={() => setPeek(true)}
-      onPointerUp={() => setPeek(false)}
-      onPointerCancel={() => setPeek(false)}
-      onPointerLeave={() => setPeek(false)}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={() => {
+        start.current = null;
+        setPeek(false);
+      }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {show && card ? (
+      <div className="carousel-label">
+        {entry?.isMe ? "Your card" : `${entry?.name}'s card`}
+        {entries.length > 1 && (
+          <span className="carousel-dots">
+            {entries.map((e2, i) => (
+              <i key={e2.pid} className={i === index ? "on" : ""} />
+            ))}
+          </span>
+        )}
+      </div>
+
+      {showFace && card ? (
         <img className="role-card" src={card.image} alt="" draggable={false} />
       ) : (
         <CardBack label={me.name} hint="hold to peek" />
       )}
 
       <div className="role-footer" onPointerDown={(e) => e.stopPropagation()}>
-        {me.revealed && card ? (
+        {entry && !entry.isMe ? (
+          <div className="viewing-banner">
+            {entry.name} — {card?.name} ({card?.role})
+          </div>
+        ) : me.revealed && card ? (
           <div className="unveiled-banner">
             Unveiled — {card.name} ({card.role})
           </div>
