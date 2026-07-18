@@ -14,14 +14,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # scanners run as sibling containers; the workspace lives in a docker volume,
+      # so it must be shared via --volumes-from (host bind mounts would be empty)
+      - name: Security · workspace visible to scanners
+        run: docker run --rm --volumes-from "$(cat /etc/hostname)" -w "$PWD" python:3.12-slim test -f backend/app/table.py
+
       - name: Security · semgrep
-        run: docker run --rm -v "$PWD":/src semgrep/semgrep:latest semgrep scan --config p/ci --error --quiet /src
+        run: docker run --rm --volumes-from "$(cat /etc/hostname)" -w "$PWD" semgrep/semgrep:latest semgrep scan --config p/ci --error --quiet .
 
       - name: Security · pip-audit
-        run: docker run --rm -v "$PWD/backend":/req python:3.12-slim sh -c 'pip install -q pip-audit && pip-audit --strict -r /req/requirements.txt'
+        run: docker run --rm --volumes-from "$(cat /etc/hostname)" -w "$PWD" python:3.12-slim sh -c 'pip install -q pip-audit && pip-audit --strict -r backend/requirements.txt'
 
       - name: Security · npm audit
-        run: docker run --rm -v "$PWD/frontend":/fe -w /fe node:22-alpine sh -c 'npm ci --ignore-scripts --silent && npm audit --audit-level=high'
+        run: docker run --rm --volumes-from "$(cat /etc/hostname)" -w "$PWD/frontend" node:22-alpine sh -c 'npm ci --ignore-scripts --silent && npm audit --audit-level=high'
 
       - name: Build image (runs pytest + coverage gate + vitest + coverage gate)
         run: docker build -t mtg:latest .
