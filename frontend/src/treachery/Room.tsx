@@ -294,6 +294,22 @@ function TableView({
         ))}
       </div>
       {zoom && <CardZoom p={zoom} onClose={() => setZoom(null)} />}
+      <section className="game-log">
+        <h2>Game log</h2>
+        <ul>
+          {state.log.map((e, i) => (
+            <li key={`${e.at}-${i}`}>
+              <time>
+                {new Date(e.at * 1000).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </time>
+              {e.text}
+            </li>
+          ))}
+        </ul>
+      </section>
       <footer className="table-actions">
         {onBack && (
           <button className="primary" onClick={onBack}>

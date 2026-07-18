@@ -362,6 +362,33 @@ button.ghost {
   color: #b8b0c8;
 }
 
+.game-log {
+  margin-top: 1.8rem;
+  text-align: left;
+}
+
+.game-log h2 {
+  font-size: 0.85rem;
+  color: #8a7fa0;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.game-log ul {
+  list-style: none;
+  padding: 0;
+  margin: 0.4rem 0 0;
+  font-size: 0.88rem;
+  color: #b8b0c8;
+  line-height: 1.7;
+}
+
+.game-log time {
+  color: #6b6180;
+  font-variant-numeric: tabular-nums;
+  margin-right: 0.6rem;
+}
+
 .table-actions {
   position: sticky;
   bottom: 0;

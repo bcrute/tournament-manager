@@ -19,7 +19,13 @@ export interface PlayerInfo {
 
 export type RoomStatus = "lobby" | "dealt" | "ended";
 
+export interface LogEntry {
+  at: number;
+  text: string;
+}
+
 export interface RoomState {
+  log: LogEntry[];
   room: {
     code: string;
     status: RoomStatus;

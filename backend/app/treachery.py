@@ -34,6 +34,12 @@ _db.executescript(
         options TEXT NOT NULL DEFAULT '{}',
         created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
+    CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_code TEXT NOT NULL,
+        at INTEGER NOT NULL DEFAULT (unixepoch()),
+        text TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS players (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         room_code TEXT NOT NULL REFERENCES rooms(code),
@@ -61,6 +67,10 @@ def q(sql, params=()):
         cur = _db.execute(sql, params)
         _db.commit()
         return cur
+
+
+def log_event(code: str, text: str):
+    q("INSERT INTO events (room_code, text) VALUES (?, ?)", (code, text))
 
 
 def distribution(n: int):
@@ -141,7 +151,12 @@ def room_state(code: str, token: str):
                 else None,
             }
         )
+    events = q(
+        "SELECT at, text FROM events WHERE room_code = ? ORDER BY id DESC LIMIT 60",
+        (room["code"],),
+    ).fetchall()
     return {
+        "log": [{"at": e["at"], "text": e["text"]} for e in events],
         "room": {
             "code": room["code"],
             "status": room["status"],
@@ -214,6 +229,7 @@ def create_room(body: CreateBody):
         "INSERT INTO players (room_code, token, name, is_host) VALUES (?, ?, ?, 1)",
         (code, token, body.name.strip()),
     )
+    log_event(code, f"{body.name.strip()} created the room")
     return {"code": code, "playerToken": token}
 
 
@@ -227,6 +243,7 @@ async def join_room(code: str, body: JoinBody):
         "INSERT INTO players (room_code, token, name) VALUES (?, ?, ?)",
         (room["code"], token, body.name.strip()),
     )
+    log_event(room["code"], f"{body.name.strip()} joined")
     await broadcast(room["code"])
     return {"code": room["code"], "playerToken": token}
 
@@ -278,6 +295,12 @@ async def deal(code: str, x_player_token: str | None = Header(default=None)):
             (card["id"], face_up, p["id"]),
         )
     q("UPDATE rooms SET status = 'dealt' WHERE code = ?", (room["code"],))
+    mix = " / ".join(
+        f"{c} {r}{'s' if c > 1 else ''}"
+        for r, c in (("Leader", ldr), ("Traitor", trt), ("Assassin", ass), ("Guardian", gdn))
+        if c
+    )
+    log_event(room["code"], f"{player['name']} dealt identities to {n} players ({mix})")
     await broadcast(room["code"])
     return {"ok": True}
 
@@ -291,6 +314,8 @@ async def unveil(code: str, x_player_token: str | None = Header(default=None)):
     if not player["card_id"]:
         raise HTTPException(409, "you have no identity card")
     q("UPDATE players SET revealed = 1 WHERE id = ?", (player["id"],))
+    card = _cards_by_id[player["card_id"]]
+    log_event(room["code"], f"{player['name']} unveiled as {card['name']} ({card['types']['subtype']})")
     await broadcast(room["code"])
     return {"ok": True}
 
@@ -302,6 +327,7 @@ async def end_game(code: str, x_player_token: str | None = Header(default=None))
     if not player["is_host"]:
         raise HTTPException(403, "host only")
     q("UPDATE rooms SET status = 'ended' WHERE code = ?", (room["code"],))
+    log_event(room["code"], f"{player['name']} ended the game — all identities revealed")
     await broadcast(room["code"])
     return {"ok": True}
 
@@ -319,6 +345,7 @@ async def reopen(code: str, x_player_token: str | None = Header(default=None)):
     )
     q("DELETE FROM players WHERE room_code = ? AND left_game = 1", (room["code"],))
     q("UPDATE rooms SET status = 'lobby' WHERE code = ?", (room["code"],))
+    log_event(room["code"], f"{player['name']} reopened the lobby for a new deal")
     await broadcast(room["code"])
     return {"ok": True}
 
@@ -329,9 +356,16 @@ async def leave(code: str, x_player_token: str | None = Header(default=None)):
     player = get_player(code, x_player_token)
     if room["status"] == "lobby":
         q("DELETE FROM players WHERE id = ?", (player["id"],))
+        log_event(room["code"], f"{player['name']} left")
     else:
         # CR 907.13: a leaving player's face-down identity is revealed
         q("UPDATE players SET left_game = 1, revealed = 1 WHERE id = ?", (player["id"],))
+        card = _cards_by_id[player["card_id"]] if player["card_id"] else None
+        log_event(
+            room["code"],
+            f"{player['name']} left the game"
+            + (f" — revealed as {card['name']} ({card['types']['subtype']})" if card else ""),
+        )
     if player["is_host"]:
         nxt = q(
             "SELECT id FROM players WHERE room_code = ? AND left_game = 0 ORDER BY joined_at, id LIMIT 1",
