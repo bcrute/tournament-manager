@@ -8,6 +8,7 @@ import DisplayView from "./DisplayView";
 import LifePanel from "./LifePanel";
 import SlideToUnveil from "./SlideToUnveil";
 import { useRoom } from "./useRoom";
+import { useWakeLock } from "./useWakeLock";
 
 const ROLE_ORDER = ["Leader", "Guardian", "Assassin", "Traitor"];
 
@@ -50,6 +51,9 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   useEffect(() => {
     if (gone) navigate("/table", { replace: true });
   }, [gone, navigate]);
+
+  // keep the screen on during active games and on table displays; lobby screens may sleep
+  useWakeLock(state?.room.status === "playing" || state?.me.isDisplay === true);
 
   const pushToast = (text: string, zoomPid?: number) => {
     const id = ++toastId.current;

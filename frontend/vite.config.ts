@@ -13,6 +13,7 @@ export default defineConfig({
         "src/table/session.ts",
         "src/table/useDebouncedDelta.ts",
         "src/table/backGuard.ts",
+        "src/table/useWakeLock.ts",
       ],
       thresholds: {
         statements: 90,
