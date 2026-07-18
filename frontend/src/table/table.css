@@ -446,6 +446,8 @@
 }
 
 .display-tile {
+  touch-action: none; /* drag to rearrange seats */
+  transition: transform 0.12s, box-shadow 0.12s, opacity 0.12s;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -460,6 +462,13 @@
 
 .display-tile.dead {
   opacity: 0.55;
+}
+
+.display-tile.dragging {
+  transform: scale(1.05);
+  border-color: #c9a84c;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  z-index: 2;
 }
 
 .display-tile.gone {

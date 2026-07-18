@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { api, PlayerInfo, RoomState } from "./api";
 
@@ -20,6 +20,58 @@ export default function DisplayView({
   const ended = state.room.status === "ended";
   const joinUrl = `${location.origin}/table?join=${code}`;
   const nameOf = new Map(state.players.map((p) => [String(p.pid), p.name]));
+
+  // drag to rearrange seats: keep a local order while dragging, commit on release
+  const [localOrder, setLocalOrder] = useState<number[] | null>(null);
+  const [dragPid, setDragPid] = useState<number | null>(null);
+  const moved = useRef(false);
+
+  const serverOrder = state.players.map((p) => p.pid);
+  const order = localOrder ?? serverOrder;
+  const byPid = new Map(state.players.map((p) => [p.pid, p]));
+  const ordered = order.map((pid) => byPid.get(pid)).filter(Boolean) as PlayerInfo[];
+  // players who joined mid-drag still show up
+  for (const p of state.players) if (!order.includes(p.pid)) ordered.push(p);
+
+  useEffect(() => {
+    if (dragPid === null) setLocalOrder(null); // resync with the server between drags
+  }, [dragPid, state.players.length]);
+
+  function onDragStart(e: React.PointerEvent, pid: number) {
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setDragPid(pid);
+    moved.current = false;
+  }
+
+  function onDragMove(e: React.PointerEvent) {
+    if (dragPid === null) return;
+    const el = document
+      .elementFromPoint(e.clientX, e.clientY)
+      ?.closest("[data-pid]") as HTMLElement | null;
+    const overPid = el ? Number(el.dataset.pid) : null;
+    if (!overPid || overPid === dragPid) return;
+    moved.current = true;
+    setLocalOrder((cur) => {
+      const list = [...(cur ?? serverOrder)];
+      const from = list.indexOf(dragPid);
+      const to = list.indexOf(overPid);
+      if (from < 0 || to < 0) return cur;
+      list.splice(to, 0, ...list.splice(from, 1));
+      return list;
+    });
+  }
+
+  async function onDragEnd() {
+    const pid = dragPid;
+    setDragPid(null);
+    if (pid === null || !moved.current) return;
+    const pids = (localOrder ?? serverOrder).filter((p) => byPid.has(p));
+    try {
+      await api(`/rooms/${code}/order`, { method: "POST", token, body: { pids } });
+    } catch {
+      setLocalOrder(null); // fall back to the server's order
+    }
+  }
 
   async function adjust(playerPid: number, delta: number) {
     await api(`/rooms/${code}/life`, { method: "POST", token, body: { playerPid, delta } });
@@ -60,13 +112,19 @@ export default function DisplayView({
         </div>
       ) : (
         <div className="display-grid">
-          {state.players.map((p) => (
+          {ordered.map((p) => (
             <DisplayTile
               key={p.pid}
               p={p}
               first={state.room.firstPid === p.pid}
               nameOf={nameOf}
-              onTap={() => setEditing({ pid: p.pid, name: p.name })}
+              dragging={dragPid === p.pid}
+              onTap={() => {
+                if (!moved.current) setEditing({ pid: p.pid, name: p.name });
+              }}
+              onDragStart={(e) => onDragStart(e, p.pid)}
+              onDragMove={onDragMove}
+              onDragEnd={() => void onDragEnd()}
             />
           ))}
         </div>
@@ -104,15 +162,31 @@ function DisplayTile({
   p,
   first,
   nameOf,
+  dragging,
   onTap,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
 }: {
   p: PlayerInfo;
   first: boolean;
   nameOf: Map<string, string>;
+  dragging: boolean;
   onTap: () => void;
+  onDragStart: (e: React.PointerEvent) => void;
+  onDragMove: (e: React.PointerEvent) => void;
+  onDragEnd: () => void;
 }) {
   return (
-    <button className={`display-tile${p.eliminated ? " dead" : ""}${p.left ? " gone" : ""}`} onClick={onTap}>
+    <button
+      data-pid={p.pid}
+      className={`display-tile${p.eliminated ? " dead" : ""}${p.left ? " gone" : ""}${dragging ? " dragging" : ""}`}
+      onClick={onTap}
+      onPointerDown={onDragStart}
+      onPointerMove={onDragMove}
+      onPointerUp={onDragEnd}
+      onPointerCancel={onDragEnd}
+    >
       <span className="display-name">
         {first && "👑 "}
         {p.name}

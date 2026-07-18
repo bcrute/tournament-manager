@@ -79,6 +79,7 @@ _ensure_column("events", "game_no", "INTEGER")
 _ensure_column("players", "is_display", "INTEGER NOT NULL DEFAULT 0")
 _ensure_column("players", "life", "INTEGER")
 _ensure_column("players", "eliminated", "INTEGER NOT NULL DEFAULT 0")
+_ensure_column("players", "seat_order", "INTEGER")
 _db.commit()
 
 _cards_by_id = {}
@@ -237,8 +238,10 @@ def room_state(code: str, token: str):
     me = get_player(code, token)
     status = norm_status(room["status"])
     treachery = room["mode"] == "treachery"
+    # seats keep the order the table arranged them in; unplaced players sit at the end
     players = q(
-        "SELECT * FROM players WHERE room_code = ? ORDER BY is_display, joined_at, id",
+        "SELECT * FROM players WHERE room_code = ? "
+        "ORDER BY is_display, COALESCE(seat_order, 1000000), joined_at, id",
         (room["code"],),
     ).fetchall()
     ended = status == "ended"
@@ -371,6 +374,10 @@ class RenameBody(BaseModel):
 
 class DisplayBody(BaseModel):
     display: bool = True
+
+
+class OrderBody(BaseModel):
+    pids: list[int]
 
 
 @router.post("/rooms")
@@ -689,6 +696,26 @@ async def set_display(code: str, body: DisplayBody, x_player_token: str | None =
     else:
         q("UPDATE players SET is_display = 0 WHERE id = ?", (player["id"],))
         log_event(room["code"], f"{player['name']} took a seat")
+    touch(room["code"])
+    await broadcast(room["code"])
+    return {"ok": True}
+
+
+@router.post("/rooms/{code}/order")
+async def set_order(code: str, body: OrderBody, x_player_token: str | None = Header(default=None)):
+    """Rearrange the seats — dragged on the table display, mirrored to every device."""
+    room = get_room(code)
+    player = get_player(code, x_player_token)
+    if not (player["is_display"] or player["is_host"]):
+        raise HTTPException(403, "only the table display or host can rearrange seats")
+    seated = {
+        r["id"]
+        for r in q(
+            "SELECT id FROM players WHERE room_code = ? AND is_display = 0", (room["code"],)
+        ).fetchall()
+    }
+    for i, pid in enumerate(p for p in body.pids if p in seated):
+        q("UPDATE players SET seat_order = ? WHERE id = ?", (i, pid))
     touch(room["code"])
     await broadcast(room["code"])
     return {"ok": True}
