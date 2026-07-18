@@ -82,6 +82,10 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         if (!p.pids.has(rp.pid)) pushToast(`⚔ ${rp.name} has revealed their identity — tap to view`, rp.pid);
       }
     }
+    if (p && p.status === "lobby" && state.room.status === "playing") {
+      // a fresh deal: land on the default screen (card in treachery), not last game's tab
+      setTab(null);
+    }
     if (p && state.room.firstPid !== null && p.first !== state.room.firstPid && p.status === "lobby" && state.room.status === "playing") {
       const who = state.room.firstPlayer;
       const isLeader = state.room.mode === "treachery";
