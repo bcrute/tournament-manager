@@ -11,34 +11,110 @@ body {
 }
 
 main {
-  max-width: 720px;
+  max-width: 860px;
   margin: 0 auto;
   padding: 3rem 1.5rem;
+}
+
+header {
   text-align: center;
+  margin-bottom: 2.5rem;
 }
 
 h1 {
-  font-size: 2rem;
+  font-size: 2.2rem;
+  margin: 0;
   background: linear-gradient(120deg, #c9a84c, #e8e4f0);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
-.status .ok {
-  color: #6fd08c;
+.tagline {
+  color: #8a7fa0;
+  margin: 0.4rem 0 0;
 }
-.status .down,
+
+.apps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.2rem;
+  margin-bottom: 2.5rem;
+}
+
+.tile {
+  background: #1d1628;
+  border: 1px solid #322747;
+  border-radius: 12px;
+  padding: 1.2rem 1.4rem;
+  height: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+
+.tile-link {
+  text-decoration: none;
+  color: inherit;
+}
+
+.tile-link:hover .tile {
+  border-color: #c9a84c;
+}
+
+.tile-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.tile h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.tile p {
+  color: #b8b0c8;
+  line-height: 1.45;
+  margin-bottom: 0;
+}
+
+.badge {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  white-space: nowrap;
+  border: 1px solid;
+}
+
+.badge.live {
+  color: #6fd08c;
+  border-color: #2c5e3b;
+}
+
+.badge.dev {
+  color: #d0c470;
+  border-color: #5e552c;
+}
+
+.badge.planned {
+  color: #8a7fa0;
+  border-color: #3a3150;
+}
+
+.draw {
+  text-align: center;
+  border-top: 1px solid #2a2138;
+  padding-top: 2rem;
+}
+
 .error {
   color: #e06c75;
 }
-.status .checking {
-  color: #d0c470;
-}
 
 button {
-  font-size: 1.1rem;
-  padding: 0.7rem 1.6rem;
+  font-size: 1.05rem;
+  padding: 0.65rem 1.5rem;
   border-radius: 8px;
   border: 1px solid #c9a84c;
   background: #221a30;
@@ -85,4 +161,26 @@ button:disabled {
 }
 .card-info a {
   color: #c9a84c;
+}
+
+footer {
+  margin-top: 3rem;
+  text-align: center;
+  color: #8a7fa0;
+  font-size: 0.85rem;
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 0.35rem;
+  background: #d0c470;
+}
+.dot.ok {
+  background: #6fd08c;
+}
+.dot.down {
+  background: #e06c75;
 }
