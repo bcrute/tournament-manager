@@ -5,6 +5,13 @@
   font-size: 0.85rem;
 }
 
+.rename-btn {
+  font-size: 0.85rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  vertical-align: middle;
+}
+
 .display-toggle {
   display: flex;
   align-items: center;

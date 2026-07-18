@@ -43,7 +43,7 @@ export default function DisplayView({
           <p className="tagline">Scan to join · room {code}</p>
           <ul className="display-roster">
             {state.players.map((p) => (
-              <li key={p.name}>
+              <li key={p.pid}>
                 {p.name}
                 {p.isHost ? " ♛" : ""}
               </li>
@@ -54,7 +54,7 @@ export default function DisplayView({
         <div className="display-grid">
           {state.players.map((p) => (
             <DisplayTile
-              key={p.name}
+              key={p.pid}
               p={p}
               first={state.room.firstPlayer === p.name}
               onTap={() => setEditing(p.name)}

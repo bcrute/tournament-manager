@@ -24,18 +24,17 @@ export function saveSession(s: Session) {
   localStorage.setItem(KEY, JSON.stringify(s));
 }
 
-export type LandingAction = "none" | "resume" | "switch";
+export type LandingAction = "none" | "resume" | "autojoin";
 
 /**
- * What the landing page should do with a stored session:
- * - "none": no session, show the normal form
- * - "resume": go back to the stored room (also when the QR is for that same room)
- * - "switch": a QR/join link for a DIFFERENT room — leave the old game, stay on the form
+ * What the landing page should do:
+ * - "none": no session, no join link — show the normal form
+ * - "resume": stored session and no join link (or the QR is for that same room)
+ * - "autojoin": a QR/join link — join that room immediately (leaving any old game first)
  */
 export function landingAction(session: Session | null, joinParam: string | null): LandingAction {
-  if (!session) return "none";
-  if (joinParam && joinParam.trim().toUpperCase() !== session.code) return "switch";
-  return "resume";
+  if (joinParam && joinParam.trim().toUpperCase() !== session?.code) return "autojoin";
+  return session ? "resume" : "none";
 }
 
 export function clearSession() {

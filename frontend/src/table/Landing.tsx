@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, ApiError, GameMode } from "./api";
 import { clearSession, landingAction, loadSession, saveSession } from "./session";
@@ -23,17 +23,45 @@ export default function Landing() {
   const [asDisplay, setAsDisplay] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoJoining, setAutoJoining] = useState(() => landingAction(loadSession(), params.get("join")) === "autojoin");
+  const autoRan = useRef(false);
 
   useEffect(() => {
+    const joinParam = params.get("join");
     const s = loadSession();
-    const action = landingAction(s, params.get("join"));
-    if (action === "none" || !s) return;
-    if (action === "switch") {
-      // scanned a QR for a different room: leave the old game and stay on the join form
-      api(`/rooms/${s.code}/leave`, { method: "POST", token: s.token }).catch(() => {});
-      clearSession();
+    const action = landingAction(s, joinParam);
+    if (action === "none") return;
+
+    if (action === "autojoin" && joinParam) {
+      // scanned a QR: leave any old game, then join the new room immediately
+      if (autoRan.current) return;
+      autoRan.current = true;
+      void (async () => {
+        if (s) {
+          await api(`/rooms/${s.code}/leave`, { method: "POST", token: s.token }).catch(() => {});
+          clearSession();
+        }
+        const nm = (localStorage.getItem("table.name") ?? "").trim() || randomName();
+        try {
+          const res = await api<{ code: string; playerToken: string }>(
+            `/rooms/${joinParam.trim().toUpperCase()}/join`,
+            { method: "POST", body: { name: nm, display: false } },
+          );
+          localStorage.setItem("table.name", nm);
+          saveSession({ code: res.code, token: res.playerToken });
+          navigate(`/table/r/${res.code}`, { replace: true });
+        } catch (e) {
+          // fall back to the manual form (name taken, room gone, game started, ...)
+          setAutoJoining(false);
+          setMode("join");
+          setName(nm);
+          setError(e instanceof ApiError ? e.message : "Could not join the room");
+        }
+      })();
       return;
     }
+
+    if (!s) return;
     let cancelled = false;
     // verify against the server before redirecting — a stale/left session must not pull us back in
     api(`/rooms/${s.code}/me`, { token: s.token })
@@ -47,6 +75,17 @@ export default function Landing() {
       cancelled = true;
     };
   }, [navigate, params]);
+
+  if (autoJoining) {
+    return (
+      <main className="tr-landing">
+        <header>
+          <h1>Table</h1>
+          <p className="tagline">Joining room {params.get("join")}…</p>
+        </header>
+      </main>
+    );
+  }
 
   async function go() {
     const trimmed = name.trim();

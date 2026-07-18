@@ -192,6 +192,7 @@ def room_state(code: str, token: str):
         visible = treachery and (ended or p["revealed"] or p["left_game"])
         out_players.append(
             {
+                "pid": p["id"],
                 "name": p["name"],
                 "isHost": bool(p["is_host"]),
                 "revealed": bool(p["revealed"]),
@@ -297,6 +298,10 @@ class CmdDamageBody(BaseModel):
 
 class EliminateBody(BaseModel):
     undo: bool = False
+
+
+class RenameBody(BaseModel):
+    name: str = Field(min_length=1, max_length=24)
 
 
 @router.post("/rooms")
@@ -547,6 +552,29 @@ async def eliminate(code: str, body: EliminateBody, x_player_token: str | None =
             )
         else:
             log_event(room["code"], f"{player['name']} was eliminated")
+    await broadcast(room["code"])
+    return {"ok": True}
+
+
+@router.post("/rooms/{code}/rename")
+async def rename(code: str, body: RenameBody, x_player_token: str | None = Header(default=None)):
+    room = get_room(code)
+    player = get_player(code, x_player_token)
+    if player["left_game"]:
+        raise HTTPException(403, "you have left this room")
+    new = body.name.strip()
+    if new == player["name"]:
+        return {"ok": True}
+    if q(
+        "SELECT 1 FROM players WHERE room_code = ? AND name = ? AND left_game = 0 AND id != ?",
+        (room["code"], new, player["id"]),
+    ).fetchone():
+        raise HTTPException(409, "that name is taken in this room")
+    q("UPDATE players SET name = ? WHERE id = ?", (new, player["id"]))
+    if room["first_player"] == player["name"]:
+        q("UPDATE rooms SET first_player = ? WHERE code = ?", (new, room["code"]))
+    if not player["is_display"]:
+        log_event(room["code"], f"{player['name']} is now known as {new}")
     await broadcast(room["code"])
     return {"ok": True}
 

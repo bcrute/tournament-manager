@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { useNavigate, useParams } from "react-router-dom";
-import { api, PlayerInfo, RoomState } from "./api";
+import { api, ApiError, PlayerInfo, RoomState } from "./api";
 import { createBackGuard } from "./backGuard";
 import { clearSession, loadSession } from "./session";
 import DisplayView from "./DisplayView";
@@ -33,7 +33,7 @@ export default function Room() {
 interface Toast {
   id: number;
   text: string;
-  zoomName?: string;
+  zoomPid?: number;
 }
 
 type Tab = "card" | "life" | "table";
@@ -42,18 +42,18 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   const navigate = useNavigate();
   const { state, gone, error } = useRoom(code, token);
   const [tab, setTab] = useState<Tab | null>(null);
-  const [zoomName, setZoomName] = useState<string | null>(null);
+  const [zoomPid, setZoomPid] = useState<number | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const prev = useRef<{ status: string; names: Set<string>; first: string | null } | null>(null);
+  const prev = useRef<{ status: string; pids: Set<number>; first: string | null } | null>(null);
   const toastId = useRef(0);
 
   useEffect(() => {
     if (gone) navigate("/table", { replace: true });
   }, [gone, navigate]);
 
-  const pushToast = (text: string, zoomName?: string) => {
+  const pushToast = (text: string, zoomPid?: number) => {
     const id = ++toastId.current;
-    setToasts((t) => [...t, { id, text, zoomName }]);
+    setToasts((t) => [...t, { id, text, zoomPid }]);
     window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 7000);
   };
 
@@ -67,19 +67,18 @@ function RoomInner({ code, token }: { code: string; token: string }) {
     return () => window.removeEventListener("popstate", onPop);
   }, [code]);
 
-  // toasts for mid-game reveals and the first-turn announcement
+  // toasts for mid-game reveals and the first-turn announcement (tracked by stable pid, not name)
   useEffect(() => {
     if (!state) return;
-    const names = new Set(
-      state.players.filter((p) => p.revealed && !p.isMe).map((p) => p.name),
-    );
+    const revealed = state.players.filter((p) => p.revealed && !p.isMe);
+    const pids = new Set(revealed.map((p) => p.pid));
     const p = prev.current;
     if (p && p.status === "playing" && state.room.status === "playing") {
-      for (const name of names) {
-        if (!p.names.has(name)) pushToast(`⚔ ${name} has revealed their identity — tap to view`, name);
+      for (const rp of revealed) {
+        if (!p.pids.has(rp.pid)) pushToast(`⚔ ${rp.name} has revealed their identity — tap to view`, rp.pid);
       }
     }
-    if (p && state.room.firstPlayer && p.first !== state.room.firstPlayer && state.room.status === "playing") {
+    if (p && state.room.firstPlayer && p.first !== state.room.firstPlayer && p.status === "lobby" && state.room.status === "playing") {
       const who = state.room.firstPlayer;
       const isLeader = state.room.mode === "treachery";
       pushToast(
@@ -88,7 +87,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
           : `🎲 ${who}${isLeader ? " (Leader)" : ""} goes first`,
       );
     }
-    prev.current = { status: state.room.status, names, first: state.room.firstPlayer };
+    prev.current = { status: state.room.status, pids, first: state.room.firstPlayer };
   }, [state]);
 
   if (error) return <main className="tr-landing"><p className="error">{error}</p></main>;
@@ -109,6 +108,18 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   async function leave(confirmMsg: string) {
     if (!window.confirm(confirmMsg)) return;
     await leaveNow();
+  }
+
+  async function renameSelf() {
+    if (!state) return;
+    const nm = window.prompt("Your name", state.me.name)?.trim();
+    if (!nm || nm === state.me.name) return;
+    try {
+      await api(`/rooms/${code}/rename`, { method: "POST", token, body: { name: nm } });
+      localStorage.setItem("table.name", nm);
+    } catch (e) {
+      window.alert(e instanceof ApiError ? e.message : "Rename failed");
+    }
   }
 
   onBackRef.current = () => {
@@ -139,13 +150,21 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   }
 
   if (state.room.status === "lobby") {
-    return <Lobby state={state} code={code} token={token} onLeave={() => void leave("Leave this room?")} />;
+    return (
+      <Lobby
+        state={state}
+        code={code}
+        token={token}
+        onLeave={() => void leave("Leave this room?")}
+        onRename={() => void renameSelf()}
+      />
+    );
   }
 
   const treachery = state.room.mode === "treachery";
   const ended = state.room.status === "ended";
   const activeTab: Tab = ended ? "table" : (tab ?? (treachery ? "card" : "life"));
-  const zoomPlayer = zoomName ? state.players.find((p) => p.name === zoomName && p.card) : undefined;
+  const zoomPlayer = zoomPid !== null ? state.players.find((p) => p.pid === zoomPid && p.card) : undefined;
 
   return (
     <div className="tr-room">
@@ -156,14 +175,14 @@ function RoomInner({ code, token }: { code: string; token: string }) {
             className="toast"
             onClick={() => {
               setToasts((all) => all.filter((x) => x.id !== t.id));
-              if (t.zoomName) setZoomName(t.zoomName);
+              if (t.zoomPid !== undefined) setZoomPid(t.zoomPid);
             }}
           >
             {t.text}
           </button>
         ))}
       </div>
-      {zoomPlayer && <CardZoom p={zoomPlayer} onClose={() => setZoomName(null)} />}
+      {zoomPlayer && <CardZoom p={zoomPlayer} onClose={() => setZoomPid(null)} />}
 
       {activeTab === "card" && treachery && (
         <RoleScreen state={state} onUnveil={() => act("/unveil").then(() => undefined)} />
@@ -171,6 +190,12 @@ function RoomInner({ code, token }: { code: string; token: string }) {
       {activeTab === "life" && (
         <main className="tr-life-page">
           <header>
+            <p className="tagline">
+              {state.me.name}{" "}
+              <button className="ghost rename-btn" onClick={() => void renameSelf()}>
+                ✎
+              </button>
+            </p>
             <p className="tagline">
               {state.room.firstPlayer && `👑 ${state.room.firstPlayer} went first · `}room {code}
             </p>
@@ -181,7 +206,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
       {activeTab === "table" && (
         <TableView
           state={state}
-          onZoom={(p) => setZoomName(p.name)}
+          onZoom={(p) => setZoomPid(p.pid)}
           onEnd={
             state.me.isHost && !ended
               ? () => {
@@ -225,11 +250,13 @@ function Lobby({
   code,
   token,
   onLeave,
+  onRename,
 }: {
   state: RoomState;
   code: string;
   token: string;
   onLeave: () => void;
+  onRename: () => void;
 }) {
   const joinUrl = `${location.origin}/table?join=${code}`;
   const treachery = state.room.mode === "treachery";
@@ -254,10 +281,17 @@ function Lobby({
         <h2>Players ({n})</h2>
         <ul>
           {state.players.map((p) => (
-            <li key={p.name}>
+            <li key={p.pid}>
               {p.name}
               {p.isHost ? " ♛" : ""}
-              {p.isMe ? " (you)" : ""}
+              {p.isMe && (
+                <>
+                  {" (you) "}
+                  <button className="ghost rename-btn" onClick={onRename}>
+                    ✎
+                  </button>
+                </>
+              )}
             </li>
           ))}
         </ul>
@@ -431,13 +465,13 @@ function TableView({
       {treachery ? (
         <div className="table-grid">
           {state.players.map((p) => (
-            <TableTile key={p.name} p={p} first={state.room.firstPlayer === p.name} onZoom={onZoom} />
+            <TableTile key={p.pid} p={p} first={state.room.firstPlayer === p.name} onZoom={onZoom} />
           ))}
         </div>
       ) : (
         <ul className="life-roster">
           {state.players.map((p) => (
-            <li key={p.name} className={p.eliminated ? "dead" : ""}>
+            <li key={p.pid} className={p.eliminated ? "dead" : ""}>
               <span>
                 {state.room.firstPlayer === p.name && "👑 "}
                 {p.name}

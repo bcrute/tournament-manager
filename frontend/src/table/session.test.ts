@@ -40,12 +40,15 @@ describe("session storage", () => {
   });
 });
 
-describe("landingAction (QR scans while in a game)", () => {
+describe("landingAction (QR scans)", () => {
   const session = { code: "OLDRM", token: "t" };
 
-  it("no session -> none", () => {
+  it("no session, no join link -> none", () => {
     expect(landingAction(null, null)).toBe("none");
-    expect(landingAction(null, "NEWRM")).toBe("none");
+  });
+
+  it("scanning a QR with no session -> autojoin immediately", () => {
+    expect(landingAction(null, "NEWRM")).toBe("autojoin");
   });
 
   it("session without a join param -> resume old room", () => {
@@ -57,7 +60,7 @@ describe("landingAction (QR scans while in a game)", () => {
     expect(landingAction(session, "oldrm")).toBe("resume");
   });
 
-  it("QR for a DIFFERENT room -> switch (regression: must not bounce back to old game)", () => {
-    expect(landingAction(session, "NEWRM")).toBe("switch");
+  it("QR for a DIFFERENT room -> autojoin (regression: must not bounce back to old game)", () => {
+    expect(landingAction(session, "NEWRM")).toBe("autojoin");
   });
 });

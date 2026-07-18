@@ -9,6 +9,7 @@ export interface CardInfo {
 }
 
 export interface PlayerInfo {
+  pid: number;
   name: string;
   isHost: boolean;
   revealed: boolean;
