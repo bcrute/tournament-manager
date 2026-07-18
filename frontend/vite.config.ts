@@ -17,6 +17,7 @@ export default defineConfig({
         "src/table/carousel.ts",
         "src/table/useAutoHide.ts",
         "src/table/fetchPolicy.ts",
+        "src/table/seats.ts",
       ],
       thresholds: {
         statements: 90,

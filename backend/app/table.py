@@ -586,7 +586,8 @@ async def commander_damage(code: str, body: CmdDamageBody, x_player_token: str |
         "SELECT * FROM players WHERE room_code = ? AND id = ? AND is_display = 0",
         (room["code"], body.attackerPid),
     ).fetchone()
-    if not attacker or attacker["id"] == player["id"]:
+    # self is a legal attacker: your own commander can be turned against you
+    if not attacker:
         raise HTTPException(400, "invalid attacker")
     row = q(
         "SELECT amount FROM cmd_damage WHERE room_code = ? AND defender_id = ? AND attacker_id = ?",

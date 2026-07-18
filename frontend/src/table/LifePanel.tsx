@@ -18,7 +18,8 @@ export default function LifePanel({
   const [cmdOpen, setCmdOpen] = useState(false);
 
   const life = (me.life ?? state.room.startingLife) + pending;
-  const opponents = state.players.filter((p) => !p.isMe && !p.left);
+  // your own commander can be turned against you, so you are on this list too
+  const sources = state.players.filter((p) => !p.left);
   const lethal = Object.values(me.cmdDamage).some((v) => v >= 21);
 
   async function cmd(attackerPid: number, delta: number) {
@@ -71,12 +72,15 @@ export default function LifePanel({
       </button>
       {cmdOpen && (
         <div className="cmd-list">
-          {opponents.length === 0 && <p className="tagline">No opponents yet</p>}
-          {opponents.map((p) => {
+          {sources.length === 0 && <p className="tagline">No players yet</p>}
+          {sources.map((p) => {
             const amt = me.cmdDamage[String(p.pid)] ?? 0;
             return (
               <div key={p.pid} className={`cmd-row${amt >= 21 ? " lethal" : ""}`}>
-                <span className="cmd-name">{p.name}</span>
+                <span className="cmd-name">
+                  {p.name}
+                  {p.isMe && " (your own)"}
+                </span>
                 <button onClick={() => void cmd(p.pid, -1)} disabled={amt === 0}>
                   −
                 </button>

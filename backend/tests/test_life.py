@@ -76,9 +76,25 @@ class TestCommanderDamage:
         assert me["cmdDamage"] == {str(p3_pid): 2, str(host_pid): 7}
         assert me["life"] == 11
 
-    def test_self_attacker_rejected(self, api, life_room):
+    def test_own_commander_can_damage_you(self, api, life_room):
+        """Mind-control effects mean your own commander can hit you."""
         code, tokens = life_room
-        api.call("POST", f"/rooms/{code}/cmddmg", token=tokens["p2"], body={"attackerPid": api.pid_of(code, tokens["host"], "p2"), "delta": 1}, expect=400)
+        p2_pid = api.pid_of(code, tokens["host"], "p2")
+        r = api.call(
+            "POST", f"/rooms/{code}/cmddmg", token=tokens["p2"],
+            body={"attackerPid": p2_pid, "delta": 6},
+        )
+        assert r["total"] == 6 and r["life"] == 14
+        assert api.me(code, tokens["p2"])["me"]["cmdDamage"] == {str(p2_pid): 6}
+
+    def test_self_commander_damage_is_lethal_at_21(self, api, life_room):
+        code, tokens = life_room
+        p2_pid = api.pid_of(code, tokens["host"], "p2")
+        r = api.call(
+            "POST", f"/rooms/{code}/cmddmg", token=tokens["p2"],
+            body={"attackerPid": p2_pid, "delta": 21},
+        )
+        assert r["lethal"] is True
 
     def test_unknown_attacker_rejected(self, api, life_room):
         code, tokens = life_room
