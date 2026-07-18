@@ -116,6 +116,16 @@
   display: none;
 }
 
+/* activity-based: fades out when idle, no layout shift so the card never jumps */
+.carousel-strip {
+  transition: opacity 0.35s ease;
+}
+
+.carousel-strip.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .thumb {
   flex: 0 0 auto;
   width: 3.1rem;

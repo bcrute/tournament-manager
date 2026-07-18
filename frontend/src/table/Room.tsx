@@ -9,6 +9,7 @@ import DisplayView from "./DisplayView";
 import LifePanel from "./LifePanel";
 import RoomBar from "./RoomBar";
 import SlideToUnveil from "./SlideToUnveil";
+import { useAutoHide } from "./useAutoHide";
 import { useRoom } from "./useRoom";
 import { useWakeLock } from "./useWakeLock";
 
@@ -434,6 +435,7 @@ function RoleScreen({
   const [peek, setPeek] = useState(false);
   const start = useRef<{ x: number; y: number } | null>(null);
   const swiping = useRef(false);
+  const strip = useAutoHide(2500);
 
   const entry = entries[index] ?? entries[0];
   const me = state.me;
@@ -444,6 +446,7 @@ function RoleScreen({
   function onPointerDown(e: React.PointerEvent) {
     start.current = { x: e.clientX, y: e.clientY };
     swiping.current = false;
+    strip.poke();
     if (entry?.isMe && !me.revealed) setPeek(true);
   }
 
@@ -463,7 +466,10 @@ function RoleScreen({
     setPeek(false);
     if (!s || !swiping.current || entries.length < 2) return;
     const dx = e.clientX - s.x;
-    if (Math.abs(dx) > 50) setIndex(step(index, dx < 0 ? 1 : -1, entries.length));
+    if (Math.abs(dx) > 50) {
+      setIndex(step(index, dx < 0 ? 1 : -1, entries.length));
+      strip.poke();
+    }
   }
 
   return (
@@ -488,7 +494,10 @@ function RoleScreen({
 
       <div className="role-footer" onPointerDown={(e) => e.stopPropagation()}>
         {entries.length > 1 && (
-          <div className="carousel-strip">
+          <div
+            className={`carousel-strip${strip.visible ? "" : " hidden"}`}
+            onPointerDown={() => strip.poke()}
+          >
             {entries.map((e2, i) => {
               const faceUp = e2.card && (!e2.isMe || me.revealed);
               return (
@@ -496,7 +505,10 @@ function RoleScreen({
                   key={e2.pid}
                   className={`thumb${i === index ? " on" : ""}`}
                   aria-label={e2.isMe ? "Your card" : `${e2.name}'s card`}
-                  onClick={() => setIndex(i)}
+                  onClick={() => {
+                    setIndex(i);
+                    strip.poke();
+                  }}
                 >
                   {faceUp ? (
                     <img src={e2.card!.image} alt="" draggable={false} />

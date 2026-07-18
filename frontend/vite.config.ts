@@ -15,6 +15,7 @@ export default defineConfig({
         "src/table/backGuard.ts",
         "src/table/useWakeLock.ts",
         "src/table/carousel.ts",
+        "src/table/useAutoHide.ts",
       ],
       thresholds: {
         statements: 90,
