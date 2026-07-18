@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { useNavigate, useParams } from "react-router-dom";
-import { api, ApiError, PlayerInfo, RoomState } from "./api";
+import { api, ApiError, GameMode, PlayerInfo, RoomState } from "./api";
 import { createBackGuard } from "./backGuard";
 import { CarouselEntry, carouselEntries, clampIndex, indexOfPid, step } from "./carousel";
 import { clearSession, loadSession } from "./session";
@@ -58,6 +58,26 @@ function RoomInner({ code, token }: { code: string; token: string }) {
 
   // keep the screen on during active games and on table displays; lobby screens may sleep
   useWakeLock(state?.room.status === "playing" || state?.me.isDisplay === true);
+
+  // game over (last player standing, or the host ended it): everyone counts down together
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const gameOver = state?.room.status === "ended";
+  useEffect(() => {
+    if (!gameOver) {
+      setCountdown(null);
+      return;
+    }
+    setCountdown(5);
+    const iv = window.setInterval(() => setCountdown((c) => (c === null ? null : c - 1)), 1000);
+    return () => window.clearInterval(iv);
+  }, [gameOver]);
+  const isHost = state?.me.isHost === true;
+  useEffect(() => {
+    // one client drives the return so the room resets exactly once
+    if (countdown === 0 && isHost) {
+      void api(`/rooms/${code}/reopen`, { method: "POST", token }).catch(() => {});
+    }
+  }, [countdown, isHost, code, token]);
 
   const pushToast = (text: string, zoomPid?: number) => {
     const id = ++toastId.current;
@@ -235,6 +255,11 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         ))}
       </div>
       {zoomPlayer && <CardZoom p={zoomPlayer} onClose={() => setZoomPid(null)} />}
+      {countdown !== null && countdown > 0 && (
+        <div className="countdown-banner">
+          Game over — returning to the room in {countdown}…
+        </div>
+      )}
 
       {activeTab === "card" && treachery && (
         <RoleScreen
@@ -269,9 +294,9 @@ function RoomInner({ code, token }: { code: string; token: string }) {
             state.me.isHost && !ended
               ? () => {
                   const msg = treachery
-                    ? "End the game and return everyone to the lobby? Final identities go to the game log."
-                    : "End the game and return everyone to the lobby?";
-                  if (window.confirm(msg)) void act("/end").then(() => act("/reopen"));
+                    ? "End the game and return everyone to the room? Identities are revealed first."
+                    : "End the game and return everyone to the room?";
+                  if (window.confirm(msg)) void act("/end");
                 }
               : undefined
           }
@@ -314,7 +339,7 @@ function Lobby({
   const n = state.players.filter((p) => !p.left).length;
   const [customLife, setCustomLife] = useState("");
 
-  async function setOptions(body: { startingLife?: number }) {
+  async function setOptions(body: { startingLife?: number; mode?: GameMode }) {
     await api(`/rooms/${code}/options`, { method: "POST", token, body });
   }
 
@@ -358,6 +383,22 @@ function Lobby({
 
       {state.me.isHost ? (
         <section className="tr-host">
+          <h2>Game</h2>
+          <div className="tr-mode">
+            <button
+              className={!treachery ? "active" : ""}
+              onClick={() => void setOptions({ mode: "life" })}
+            >
+              ♥ Life counter
+            </button>
+            <button
+              className={treachery ? "active" : ""}
+              onClick={() => void setOptions({ mode: "treachery" })}
+            >
+              ⚔ Treachery
+            </button>
+          </div>
+
           <h2>Starting life · {state.room.startingLife}</h2>
           <div className="life-presets">
             {[20, 30, 40].map((v) => (

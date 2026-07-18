@@ -21,6 +21,7 @@ CARDS_PATH = next(
 
 RARITIES = ["U", "R", "M", "S"]
 MODES = ["life", "treachery"]
+IDLE_TIMEOUT = int(os.environ.get("TABLE_IDLE_TIMEOUT", 3 * 60 * 60))  # 3h of no activity
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O/1/I/L
 
 _db_lock = threading.Lock()
@@ -73,6 +74,7 @@ _ensure_column("rooms", "starting_life", "INTEGER NOT NULL DEFAULT 40")
 _ensure_column("rooms", "first_player", "TEXT")  # legacy, superseded by first_pid
 _ensure_column("rooms", "first_pid", "INTEGER")
 _ensure_column("rooms", "game_no", "INTEGER NOT NULL DEFAULT 0")
+_ensure_column("rooms", "last_active", "INTEGER")
 _ensure_column("events", "game_no", "INTEGER")
 _ensure_column("players", "is_display", "INTEGER NOT NULL DEFAULT 0")
 _ensure_column("players", "life", "INTEGER")
@@ -91,6 +93,37 @@ def q(sql, params=()):
         cur = _db.execute(sql, params)
         _db.commit()
         return cur
+
+
+async def check_last_standing(room):
+    """One player left in a live game means it's over — end it so every client
+    can show the result and return to the room together."""
+    if norm_status(room["status"]) != "playing":
+        return
+    alive = q(
+        "SELECT name FROM players WHERE room_code = ? AND is_display = 0 "
+        "AND left_game = 0 AND eliminated = 0",
+        (room["code"],),
+    ).fetchall()
+    if len(alive) > 1:
+        return
+    q("UPDATE rooms SET status = 'ended' WHERE code = ?", (room["code"],))
+    if len(alive) == 1:
+        log_event(room["code"], f"{alive[0]['name']} is the last player standing — game over")
+    else:
+        log_event(room["code"], "no players left — game over")
+    if room["mode"] == "treachery":
+        for p in q(
+            "SELECT * FROM players WHERE room_code = ? AND is_display = 0 ORDER BY joined_at, id",
+            (room["code"],),
+        ).fetchall():
+            if p["card_id"]:
+                q("UPDATE players SET revealed = 1 WHERE id = ?", (p["id"],))
+                card = _cards_by_id[p["card_id"]]
+                log_event(
+                    room["code"],
+                    f"final identity: {p['name']} — {card['name']} ({card['types']['subtype']})",
+                )
 
 
 def log_event(code: str, text: str):
@@ -137,10 +170,32 @@ def card_public(card):
     }
 
 
-def get_room(code: str):
+def expire_idle_rooms():
+    """Close rooms nobody has touched in IDLE_TIMEOUT. History is kept — only the
+    room stops accepting play, so an abandoned code can't be rejoined forever."""
+    q(
+        "UPDATE rooms SET status = 'closed' WHERE status != 'closed' "
+        "AND COALESCE(last_active, created_at) < unixepoch() - ?",
+        (IDLE_TIMEOUT,),
+    )
+
+
+def touch(code: str):
+    q("UPDATE rooms SET last_active = unixepoch() WHERE code = ?", (code,))
+
+
+def get_room(code: str, allow_closed: bool = False):
     row = q("SELECT * FROM rooms WHERE code = ?", (code.upper(),)).fetchone()
     if not row:
         raise HTTPException(404, "room not found")
+    # check just this room's idle clock (primary-key read); the bulk sweep runs on create
+    if row["status"] != "closed":
+        cutoff = q("SELECT unixepoch() - ? AS c", (IDLE_TIMEOUT,)).fetchone()["c"]
+        if (row["last_active"] or row["created_at"]) < cutoff:
+            q("UPDATE rooms SET status = 'closed' WHERE code = ?", (row["code"],))
+            row = q("SELECT * FROM rooms WHERE code = ?", (row["code"],)).fetchone()
+    if row["status"] == "closed" and not allow_closed:
+        raise HTTPException(410, "this room has closed")
     return row
 
 
@@ -293,6 +348,7 @@ class JoinBody(BaseModel):
 class OptionsBody(BaseModel):
     rarities: list[str] | None = None
     startingLife: int | None = Field(default=None, ge=1, le=999)
+    mode: str | None = None
 
 
 class LifeBody(BaseModel):
@@ -317,6 +373,7 @@ class RenameBody(BaseModel):
 def create_room(body: CreateBody):
     if body.mode not in MODES:
         raise HTTPException(400, "unknown mode")
+    expire_idle_rooms()  # cheap hygiene sweep, off the hot path
     code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(5))
     token = secrets.token_urlsafe(24)
     starting = 40 if body.mode == "treachery" else 20
@@ -329,6 +386,7 @@ def create_room(body: CreateBody):
         (code, token, body.name.strip()),
     )
     log_event(code, f"{body.name.strip()} created the room ({body.mode} mode)")
+    touch(code)
     return {"code": code, "playerToken": token}
 
 
@@ -353,6 +411,7 @@ async def join_room(code: str, body: JoinBody):
         (room["code"], token, name),
     )
     log_event(room["code"], f"{name} joined")
+    touch(room["code"])
     await broadcast(room["code"])
     return {"code": room["code"], "playerToken": token}
 
@@ -372,6 +431,19 @@ async def set_options(code: str, body: OptionsBody, x_player_token: str | None =
     player = get_player(code, x_player_token)
     if not player["is_host"]:
         raise HTTPException(403, "host only")
+    if body.mode is not None and body.mode != room["mode"]:
+        if body.mode not in MODES:
+            raise HTTPException(400, "unknown mode")
+        if norm_status(room["status"]) != "lobby":
+            raise HTTPException(409, "can only change the mode in the lobby")
+        # each mode carries its own starting life (commander pairs with treachery)
+        life = 40 if body.mode == "treachery" else 20
+        q(
+            "UPDATE rooms SET mode = ?, starting_life = ? WHERE code = ?",
+            (body.mode, life, room["code"]),
+        )
+        label = "Treachery" if body.mode == "treachery" else "life counter"
+        log_event(room["code"], f"{player['name']} switched the game to {label} (starting life {life})")
     if body.rarities is not None:
         rarities = [r for r in body.rarities if r in RARITIES] or RARITIES
         opts = json.loads(room["options"])
@@ -558,6 +630,8 @@ async def eliminate(code: str, body: EliminateBody, x_player_token: str | None =
             )
         else:
             log_event(room["code"], f"{player['name']} was eliminated")
+        await check_last_standing(get_room(code))
+    touch(room["code"])
     await broadcast(room["code"])
     return {"ok": True}
 
@@ -589,6 +663,7 @@ async def unveil(code: str, x_player_token: str | None = Header(default=None)):
     q("UPDATE players SET revealed = 1 WHERE id = ?", (player["id"],))
     card = _cards_by_id[player["card_id"]]
     log_event(room["code"], f"{player['name']} unveiled as {card['name']} ({card['types']['subtype']})")
+    touch(room["code"])
     await broadcast(room["code"])
     return {"ok": True}
 
@@ -667,5 +742,7 @@ async def leave(code: str, x_player_token: str | None = Header(default=None)):
         ).fetchone()
         if nxt:
             q("UPDATE players SET is_host = 1 WHERE id = ?", (nxt["id"],))
+    await check_last_standing(get_room(code))
+    touch(room["code"])
     await broadcast(room["code"])
     return {"ok": True}
