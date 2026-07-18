@@ -1,4 +1,4 @@
-const KEY = "treachery.session";
+const KEY = "table.session";
 
 export interface Session {
   code: string;
@@ -7,6 +7,12 @@ export interface Session {
 
 export function loadSession(): Session | null {
   try {
+    // migrate the pre-rename key so live sessions survive the /treachery → /table move
+    const legacy = localStorage.getItem("treachery.session");
+    if (legacy && !localStorage.getItem(KEY)) {
+      localStorage.setItem(KEY, legacy);
+      localStorage.removeItem("treachery.session");
+    }
     const raw = localStorage.getItem(KEY);
     return raw ? (JSON.parse(raw) as Session) : null;
   } catch {

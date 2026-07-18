@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      "/api/treachery/ws": { target: "ws://localhost:8000", ws: true },
+      "/api/table/ws": { target: "ws://localhost:8000", ws: true },
       "/api": "http://localhost:8000",
     },
   },

@@ -33,7 +33,7 @@ export function useRoom(code: string, token: string) {
 
     const connect = () => {
       const proto = location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(`${proto}://${location.host}/api/treachery/ws/${code}`);
+      ws = new WebSocket(`${proto}://${location.host}/api/table/ws/${code}`);
       ws.onmessage = () => void refetch();
       ws.onclose = () => {
         if (!closed) timer = window.setTimeout(connect, 2000);

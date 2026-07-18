@@ -13,11 +13,15 @@ export interface PlayerInfo {
   isHost: boolean;
   revealed: boolean;
   left: boolean;
+  eliminated: boolean;
   isMe: boolean;
+  life: number | null;
+  cmdDamage: Record<string, number>;
   card: CardInfo | null;
 }
 
-export type RoomStatus = "lobby" | "dealt" | "ended";
+export type RoomStatus = "lobby" | "playing" | "ended";
+export type GameMode = "life" | "treachery";
 
 export interface LogEntry {
   at: number;
@@ -29,14 +33,22 @@ export interface RoomState {
   room: {
     code: string;
     status: RoomStatus;
+    mode: GameMode;
+    startingLife: number;
+    firstPlayer: string | null;
     options: { rarities?: string[] };
+    displays: number;
     distribution: Record<string, number>;
   };
   players: PlayerInfo[];
   me: {
     name: string;
     isHost: boolean;
+    isDisplay: boolean;
     revealed: boolean;
+    eliminated: boolean;
+    life: number | null;
+    cmdDamage: Record<string, number>;
     card: CardInfo | null;
   };
 }
@@ -50,7 +62,7 @@ export class ApiError extends Error {
   }
 }
 
-const BASE = "/api/treachery";
+const BASE = "/api/table";
 
 export async function api<T>(
   path: string,

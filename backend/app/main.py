@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from .treachery import router as treachery_router
+from .table import router as table_router
 
 SCRYFALL_RANDOM = "https://api.scryfall.com/cards/random"
 
@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="mtg", lifespan=lifespan)
 
-app.include_router(treachery_router, prefix="/api/treachery")
+app.include_router(table_router, prefix="/api/table")
 
 
 @app.get("/api/health")

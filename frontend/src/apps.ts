@@ -9,11 +9,11 @@ export interface AppEntry {
 
 export const APPS: AppEntry[] = [
   {
-    name: "Treachery",
+    name: "Table",
     description:
-      "Hidden-role Commander variant — deal secret identities, unveil, betray your friends. A homegrown take on mtgtreachery.net.",
+      "Game-night companion — shared life tracker with a central table display, plus Treachery mode: secret identities, unveiling, betrayal.",
     status: "live",
-    href: "/treachery",
+    href: "/table",
   },
   {
     name: "Oracle Draw",

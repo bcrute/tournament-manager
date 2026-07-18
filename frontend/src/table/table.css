@@ -1,4 +1,331 @@
-/* ---- Treachery: mobile-first ---- */
+/* ---- Table (life tracker + game modes): mobile-first ---- */
+
+.hint {
+  color: #8a7fa0;
+  font-size: 0.85rem;
+}
+
+.display-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: center;
+  color: #b8b0c8;
+  font-size: 0.92rem;
+}
+
+.display-toggle input {
+  accent-color: #c9a84c;
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+/* Bottom tab nav */
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 15;
+  display: flex;
+  background: #1a1424;
+  border-top: 1px solid #322747;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.bottom-nav button {
+  flex: 1;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: #8a7fa0;
+  font-size: 0.95rem;
+  padding: 0.8rem 0;
+}
+
+.bottom-nav button.active {
+  color: #c9a84c;
+}
+
+/* Life panel */
+.tr-life-page {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 1.5rem 1.2rem 6rem;
+  text-align: center;
+}
+
+.life-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: center;
+}
+
+.life-big {
+  font-size: 7rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  position: relative;
+}
+
+.life-big.zero {
+  color: #e06c75;
+}
+
+.life-big .pending-tag {
+  position: absolute;
+  top: 0;
+  right: -2.2rem;
+  font-size: 1.1rem;
+  color: #c9a84c;
+}
+
+.life-buttons {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+}
+
+.life-buttons button {
+  font-size: 1.4rem;
+  min-width: 4.2rem;
+  padding: 0.9rem 0;
+}
+
+.life-presets {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.life-presets button.active {
+  border-color: #c9a84c;
+  background: #2e2340;
+}
+
+.life-presets input {
+  width: 4.2rem;
+  font-size: 1rem;
+  text-align: center;
+  border-radius: 8px;
+  border: 1px solid #322747;
+  background: #1d1628;
+  color: #e8e4f0;
+}
+
+.cmd-toggle {
+  width: 100%;
+  max-width: 320px;
+}
+
+.cmd-list {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cmd-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  justify-content: flex-end;
+}
+
+.cmd-row .cmd-name {
+  margin-right: auto;
+  color: #e8e4f0;
+}
+
+.cmd-row button {
+  min-width: 2.8rem;
+  font-size: 1.2rem;
+  padding: 0.4rem 0;
+}
+
+.cmd-row .cmd-amt {
+  min-width: 2rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.cmd-row.lethal .cmd-amt {
+  color: #e06c75;
+  font-weight: 700;
+}
+
+.die-btn {
+  margin-top: 0.5rem;
+}
+
+.dead-banner {
+  font-size: 2rem;
+  color: #e06c75;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* Life-mode table roster */
+.life-roster {
+  list-style: none;
+  padding: 0;
+  margin: 1.2rem 0 0;
+}
+
+.life-roster li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.6rem 0.2rem;
+  border-bottom: 1px solid #241c33;
+  font-size: 1.15rem;
+}
+
+.life-roster strong {
+  font-size: 1.6rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.life-roster li.dead {
+  opacity: 0.55;
+}
+
+.table-tile.dead {
+  opacity: 0.65;
+}
+
+/* Display device */
+.display-view {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: 0.8rem 1rem calc(0.8rem + env(safe-area-inset-bottom));
+}
+
+.display-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.display-code {
+  font-size: 1.4rem;
+  letter-spacing: 0.25em;
+  color: #c9a84c;
+}
+
+.display-mode {
+  margin-right: auto;
+  color: #8a7fa0;
+}
+
+.display-lobby {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  text-align: center;
+}
+
+.qr.big {
+  padding: 1rem;
+}
+
+.display-roster {
+  list-style: none;
+  padding: 0;
+  font-size: 1.3rem;
+  line-height: 1.9;
+  text-align: center;
+}
+
+.display-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.8rem;
+  align-content: center;
+  padding: 1rem 0;
+}
+
+.display-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 1rem 0.5rem;
+  border: 1px solid #322747;
+  border-radius: 14px;
+  background: #1d1628;
+  color: inherit;
+  font-size: 1rem;
+}
+
+.display-tile.dead {
+  opacity: 0.55;
+}
+
+.display-tile.gone {
+  opacity: 0.35;
+}
+
+.display-name {
+  color: #b8b0c8;
+  font-size: 1rem;
+}
+
+.display-life {
+  font-size: 3.4rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.display-cmd {
+  color: #8a7fa0;
+  font-size: 0.8rem;
+}
+
+.display-log {
+  border-top: 1px solid #241c33;
+  padding-top: 0.5rem;
+  min-height: 4.6rem;
+}
+
+.display-log-line {
+  color: #8a7fa0;
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.edit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(10, 7, 16, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.edit-box {
+  background: #1d1628;
+  border: 1px solid #322747;
+  border-radius: 16px;
+  padding: 1.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: center;
+}
+
 
 .tr-landing,
 .tr-lobby,
@@ -219,7 +546,7 @@ button.ghost {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(0.9rem + env(safe-area-inset-bottom));
+  bottom: calc(4.4rem + env(safe-area-inset-bottom)); /* clear the bottom nav */
   padding: 0 1rem;
 }
 
@@ -428,13 +755,17 @@ button.ghost {
   margin-right: 0.6rem;
 }
 
+.tr-table {
+  padding-bottom: 7.5rem; /* clear the bottom nav */
+}
+
 .table-actions {
   position: sticky;
-  bottom: 0;
+  bottom: calc(3.4rem + env(safe-area-inset-bottom));
   display: flex;
   gap: 0.6rem;
   justify-content: center;
-  padding: 0.9rem 0 calc(0.4rem + env(safe-area-inset-bottom));
+  padding: 0.9rem 0 0.4rem;
   background: linear-gradient(transparent, #14101c 35%);
   margin-top: 1.5rem;
 }
