@@ -468,7 +468,7 @@ function RoleScreen({
 
   return (
     <div
-      className="role-screen"
+      className={`role-screen${entries.length > 1 ? " has-strip" : ""}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -478,16 +478,7 @@ function RoleScreen({
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div className="carousel-label">
-        {entry?.isMe ? "Your card" : `${entry?.name}'s card`}
-        {entries.length > 1 && (
-          <span className="carousel-dots">
-            {entries.map((e2, i) => (
-              <i key={e2.pid} className={i === index ? "on" : ""} />
-            ))}
-          </span>
-        )}
-      </div>
+      <div className="carousel-label">{entry?.isMe ? "Your card" : `${entry?.name}'s card`}</div>
 
       {showFace && card ? (
         <img className="role-card" src={card.image} alt="" draggable={false} />
@@ -496,6 +487,29 @@ function RoleScreen({
       )}
 
       <div className="role-footer" onPointerDown={(e) => e.stopPropagation()}>
+        {entries.length > 1 && (
+          <div className="carousel-strip">
+            {entries.map((e2, i) => {
+              const faceUp = e2.card && (!e2.isMe || me.revealed);
+              return (
+                <button
+                  key={e2.pid}
+                  className={`thumb${i === index ? " on" : ""}`}
+                  aria-label={e2.isMe ? "Your card" : `${e2.name}'s card`}
+                  onClick={() => setIndex(i)}
+                >
+                  {faceUp ? (
+                    <img src={e2.card!.image} alt="" draggable={false} />
+                  ) : (
+                    <span className="thumb-back">🎭</span>
+                  )}
+                  <span className="thumb-name">{e2.isMe ? "You" : e2.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {entry && !entry.isMe ? (
           <div className="viewing-banner">
             {entry.name} — {card?.name} ({card?.role})

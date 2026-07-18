@@ -102,20 +102,67 @@
   pointer-events: none;
 }
 
-.carousel-dots {
+/* thumbnail strip: tap a card to jump to it */
+.carousel-strip {
   display: flex;
-  gap: 0.35rem;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0 0.2rem 0.5rem;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
 }
 
-.carousel-dots i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #3a3150;
+.carousel-strip::-webkit-scrollbar {
+  display: none;
 }
 
-.carousel-dots i.on {
-  background: #c9a84c;
+.thumb {
+  flex: 0 0 auto;
+  width: 3.1rem;
+  padding: 0;
+  border: 1px solid #322747;
+  border-radius: 7px;
+  background: #1d1628;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+  opacity: 0.55;
+  scroll-snap-align: center;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+
+.thumb.on {
+  opacity: 1;
+  border-color: #c9a84c;
+}
+
+.thumb img {
+  width: 100%;
+  aspect-ratio: 63 / 88;
+  object-fit: cover;
+  object-position: top;
+  display: block;
+}
+
+.thumb-back {
+  width: 100%;
+  aspect-ratio: 63 / 88;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  background: radial-gradient(ellipse at 50% 35%, #2a2038 0%, #14101c 75%);
+}
+
+.thumb-name {
+  font-size: 0.6rem;
+  color: #b8b0c8;
+  max-width: 100%;
+  padding: 0.15rem 0.1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .viewing-banner {
@@ -625,11 +672,20 @@ button.ghost {
 
 .role-card {
   max-width: 100vw;
-  /* fit between the room bar + carousel label and the unveil slider */
+  /* fit between the room bar + label and the unveil slider */
   max-height: calc(100vh - 11rem);
   max-height: calc(100dvh - 11rem);
   object-fit: contain;
   pointer-events: none;
+}
+
+/* leave room for the thumbnail strip once there is more than one card */
+.role-screen.has-strip .role-card {
+  max-height: calc(100dvh - 17rem);
+}
+
+.role-screen.has-strip .card-back {
+  width: min(88vw, calc((100dvh - 17rem) * 0.716));
 }
 
 .card-back {
