@@ -228,13 +228,13 @@ function CardBack({ label, hint }: { label: string; hint?: string }) {
   );
 }
 
-function TableTile({ p }: { p: PlayerInfo }) {
+function TableTile({ p, onZoom }: { p: PlayerInfo; onZoom: (p: PlayerInfo) => void }) {
   const card: CardInfo | null = p.card;
   return (
     <div className={`table-tile${p.left ? " gone" : ""}`}>
       {card ? (
         <>
-          <img src={card.image} alt={card.name} draggable={false} />
+          <img src={card.image} alt={card.name} draggable={false} onClick={() => onZoom(p)} />
           <span className="tile-label">
             {p.name}
             {p.left ? " (left)" : ""} — {card.role}
@@ -253,6 +253,20 @@ function TableTile({ p }: { p: PlayerInfo }) {
   );
 }
 
+function CardZoom({ p, onClose }: { p: PlayerInfo; onClose: () => void }) {
+  if (!p.card) return null;
+  return (
+    <div className="card-zoom" onClick={onClose}>
+      <div className="zoom-banner">
+        This is <strong>{p.name}</strong>
+        {p.isMe ? " (you)" : ""}&rsquo;s role card — {p.card.name} ({p.card.role})
+      </div>
+      <img src={p.card.image} alt={p.card.name} draggable={false} />
+      <span className="zoom-hint">tap to close</span>
+    </div>
+  );
+}
+
 function TableView({
   state,
   onBack,
@@ -267,6 +281,7 @@ function TableView({
   onLeave: () => void;
 }) {
   const ended = state.room.status === "ended";
+  const [zoom, setZoom] = useState<PlayerInfo | null>(null);
   return (
     <main className="tr-table">
       <header>
@@ -275,9 +290,10 @@ function TableView({
       </header>
       <div className="table-grid">
         {state.players.map((p) => (
-          <TableTile key={p.name} p={p} />
+          <TableTile key={p.name} p={p} onZoom={setZoom} />
         ))}
       </div>
+      {zoom && <CardZoom p={zoom} onClose={() => setZoom(null)} />}
       <footer className="table-actions">
         {onBack && (
           <button className="primary" onClick={onBack}>
