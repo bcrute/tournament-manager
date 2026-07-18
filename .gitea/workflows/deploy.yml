@@ -12,7 +12,8 @@ jobs:
       NODE_EXTRA_CA_CERTS: /etc/gitea-ca.crt
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        # pinned to the v4.2.2 commit SHA (mutable tags are a supply-chain risk)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       # scanners run as sibling containers; the workspace lives in a docker volume,
       # so it must be shared via --volumes-from (host bind mounts would be empty)
