@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, CardInfo, PlayerInfo, RoomState } from "./api";
@@ -34,14 +34,42 @@ export default function Room() {
   return <RoomInner code={session.code} token={session.token} />;
 }
 
+interface Toast {
+  id: number;
+  name: string;
+}
+
 function RoomInner({ code, token }: { code: string; token: string }) {
   const navigate = useNavigate();
   const { state, gone, error } = useRoom(code, token);
   const [view, setView] = useState<"card" | "table">("card");
+  const [zoomName, setZoomName] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const prevRevealed = useRef<{ status: string; names: Set<string> } | null>(null);
+  const toastId = useRef(0);
 
   useEffect(() => {
     if (gone) navigate("/treachery", { replace: true });
   }, [gone, navigate]);
+
+  // toast newly-revealed players (mid-game only — not the deal itself or game end)
+  useEffect(() => {
+    if (!state) return;
+    const names = new Set(
+      state.players.filter((p) => p.revealed && !p.isMe).map((p) => p.name),
+    );
+    const prev = prevRevealed.current;
+    if (prev && prev.status === "dealt" && state.room.status === "dealt") {
+      for (const name of names) {
+        if (!prev.names.has(name)) {
+          const id = ++toastId.current;
+          setToasts((t) => [...t, { id, name }]);
+          window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 7000);
+        }
+      }
+    }
+    prevRevealed.current = { status: state.room.status, names };
+  }, [state]);
 
   if (error) return <main className="tr-landing"><p className="error">{error}</p></main>;
   if (!state) return <main className="tr-landing"><p className="tagline">Loading…</p></main>;
@@ -64,11 +92,28 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   }
 
   const showTable = view === "table" || state.room.status === "ended";
+  const zoomPlayer = zoomName ? state.players.find((p) => p.name === zoomName && p.card) : undefined;
   return (
     <div className="tr-room">
+      <div className="toasts" onPointerDown={(e) => e.stopPropagation()}>
+        {toasts.map((t) => (
+          <button
+            key={t.id}
+            className="toast"
+            onClick={() => {
+              setToasts((all) => all.filter((x) => x.id !== t.id));
+              setZoomName(t.name);
+            }}
+          >
+            ⚔ {t.name} has revealed their identity — tap to view
+          </button>
+        ))}
+      </div>
+      {zoomPlayer && <CardZoom p={zoomPlayer} onClose={() => setZoomName(null)} />}
       {showTable ? (
         <TableView
           state={state}
+          onZoom={(p) => setZoomName(p.name)}
           onBack={state.room.status === "ended" ? undefined : () => setView("card")}
           onEnd={
             state.me.isHost && state.room.status === "dealt"
@@ -269,19 +314,20 @@ function CardZoom({ p, onClose }: { p: PlayerInfo; onClose: () => void }) {
 
 function TableView({
   state,
+  onZoom,
   onBack,
   onEnd,
   onReopen,
   onLeave,
 }: {
   state: RoomState;
+  onZoom: (p: PlayerInfo) => void;
   onBack?: () => void;
   onEnd?: () => void;
   onReopen?: () => void;
   onLeave: () => void;
 }) {
   const ended = state.room.status === "ended";
-  const [zoom, setZoom] = useState<PlayerInfo | null>(null);
   return (
     <main className="tr-table">
       <header>
@@ -290,10 +336,9 @@ function TableView({
       </header>
       <div className="table-grid">
         {state.players.map((p) => (
-          <TableTile key={p.name} p={p} onZoom={setZoom} />
+          <TableTile key={p.name} p={p} onZoom={onZoom} />
         ))}
       </div>
-      {zoom && <CardZoom p={zoom} onClose={() => setZoom(null)} />}
       <section className="game-log">
         <h2>Game log</h2>
         <ul>
