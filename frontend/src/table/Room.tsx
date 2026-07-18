@@ -56,6 +56,16 @@ function RoomInner({ code, token }: { code: string; token: string }) {
     window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 7000);
   };
 
+  // double back (swipe/button) exits the game without hunting for the Leave button
+  const backArmedAt = useRef(0);
+  const onBackRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    history.pushState({ tableRoom: code }, "");
+    const onPop = () => onBackRef.current();
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [code]);
+
   // toasts for mid-game reveals and the first-turn announcement
   useEffect(() => {
     if (!state) return;
@@ -85,8 +95,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
 
   const act = (path: string) => api(`/rooms/${code}${path}`, { method: "POST", token });
 
-  async function leave(confirmMsg: string) {
-    if (!window.confirm(confirmMsg)) return;
+  async function leaveNow() {
     try {
       await act("/leave");
     } catch {
@@ -95,6 +104,28 @@ function RoomInner({ code, token }: { code: string; token: string }) {
     clearSession();
     navigate("/table", { replace: true });
   }
+
+  async function leave(confirmMsg: string) {
+    if (!window.confirm(confirmMsg)) return;
+    await leaveNow();
+  }
+
+  onBackRef.current = () => {
+    if (Date.now() - backArmedAt.current < 2500) {
+      void leaveNow();
+      return;
+    }
+    backArmedAt.current = Date.now();
+    const midTreachery = state.room.mode === "treachery" && state.room.status === "playing" && !state.me.isDisplay;
+    pushToast(
+      state.me.isDisplay
+        ? "Go back again to disconnect this display"
+        : midTreachery
+          ? "⚠ Go back again to leave — your identity will be revealed"
+          : "Go back again to leave the game",
+    );
+    history.pushState({ tableRoom: code }, "");
+  };
 
   if (state.me.isDisplay) {
     return (

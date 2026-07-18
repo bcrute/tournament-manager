@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, ApiError, GameMode } from "./api";
-import { loadSession, saveSession } from "./session";
+import { clearSession, loadSession, saveSession } from "./session";
 
 function randomName() {
   const chars = "abcdefghjkmnpqrstuvwxyz23456789";
@@ -26,7 +26,19 @@ export default function Landing() {
 
   useEffect(() => {
     const s = loadSession();
-    if (s) navigate(`/table/r/${s.code}`, { replace: true });
+    if (!s) return;
+    let cancelled = false;
+    // verify against the server before redirecting — a stale/left session must not pull us back in
+    api(`/rooms/${s.code}/me`, { token: s.token })
+      .then(() => {
+        if (!cancelled) navigate(`/table/r/${s.code}`, { replace: true });
+      })
+      .catch(() => {
+        if (!cancelled) clearSession();
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [navigate]);
 
   async function go() {

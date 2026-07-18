@@ -350,6 +350,10 @@ async def join_room(code: str, body: JoinBody):
 
 @router.get("/rooms/{code}/me")
 def me(code: str, x_player_token: str | None = Header(default=None)):
+    player = get_player(code, x_player_token)
+    if player["left_game"]:
+        # a leaver's token must not let them back into the room
+        raise HTTPException(403, "you have left this room")
     return room_state(code, x_player_token)
 
 

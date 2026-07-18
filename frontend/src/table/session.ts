@@ -26,4 +26,6 @@ export function saveSession(s: Session) {
 
 export function clearSession() {
   localStorage.removeItem(KEY);
+  // the pre-rename key must go too, or loadSession() resurrects the old game
+  localStorage.removeItem("treachery.session");
 }
