@@ -70,7 +70,10 @@ def _ensure_column(table: str, col: str, decl: str):
 
 _ensure_column("rooms", "mode", "TEXT NOT NULL DEFAULT 'treachery'")
 _ensure_column("rooms", "starting_life", "INTEGER NOT NULL DEFAULT 40")
-_ensure_column("rooms", "first_player", "TEXT")
+_ensure_column("rooms", "first_player", "TEXT")  # legacy, superseded by first_pid
+_ensure_column("rooms", "first_pid", "INTEGER")
+_ensure_column("rooms", "game_no", "INTEGER NOT NULL DEFAULT 0")
+_ensure_column("events", "game_no", "INTEGER")
 _ensure_column("players", "is_display", "INTEGER NOT NULL DEFAULT 0")
 _ensure_column("players", "life", "INTEGER")
 _ensure_column("players", "eliminated", "INTEGER NOT NULL DEFAULT 0")
@@ -91,7 +94,13 @@ def q(sql, params=()):
 
 
 def log_event(code: str, text: str):
-    q("INSERT INTO events (room_code, text) VALUES (?, ?)", (code, text))
+    """Events double as the permanent game history: stamped with the room's game
+    number, never deleted, and carrying no identifiers beyond player names/ids."""
+    row = q("SELECT game_no FROM rooms WHERE code = ?", (code,)).fetchone()
+    q(
+        "INSERT INTO events (room_code, text, game_no) VALUES (?, ?, ?)",
+        (code, text, row["game_no"] if row else 0),
+    )
 
 
 def distribution(n: int):
@@ -160,15 +169,11 @@ def active_players(code: str):
 
 
 def cmd_matrix(code: str):
-    """defender_id -> {attacker_name: amount}"""
-    names = {
-        r["id"]: r["name"]
-        for r in q("SELECT id, name FROM players WHERE room_code = ?", (code,)).fetchall()
-    }
+    """defender_id -> {attacker_pid(str): amount} — pid-keyed so duplicate names can't collide."""
     out: dict[int, dict[str, int]] = {}
     for r in q("SELECT * FROM cmd_damage WHERE room_code = ?", (code,)).fetchall():
-        if r["amount"] > 0 and r["attacker_id"] in names:
-            out.setdefault(r["defender_id"], {})[names[r["attacker_id"]]] = r["amount"]
+        if r["amount"] > 0:
+            out.setdefault(r["defender_id"], {})[str(r["attacker_id"])] = r["amount"]
     return out
 
 
@@ -210,6 +215,8 @@ def room_state(code: str, token: str):
         "SELECT at, text FROM events WHERE room_code = ? ORDER BY id DESC LIMIT 60",
         (room["code"],),
     ).fetchall()
+    first_pid = room["first_pid"]
+    first_name = next((p["name"] for p in players if p["id"] == first_pid), None)
     return {
         "log": [{"at": e["at"], "text": e["text"]} for e in events],
         "room": {
@@ -217,13 +224,15 @@ def room_state(code: str, token: str):
             "status": status,
             "mode": room["mode"],
             "startingLife": room["starting_life"],
-            "firstPlayer": room["first_player"],
+            "firstPid": first_pid,
+            "firstPlayer": first_name,
             "options": json.loads(room["options"]),
             "displays": len([p for p in players if p["is_display"] and not p["left_game"]]),
             "distribution": {"Leader": ldr, "Traitor": trt, "Assassin": ass, "Guardian": gdn},
         },
         "players": out_players,
         "me": {
+            "pid": me["id"],
             "name": me["name"],
             "isHost": bool(me["is_host"]),
             "isDisplay": bool(me["is_display"]),
@@ -288,11 +297,11 @@ class OptionsBody(BaseModel):
 
 class LifeBody(BaseModel):
     delta: int = Field(ge=-999, le=999)
-    player: str | None = None  # display corrections target another player
+    playerPid: int | None = None  # display corrections target another player
 
 
 class CmdDamageBody(BaseModel):
-    attacker: str
+    attackerPid: int
     delta: int = Field(ge=-99, le=99)
 
 
@@ -338,11 +347,6 @@ async def join_room(code: str, body: JoinBody):
         return {"code": room["code"], "playerToken": token}
     if norm_status(room["status"]) != "lobby":
         raise HTTPException(409, "game already started — ask the host to reopen the lobby")
-    if q(
-        "SELECT 1 FROM players WHERE room_code = ? AND name = ? AND left_game = 0",
-        (room["code"], name),
-    ).fetchone():
-        raise HTTPException(409, "that name is taken in this room")
     token = secrets.token_urlsafe(24)
     q(
         "INSERT INTO players (room_code, token, name) VALUES (?, ?, ?)",
@@ -394,7 +398,10 @@ async def start_game(code: str, x_player_token: str | None = Header(default=None
     if n < 1:
         raise HTTPException(400, "no players")
 
-    first: str
+    # a new game begins: bump the history segment counter before logging deal events
+    q("UPDATE rooms SET game_no = game_no + 1 WHERE code = ?", (room["code"],))
+
+    first_row = None
     if room["mode"] == "treachery":
         ldr, trt, ass, gdn = distribution(n)
         need = {"Leader": ldr, "Traitor": trt, "Assassin": ass, "Guardian": gdn}
@@ -417,7 +424,6 @@ async def start_game(code: str, x_player_token: str | None = Header(default=None
             )
             picked.extend(random.sample(pool, count))
         random.shuffle(picked)
-        first = ""
         for p, card in zip(players, picked):
             face_up = 1 if "Unveil" not in card["text"] else 0
             q(
@@ -425,7 +431,7 @@ async def start_game(code: str, x_player_token: str | None = Header(default=None
                 (card["id"], face_up, p["id"]),
             )
             if card["types"]["subtype"] == "Leader":
-                first = p["name"]
+                first_row = p
         mix = " / ".join(
             f"{c} {r}{'s' if c > 1 else ''}"
             for r, c in (("Leader", ldr), ("Traitor", trt), ("Assassin", ass), ("Guardian", gdn))
@@ -435,18 +441,18 @@ async def start_game(code: str, x_player_token: str | None = Header(default=None
             room["code"],
             f"{player['name']} dealt identities to {n} players ({mix}) — {tier_label} tier",
         )
-        log_event(room["code"], f"{first} is the Leader and goes first")
+        log_event(room["code"], f"{first_row['name']} is the Leader and goes first")
     else:
-        first = random.choice(players)["name"]
-        log_event(room["code"], f"rolled for first turn — {first} goes first")
+        first_row = random.choice(players)
+        log_event(room["code"], f"rolled for first turn — {first_row['name']} goes first")
 
     q(
         "UPDATE players SET life = ?, eliminated = 0 WHERE room_code = ? AND is_display = 0",
         (room["starting_life"], room["code"]),
     )
     q(
-        "UPDATE rooms SET status = 'playing', first_player = ? WHERE code = ?",
-        (first, room["code"]),
+        "UPDATE rooms SET status = 'playing', first_pid = ? WHERE code = ?",
+        (first_row["id"], room["code"]),
     )
     await broadcast(room["code"])
     return {"ok": True}
@@ -460,12 +466,12 @@ async def adjust_life(code: str, body: LifeBody, x_player_token: str | None = He
         raise HTTPException(409, "no game in progress")
     if body.delta == 0:
         return {"ok": True}
-    if body.player is not None and body.player != player["name"]:
+    if body.playerPid is not None and body.playerPid != player["id"]:
         if not player["is_display"]:
             raise HTTPException(403, "only the table display can adjust other players")
         target = q(
-            "SELECT * FROM players WHERE room_code = ? AND name = ? AND is_display = 0 AND left_game = 0",
-            (room["code"], body.player),
+            "SELECT * FROM players WHERE room_code = ? AND id = ? AND is_display = 0 AND left_game = 0",
+            (room["code"], body.playerPid),
         ).fetchone()
         if not target:
             raise HTTPException(404, "player not found")
@@ -494,8 +500,8 @@ async def commander_damage(code: str, body: CmdDamageBody, x_player_token: str |
     if player["is_display"]:
         raise HTTPException(409, "displays don't take damage")
     attacker = q(
-        "SELECT * FROM players WHERE room_code = ? AND name = ? AND is_display = 0",
-        (room["code"], body.attacker),
+        "SELECT * FROM players WHERE room_code = ? AND id = ? AND is_display = 0",
+        (room["code"], body.attackerPid),
     ).fetchone()
     if not attacker or attacker["id"] == player["id"]:
         raise HTTPException(400, "invalid attacker")
@@ -565,14 +571,7 @@ async def rename(code: str, body: RenameBody, x_player_token: str | None = Heade
     new = body.name.strip()
     if new == player["name"]:
         return {"ok": True}
-    if q(
-        "SELECT 1 FROM players WHERE room_code = ? AND name = ? AND left_game = 0 AND id != ?",
-        (room["code"], new, player["id"]),
-    ).fetchone():
-        raise HTTPException(409, "that name is taken in this room")
     q("UPDATE players SET name = ? WHERE id = ?", (new, player["id"]))
-    if room["first_player"] == player["name"]:
-        q("UPDATE rooms SET first_player = ? WHERE code = ?", (new, room["code"]))
     if not player["is_display"]:
         log_event(room["code"], f"{player['name']} is now known as {new}")
     await broadcast(room["code"])
@@ -622,7 +621,7 @@ async def reopen(code: str, x_player_token: str | None = Header(default=None)):
     )
     q("DELETE FROM players WHERE room_code = ? AND left_game = 1", (room["code"],))
     q("DELETE FROM cmd_damage WHERE room_code = ?", (room["code"],))
-    q("UPDATE rooms SET status = 'lobby', first_player = NULL WHERE code = ?", (room["code"],))
+    q("UPDATE rooms SET status = 'lobby', first_pid = NULL WHERE code = ?", (room["code"],))
     log_event(room["code"], f"{player['name']} reopened the lobby for a new game")
     await broadcast(room["code"])
     return {"ok": True}

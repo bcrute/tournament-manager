@@ -45,6 +45,10 @@ class Api:
     def start(self, code, token, expect=200):
         return self.call("POST", f"/rooms/{code}/start", token=token, expect=expect)
 
+    def pid_of(self, code, token, name):
+        s = self.me(code, token)
+        return next(p["pid"] for p in s["players"] if p["name"] == name)
+
 
 @pytest.fixture
 def api(client):

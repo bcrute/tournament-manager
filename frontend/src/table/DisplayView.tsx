@@ -13,13 +13,14 @@ export default function DisplayView({
   token: string;
   onLeave: () => void;
 }) {
-  const [editing, setEditing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{ pid: number; name: string } | null>(null);
   const lobby = state.room.status === "lobby";
   const ended = state.room.status === "ended";
   const joinUrl = `${location.origin}/table?join=${code}`;
+  const nameOf = new Map(state.players.map((p) => [String(p.pid), p.name]));
 
-  async function adjust(player: string, delta: number) {
-    await api(`/rooms/${code}/life`, { method: "POST", token, body: { player, delta } });
+  async function adjust(playerPid: number, delta: number) {
+    await api(`/rooms/${code}/life`, { method: "POST", token, body: { playerPid, delta } });
   }
 
   return (
@@ -56,8 +57,9 @@ export default function DisplayView({
             <DisplayTile
               key={p.pid}
               p={p}
-              first={state.room.firstPlayer === p.name}
-              onTap={() => setEditing(p.name)}
+              first={state.room.firstPid === p.pid}
+              nameOf={nameOf}
+              onTap={() => setEditing({ pid: p.pid, name: p.name })}
             />
           ))}
         </div>
@@ -74,12 +76,12 @@ export default function DisplayView({
       {editing && (
         <div className="edit-overlay" onClick={() => setEditing(null)}>
           <div className="edit-box" onClick={(e) => e.stopPropagation()}>
-            <h2>{editing}</h2>
+            <h2>{editing.name}</h2>
             <div className="life-buttons">
-              <button onClick={() => void adjust(editing, -5)}>−5</button>
-              <button onClick={() => void adjust(editing, -1)}>−1</button>
-              <button onClick={() => void adjust(editing, 1)}>+1</button>
-              <button onClick={() => void adjust(editing, 5)}>+5</button>
+              <button onClick={() => void adjust(editing.pid, -5)}>−5</button>
+              <button onClick={() => void adjust(editing.pid, -1)}>−1</button>
+              <button onClick={() => void adjust(editing.pid, 1)}>+1</button>
+              <button onClick={() => void adjust(editing.pid, 5)}>+5</button>
             </div>
             <button className="ghost" onClick={() => setEditing(null)}>
               done
@@ -91,7 +93,17 @@ export default function DisplayView({
   );
 }
 
-function DisplayTile({ p, first, onTap }: { p: PlayerInfo; first: boolean; onTap: () => void }) {
+function DisplayTile({
+  p,
+  first,
+  nameOf,
+  onTap,
+}: {
+  p: PlayerInfo;
+  first: boolean;
+  nameOf: Map<string, string>;
+  onTap: () => void;
+}) {
   return (
     <button className={`display-tile${p.eliminated ? " dead" : ""}${p.left ? " gone" : ""}`} onClick={onTap}>
       <span className="display-name">
@@ -103,7 +115,7 @@ function DisplayTile({ p, first, onTap }: { p: PlayerInfo; first: boolean; onTap
       {Object.keys(p.cmdDamage).length > 0 && (
         <span className="display-cmd">
           {Object.entries(p.cmdDamage)
-            .map(([from, amt]) => `${amt}⚔${from}`)
+            .map(([fromPid, amt]) => `${amt}⚔${nameOf.get(fromPid) ?? "?"}`)
             .join("  ")}
         </span>
       )}

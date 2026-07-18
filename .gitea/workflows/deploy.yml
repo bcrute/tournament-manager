@@ -14,7 +14,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build image
+      - name: Security · semgrep
+        run: docker run --rm -v "$PWD":/src semgrep/semgrep:latest semgrep scan --config p/ci --error --quiet /src
+
+      - name: Security · pip-audit
+        run: docker run --rm -v "$PWD/backend":/req python:3.12-slim sh -c 'pip install -q pip-audit && pip-audit --strict -r /req/requirements.txt'
+
+      - name: Security · npm audit
+        run: docker run --rm -v "$PWD/frontend":/fe -w /fe node:22-alpine sh -c 'npm ci --ignore-scripts --silent && npm audit --audit-level=high'
+
+      - name: Build image (runs pytest + coverage gate + vitest + coverage gate)
         run: docker build -t mtg:latest .
 
       - name: Set up SSH key

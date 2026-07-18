@@ -21,8 +21,8 @@ export default function LifePanel({
   const opponents = state.players.filter((p) => !p.isMe && !p.left);
   const lethal = Object.values(me.cmdDamage).some((v) => v >= 21);
 
-  async function cmd(attacker: string, delta: number) {
-    await api(`/rooms/${code}/cmddmg`, { method: "POST", token, body: { attacker, delta } });
+  async function cmd(attackerPid: number, delta: number) {
+    await api(`/rooms/${code}/cmddmg`, { method: "POST", token, body: { attackerPid, delta } });
   }
 
   async function eliminate(undo: boolean) {
@@ -73,15 +73,15 @@ export default function LifePanel({
         <div className="cmd-list">
           {opponents.length === 0 && <p className="tagline">No opponents yet</p>}
           {opponents.map((p) => {
-            const amt = me.cmdDamage[p.name] ?? 0;
+            const amt = me.cmdDamage[String(p.pid)] ?? 0;
             return (
-              <div key={p.name} className={`cmd-row${amt >= 21 ? " lethal" : ""}`}>
+              <div key={p.pid} className={`cmd-row${amt >= 21 ? " lethal" : ""}`}>
                 <span className="cmd-name">{p.name}</span>
-                <button onClick={() => void cmd(p.name, -1)} disabled={amt === 0}>
+                <button onClick={() => void cmd(p.pid, -1)} disabled={amt === 0}>
                   −
                 </button>
                 <span className="cmd-amt">{amt}</span>
-                <button onClick={() => void cmd(p.name, 1)}>+</button>
+                <button onClick={() => void cmd(p.pid, 1)}>+</button>
               </div>
             );
           })}

@@ -44,7 +44,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   const [tab, setTab] = useState<Tab | null>(null);
   const [zoomPid, setZoomPid] = useState<number | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const prev = useRef<{ status: string; pids: Set<number>; first: string | null } | null>(null);
+  const prev = useRef<{ status: string; pids: Set<number>; first: number | null } | null>(null);
   const toastId = useRef(0);
 
   useEffect(() => {
@@ -78,16 +78,16 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         if (!p.pids.has(rp.pid)) pushToast(`⚔ ${rp.name} has revealed their identity — tap to view`, rp.pid);
       }
     }
-    if (p && state.room.firstPlayer && p.first !== state.room.firstPlayer && p.status === "lobby" && state.room.status === "playing") {
+    if (p && state.room.firstPid !== null && p.first !== state.room.firstPid && p.status === "lobby" && state.room.status === "playing") {
       const who = state.room.firstPlayer;
       const isLeader = state.room.mode === "treachery";
       pushToast(
-        who === state.me.name
+        state.room.firstPid === state.me.pid
           ? `🎲 You go first!`
           : `🎲 ${who}${isLeader ? " (Leader)" : ""} goes first`,
       );
     }
-    prev.current = { status: state.room.status, pids, first: state.room.firstPlayer };
+    prev.current = { status: state.room.status, pids, first: state.room.firstPid };
   }, [state]);
 
   if (error) return <main className="tr-landing"><p className="error">{error}</p></main>;
@@ -465,7 +465,7 @@ function TableView({
       {treachery ? (
         <div className="table-grid">
           {state.players.map((p) => (
-            <TableTile key={p.pid} p={p} first={state.room.firstPlayer === p.name} onZoom={onZoom} />
+            <TableTile key={p.pid} p={p} first={state.room.firstPid === p.pid} onZoom={onZoom} />
           ))}
         </div>
       ) : (
@@ -473,7 +473,7 @@ function TableView({
           {state.players.map((p) => (
             <li key={p.pid} className={p.eliminated ? "dead" : ""}>
               <span>
-                {state.room.firstPlayer === p.name && "👑 "}
+                {state.room.firstPid === p.pid && "👑 "}
                 {p.name}
                 {p.isMe ? " (you)" : ""}
               </span>

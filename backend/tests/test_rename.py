@@ -17,17 +17,20 @@ class TestRename:
 
     def test_rename_preserves_life_and_cmd_damage(self, api, life_room):
         code, tokens = life_room
+        p2_pid = api.pid_of(code, tokens["host"], "p2")
         api.call("POST", f"/rooms/{code}/life", token=tokens["p2"], body={"delta": -6})
-        api.call("POST", f"/rooms/{code}/cmddmg", token=tokens["p3"], body={"attacker": "p2", "delta": 4})
+        api.call("POST", f"/rooms/{code}/cmddmg", token=tokens["p3"], body={"attackerPid": p2_pid, "delta": 4})
         api.call("POST", f"/rooms/{code}/rename", token=tokens["p2"], body={"name": "renamed"})
         s = api.me(code, tokens["p3"])
-        assert s["me"]["cmdDamage"] == {"renamed": 4}  # matrix follows the new name
+        assert s["me"]["cmdDamage"] == {str(p2_pid): 4}  # pid-keyed: rename can't break it
         renamed = next(p for p in s["players"] if p["name"] == "renamed")
         assert renamed["life"] == 14
 
-    def test_duplicate_name_rejected(self, api, life_room):
+    def test_duplicate_names_allowed(self, api, life_room):
         code, tokens = life_room
-        api.call("POST", f"/rooms/{code}/rename", token=tokens["p2"], body={"name": "p3"}, expect=409)
+        api.call("POST", f"/rooms/{code}/rename", token=tokens["p2"], body={"name": "p3"})
+        s = api.me(code, tokens["host"])
+        assert len([p for p in s["players"] if p["name"] == "p3"]) == 2
 
     def test_rename_to_own_name_is_noop(self, api, life_room):
         code, tokens = life_room

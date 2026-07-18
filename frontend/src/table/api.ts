@@ -36,6 +36,7 @@ export interface RoomState {
     status: RoomStatus;
     mode: GameMode;
     startingLife: number;
+    firstPid: number | null;
     firstPlayer: string | null;
     options: { rarities?: string[] };
     displays: number;
@@ -43,6 +44,7 @@ export interface RoomState {
   };
   players: PlayerInfo[];
   me: {
+    pid: number;
     name: string;
     isHost: boolean;
     isDisplay: boolean;

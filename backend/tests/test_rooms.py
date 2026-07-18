@@ -34,10 +34,16 @@ class TestJoin:
         assert [p["name"] for p in s["players"]] == ["host", "p2"]
         assert s["me"]["isHost"] is False
 
-    def test_duplicate_name_rejected(self, api):
+    def test_duplicate_names_allowed_with_distinct_pids(self, api):
         r = api.create()
-        api.join(r["code"], "p2")
-        api.join(r["code"], "p2", expect=409)
+        t1 = api.join(r["code"], "bob")["playerToken"]
+        t2 = api.join(r["code"], "bob")["playerToken"]
+        s = api.me(r["code"], t1)
+        bobs = [p for p in s["players"] if p["name"] == "bob"]
+        assert len(bobs) == 2
+        assert bobs[0]["pid"] != bobs[1]["pid"]
+        # each token maps to its own player
+        assert api.me(r["code"], t1)["me"]["pid"] != api.me(r["code"], t2)["me"]["pid"]
 
     def test_join_after_start_rejected(self, api, life_room):
         code, _ = life_room
@@ -143,13 +149,12 @@ class TestEndReopen:
 
 
 class TestLeave:
-    def test_lobby_leave_removes_player_and_frees_name(self, api):
+    def test_lobby_leave_removes_player(self, api):
         r = api.create()
         t2 = api.join(r["code"], "p2")["playerToken"]
         api.call("POST", f"/rooms/{r['code']}/leave", token=t2)
         s = api.me(r["code"], r["playerToken"])
         assert [p["name"] for p in s["players"]] == ["host"]
-        api.join(r["code"], "p2")  # name is reusable
 
     def test_left_token_cannot_reenter(self, api, life_room):
         """Regression: leaving must invalidate the session server-side."""
