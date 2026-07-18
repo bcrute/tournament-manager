@@ -3,10 +3,18 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "./api";
 import { loadSession, saveSession } from "./session";
 
+function randomName() {
+  const chars = "abcdefghjkmnpqrstuvwxyz23456789";
+  return Array.from(
+    crypto.getRandomValues(new Uint8Array(5)),
+    (b) => chars[b % chars.length],
+  ).join("");
+}
+
 export default function Landing() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const [name, setName] = useState(localStorage.getItem("treachery.name") ?? "");
+  const [name, setName] = useState(() => localStorage.getItem("treachery.name") ?? randomName());
   const [joinCode, setJoinCode] = useState(params.get("join") ?? "");
   const [mode, setMode] = useState<"join" | "create">(params.get("join") ? "join" : "create");
   const [busy, setBusy] = useState(false);
