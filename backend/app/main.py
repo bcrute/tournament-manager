@@ -3,6 +3,9 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from .treachery import router as treachery_router
 
 SCRYFALL_RANDOM = "https://api.scryfall.com/cards/random"
 
@@ -15,6 +18,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="mtg", lifespan=lifespan)
+
+app.include_router(treachery_router, prefix="/api/treachery")
 
 
 @app.get("/api/health")
@@ -41,4 +46,19 @@ async def random_card():
     }
 
 
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+class SPAStaticFiles(StaticFiles):
+    """Serve the built frontend; unknown paths fall back to index.html for client routing."""
+
+    async def get_response(self, path: str, scope):
+        try:
+            response = await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404:
+                return await super().get_response("index.html", scope)
+            raise
+        if response.status_code == 404:
+            return await super().get_response("index.html", scope)
+        return response
+
+
+app.mount("/", SPAStaticFiles(directory="static", html=True), name="static")

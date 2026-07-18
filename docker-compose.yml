@@ -3,6 +3,10 @@ services:
     image: mtg:latest
     container_name: mtg
     restart: unless-stopped
+    environment:
+      - TREACHERY_DB=/appdata/treachery.db
+    volumes:
+      - ./appdata:/appdata
     networks:
       - web
 

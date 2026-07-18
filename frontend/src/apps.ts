@@ -12,7 +12,7 @@ export const APPS: AppEntry[] = [
     name: "Treachery",
     description:
       "Hidden-role Commander variant — deal secret identities, unveil, betray your friends. A homegrown take on mtgtreachery.net.",
-    status: "dev",
+    status: "live",
     href: "/treachery",
   },
   {
