@@ -86,6 +86,17 @@ class TestVisibility:
         s = api.me(code, tokens["p2"])
         assert all(p["card"] is not None for p in s["players"])
 
+    def test_end_logs_final_identities(self, api, treachery_room):
+        """The reveal must survive the auto-return to the lobby via the log."""
+        code, tokens = treachery_room
+        api.call("POST", f"/rooms/{code}/end", token=tokens["host"])
+        api.call("POST", f"/rooms/{code}/reopen", token=tokens["host"])
+        log = [e["text"] for e in api.me(code, tokens["p2"])["log"]]
+        finals = [t for t in log if t.startswith("final identity:")]
+        assert len(finals) == 5
+        for name in tokens:
+            assert any(name in t for t in finals)
+
     def test_display_sees_only_public_cards(self, api, treachery_room):
         code, tokens = treachery_room
         d = api.join(code, "tv", display=True)["playerToken"]

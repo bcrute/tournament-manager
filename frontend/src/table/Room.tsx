@@ -210,8 +210,10 @@ function RoomInner({ code, token }: { code: string; token: string }) {
           onEnd={
             state.me.isHost && !ended
               ? () => {
-                  if (window.confirm("End the game" + (treachery ? " and reveal everyone?" : "?")))
-                    void act("/end");
+                  const msg = treachery
+                    ? "End the game and return everyone to the lobby? Final identities go to the game log."
+                    : "End the game and return everyone to the lobby?";
+                  if (window.confirm(msg)) void act("/end").then(() => act("/reopen"));
                 }
               : undefined
           }
@@ -343,6 +345,25 @@ function Lobby({
         </section>
       ) : (
         <p className="tagline">Waiting for the host to start…</p>
+      )}
+
+      {state.log.length > 0 && (
+        <section className="game-log">
+          <h2>Game log</h2>
+          <ul>
+            {state.log.slice(0, 8).map((e, i) => (
+              <li key={`${e.at}-${i}`}>
+                <time>
+                  {new Date(e.at * 1000).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </time>
+                {e.text}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       <footer>

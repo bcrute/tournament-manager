@@ -605,6 +605,18 @@ async def end_game(code: str, x_player_token: str | None = Header(default=None))
         f"{player['name']} ended the game"
         + (" — all identities revealed" if room["mode"] == "treachery" else ""),
     )
+    if room["mode"] == "treachery":
+        # preserve the final reveal in the history/log (clients return to the lobby right away)
+        for p in q(
+            "SELECT * FROM players WHERE room_code = ? AND is_display = 0 AND left_game = 0 ORDER BY joined_at, id",
+            (room["code"],),
+        ).fetchall():
+            if p["card_id"]:
+                card = _cards_by_id[p["card_id"]]
+                log_event(
+                    room["code"],
+                    f"final identity: {p['name']} — {card['name']} ({card['types']['subtype']})",
+                )
     await broadcast(room["code"])
     return {"ok": True}
 
