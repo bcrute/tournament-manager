@@ -20,7 +20,8 @@ jobs:
       - name: Set up SSH key
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/vps_key
+          # secret is base64-encoded: single-line values get masked reliably in logs
+          echo "$VPS_SSH_KEY" | base64 -d > ~/.ssh/vps_key
           chmod 600 ~/.ssh/vps_key
           printf 'Host vps\n  HostName 74.208.222.65\n  User root\n  IdentityFile ~/.ssh/vps_key\n  IdentitiesOnly yes\n  StrictHostKeyChecking accept-new\n' > ~/.ssh/config
         env:
