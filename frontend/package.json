@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "test": "vitest run",
+    "test": "vitest run --coverage",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -16,7 +16,10 @@
     "react-router-dom": "^7.6.0"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/react": "^16.3.0",
     "@types/react": "^19.1.0",
+    "@vitest/coverage-v8": "^3.2.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.5.0",
     "jsdom": "^26.1.0",

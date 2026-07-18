@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, ApiError, GameMode } from "./api";
-import { clearSession, loadSession, saveSession } from "./session";
+import { clearSession, landingAction, loadSession, saveSession } from "./session";
 
 function randomName() {
   const chars = "abcdefghjkmnpqrstuvwxyz23456789";
@@ -26,7 +26,14 @@ export default function Landing() {
 
   useEffect(() => {
     const s = loadSession();
-    if (!s) return;
+    const action = landingAction(s, params.get("join"));
+    if (action === "none" || !s) return;
+    if (action === "switch") {
+      // scanned a QR for a different room: leave the old game and stay on the join form
+      api(`/rooms/${s.code}/leave`, { method: "POST", token: s.token }).catch(() => {});
+      clearSession();
+      return;
+    }
     let cancelled = false;
     // verify against the server before redirecting — a stale/left session must not pull us back in
     api(`/rooms/${s.code}/me`, { token: s.token })
@@ -39,7 +46,7 @@ export default function Landing() {
     return () => {
       cancelled = true;
     };
-  }, [navigate]);
+  }, [navigate, params]);
 
   async function go() {
     const trimmed = name.trim();

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, PlayerInfo, RoomState } from "./api";
+import { createBackGuard } from "./backGuard";
 import { clearSession, loadSession } from "./session";
 import DisplayView from "./DisplayView";
 import LifePanel from "./LifePanel";
@@ -57,7 +58,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   };
 
   // double back (swipe/button) exits the game without hunting for the Leave button
-  const backArmedAt = useRef(0);
+  const backGuard = useRef(createBackGuard()).current;
   const onBackRef = useRef<() => void>(() => {});
   useEffect(() => {
     history.pushState({ tableRoom: code }, "");
@@ -111,20 +112,19 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   }
 
   onBackRef.current = () => {
-    if (Date.now() - backArmedAt.current < 2500) {
-      void leaveNow();
-      return;
-    }
-    backArmedAt.current = Date.now();
     const midTreachery = state.room.mode === "treachery" && state.room.status === "playing" && !state.me.isDisplay;
-    pushToast(
-      state.me.isDisplay
-        ? "Go back again to disconnect this display"
-        : midTreachery
-          ? "⚠ Go back again to leave — your identity will be revealed"
-          : "Go back again to leave the game",
-    );
-    history.pushState({ tableRoom: code }, "");
+    backGuard.onBack({
+      leave: () => void leaveNow(),
+      warn: () =>
+        pushToast(
+          state.me.isDisplay
+            ? "Go back again to disconnect this display"
+            : midTreachery
+              ? "⚠ Go back again to leave — your identity will be revealed"
+              : "Go back again to leave the game",
+        ),
+      rearm: () => history.pushState({ tableRoom: code }, ""),
+    });
   };
 
   if (state.me.isDisplay) {

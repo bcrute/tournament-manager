@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
 COPY backend/app ./app
 COPY backend/tests ./tests
 COPY data ./data
-RUN python -m pytest tests -q && touch /tests-passed
+RUN python -m pytest tests -q --cov=app --cov-report=term --cov-fail-under=90 && touch /tests-passed
 
 FROM python:3.12-slim
 WORKDIR /app
