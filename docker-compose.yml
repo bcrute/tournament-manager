@@ -1,0 +1,11 @@
+services:
+  mtg:
+    image: mtg:latest
+    container_name: mtg
+    restart: unless-stopped
+    networks:
+      - web
+
+networks:
+  web:
+    external: true

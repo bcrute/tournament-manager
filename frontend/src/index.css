@@ -1,0 +1,88 @@
+:root {
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #14101c;
+  color: #e8e4f0;
+  min-height: 100vh;
+}
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+  text-align: center;
+}
+
+h1 {
+  font-size: 2rem;
+  background: linear-gradient(120deg, #c9a84c, #e8e4f0);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.status .ok {
+  color: #6fd08c;
+}
+.status .down,
+.error {
+  color: #e06c75;
+}
+.status .checking {
+  color: #d0c470;
+}
+
+button {
+  font-size: 1.1rem;
+  padding: 0.7rem 1.6rem;
+  border-radius: 8px;
+  border: 1px solid #c9a84c;
+  background: #221a30;
+  color: #e8e4f0;
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  background: #2e2340;
+}
+button:disabled {
+  opacity: 0.6;
+}
+
+.card {
+  margin-top: 2rem;
+  display: flex;
+  gap: 1.5rem;
+  text-align: left;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.card img {
+  width: 280px;
+  max-width: 100%;
+  border-radius: 12px;
+}
+
+.card-info {
+  flex: 1;
+  min-width: 240px;
+}
+
+.card-info .type {
+  color: #b8b0c8;
+}
+.card-info .set {
+  color: #8a7fa0;
+  font-size: 0.9rem;
+}
+.card-info .oracle {
+  white-space: pre-wrap;
+}
+.card-info a {
+  color: #c9a84c;
+}
