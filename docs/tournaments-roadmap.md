@@ -56,7 +56,12 @@ available to us for Wizards IP.
   tolerance, not explicit permission. Acceptable risk for a free private tool;
   a real question if this ever becomes commercial.
 
-### Scryfall (used today by `/api/random-card`)
+### Scryfall — *no longer used*
+
+The `/api/random-card` proxy was removed on 2026-07-18; the app now ships no
+third-party card data at all, which sidesteps this entire licence chain. Kept
+here for reference because the terms explain why a commercial tier can't use it.
+
 
 <https://scryfall.com/docs/api>
 
@@ -119,8 +124,8 @@ session machinery that already survives deploys and reconnects.
 
 ### Phase 0 — Compliance cleanup (independent of tournaments; do first)
 
-1. Send a proper `User-Agent` and `Accept` header from the Scryfall proxy; add
-   caching and a rate guard (that endpoint is capped at 2 req/sec).
+1. ~~Scryfall compliance~~ — **done differently: the integration was removed
+   entirely (2026-07-18), so there is nothing to comply with.**
 2. Add the required Fan Content disclaimer to the site footer.
 3. Credit Treachery card artists (the data already has the field).
 

@@ -15,9 +15,4 @@ export const APPS: AppEntry[] = [
     status: "live",
     href: "/table",
   },
-  {
-    name: "Oracle Draw",
-    description: "Random card from Scryfall. The pipeline hello-world, kept around because it's fun.",
-    status: "live",
-  },
 ];
