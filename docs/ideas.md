@@ -79,12 +79,17 @@ because the features above are the ones most likely to erode it.*
   entrant token scoped to that tournament. Being signed in does not change what
   the tournament learns about you — the entrant is that token, not an account.
 
-`entrants.account_id` exists but is never written. That is deliberate: it is a
-hook for a *voluntary, opt-in* link ("save this event to my history"), and it
-must never be populated as a side effect of being signed in while claiming.
-Three tests in `TestIdentityStaysSeparate` pin this — claiming works with no
-account, claiming while signed in leaves the link empty, and the roster exposes
-no account at all.
+`entrants.account_id` exists but is never written. That is deliberate: it is the
+hook for a *voluntary, opt-in* link, and it must never be populated as a side
+effect of being signed in while claiming. Three tests in
+`TestIdentityStaysSeparate` pin this — claiming works with no account, claiming
+while signed in leaves the link empty, and the roster exposes no account at all.
+
+The one path that will write it is the deliberate upgrade described below, and
+it stays subject to the rules above: the organizer never sees an account, and
+deleting an account drops the pointer without touching the entrant row or its
+results, so an event's standings can't develop holes because someone deleted
+their account on the train home.
 
 ---
 
@@ -108,6 +113,63 @@ bearing, and its assumptions stop leaking into the core.
 The test of a good boundary here is the one already written down for games: if
 adding a second implementation means editing the core, the boundary is in the
 wrong place.
+
+---
+
+## Account upgrade after claiming a spot
+
+*Discussed 2026-07-19. Approach settled; not built.*
+
+A player claims a spot anonymously, then decides they want an account. Their
+tournament identity carries over, and the organizer never sees a thing change.
+
+**The design: entrant ids are permanent and the account holds a pointer.**
+One column, written once, on a deliberate opt-in. Nothing is rewritten and
+nothing has to be resolved through an alias. The upgrade also links that
+entrant's `players` rows in the pod rooms in the same transaction — without
+that, the new account knows the user entered a tournament but shows no games,
+because history reads `players.account_id`.
+
+### Why not promote the entrant id into the user id
+
+This was the first instinct and it's worth recording why it was dropped, so it
+doesn't get re-proposed:
+
+- **It works exactly once.** One account plays many tournaments, and each event
+  has the organizer creating its own participant row. Thirteen events, thirteen
+  entrant rows, one person — they can't all share an id unless the key becomes
+  `(tournament_code, entrant_id)`, at which point the entrant id isn't globally
+  unique and can't be a user id anyway. So a pointer is needed for every event
+  after the first regardless, and once you're keeping it, promotion buys
+  nothing.
+- **The rewrite is a live migration at a table.** Replacing an id mid-event
+  means updating `pod_seats`, `official_calls` and results while the organizer's
+  console and every player's phone hold ids they fetched seconds ago —
+  triggered by someone tapping "sign in" during a round.
+- **Supersession chains accumulate.** "X superseded Y" means every reader that
+  touches an entrant id must know to follow an alias. Cheap to write, expensive
+  to live with: standings look right for a year until one query forgets.
+
+The user-facing promise — "my spot became my account" — is identical either
+way, because a user never sees an id in either model.
+
+### Still to decide
+
+- **Signing in to an *existing* account after claiming.** Clean when the account
+  is new; awkward when that account is already linked to a different entrant in
+  the same tournament — someone claiming two spots, or a shared device.
+  Recommendation is one account per tournament with a clear refusal on the
+  second attempt, but that is a decision, not an edge case to discover in
+  production.
+- **What the prompt says.** Linking adds a durable record tying a person to an
+  event, invisible to the organizer but real. The wording should say that
+  plainly rather than "save your results", and must never be pre-ticked.
+
+### Test implication
+
+`TestIdentityStaysSeparate` stays as-is: claiming while signed in must still
+never auto-link. The invariant is "never as a side effect", not "never" — a
+deliberate upgrade is a separate path and needs its own tests.
 
 ---
 
@@ -155,6 +217,14 @@ and schedules, which is a bigger model than "a code someone shares at a table".
   *does* decide at time, unlike Swiss).
 - **`/openapi.json` and `/docs` are public** on production, enumerating every
   route and schema on an otherwise hardened box.
+- **Entrant ids are sequential and semi-public.** They come from a single
+  autoincrement and the roster endpoint hands them to anyone holding a
+  tournament code, so entrant `#4,412` tells a stranger roughly how many
+  entrants the platform has ever created. Fix is a separate random public id
+  (or UUIDv7 if time-ordering is wanted) while keeping the integer primary key
+  everything already references — a v4 UUID as the PK scatters index writes for
+  no benefit at this scale. Worth doing on its own merits, unrelated to account
+  linking.
 - **Entrant tokens ride in query strings**, so the reverse proxy strips query
   params from access logs. That coupling isn't obvious from either file; a
   header would remove the dependency.
