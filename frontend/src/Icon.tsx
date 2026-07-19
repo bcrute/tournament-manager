@@ -30,6 +30,7 @@ export type IconName =
   | "hand"
   | "seat"
   | "exit"
+  | "back"
   | "plus"
   | "minus"
   | "check"
@@ -135,6 +136,7 @@ const paths: Record<IconName, React.ReactElement> = {
       <path d="M17 8.5L20.5 12 17 15.5M10 12h10.5" />
     </>
   ),
+  back: <path d="M15 5l-7 7 7 7" />,
   plus: <path d="M12 6v12M6 12h12" />,
   minus: <path d="M6 12h12" />,
   check: <path d="M5 12.5l4.5 4.5L19 7.5" />,

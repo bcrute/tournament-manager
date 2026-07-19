@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import Icon from "../Icon";
 import { Account, account, AccountError, getAccount } from "../table/account";
 import SignIn from "../table/SignIn";
 import { createTournament, TourneyError } from "./api";
@@ -83,6 +84,9 @@ export default function Host() {
           <h1>One thing first</h1>
         </header>
         <div className="sheet">
+          <button className="sheet-back" onClick={() => navigate("/table")} aria-label="Back">
+            <Icon name="back" /> Back
+          </button>
           <p className="notice">
             Hosting is the only part of the app that needs an email address. If you lose
             access to your account partway through an event, everyone at the tables is
@@ -101,9 +105,6 @@ export default function Host() {
           <button className="primary" disabled={busy || !email.includes("@")} onClick={() => void addEmail()}>
             {busy ? "…" : "Save and continue"}
           </button>
-          <Link className="ghost-link" to="/table">
-            Not now
-          </Link>
         </div>
       </main>
     );

@@ -1595,3 +1595,36 @@ button.ghost.danger {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   padding: 0.4rem 0.7rem;
 }
+
+/* Escape hatch: top-left, out of the primary action's path.
+   At the bottom it sat exactly where a thumb lands after the last field, so it
+   competed with "Sign in" for the tap it was never meant to get. Quiet by
+   default, but a full-size target and it reveals itself on hover/focus. */
+.sheet-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0.5rem 0.5rem 0.5rem 0;
+  margin: -0.25rem 0 0.25rem;
+  min-height: 44px;            /* stays tappable despite looking slight */
+  font-size: 0.9rem;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.sheet-back:focus-visible {
+  opacity: 1;
+  outline: 2px solid #5b8def;
+  outline-offset: 2px;
+  border-radius: 0.3rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sheet-back:hover {
+    opacity: 1;
+  }
+}

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Icon from "../Icon";
 import { Account, AccountError, login, signup } from "./account";
 import { looksLikeEmail, suggestUsername } from "../username";
 
@@ -59,6 +60,8 @@ export default function SignIn({
   if (codes) {
     return (
       <div className="sheet">
+        {/* deliberately no way back: the account already exists and these codes
+            are shown once. The only exit is acknowledging them. */}
         <h2>Save your recovery codes</h2>
         <p className="hint">
           <strong>These are the only way back into your account.</strong> Each code works
@@ -90,6 +93,9 @@ export default function SignIn({
 
   return (
     <div className="sheet">
+      <button className="sheet-back" onClick={onCancel} aria-label={cancelLabel}>
+        <Icon name="back" /> {cancelLabel}
+      </button>
       <h2>{mode === "login" ? "Sign in" : "Create an account"}</h2>
       {optional && (
         <>
@@ -193,9 +199,6 @@ export default function SignIn({
       {error && <p className="error">{error}</p>}
       <button className="primary" disabled={busy || !username.trim() || password.length < 8} onClick={() => void go()}>
         {busy ? "…" : mode === "login" ? "Sign in" : "Create account"}
-      </button>
-      <button className="ghost" onClick={onCancel}>
-        {cancelLabel}
       </button>
     </div>
   );
