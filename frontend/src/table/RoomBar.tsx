@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { t } from "../i18n";
 
 export default function RoomBar({
   code,
@@ -9,7 +10,7 @@ export default function RoomBar({
   onNotes,
   onRules,
   onLeave,
-  leaveLabel = "Leave game",
+  leaveLabel,
 }: {
   code: string;
   name: string;
@@ -39,7 +40,7 @@ export default function RoomBar({
       <span className="bar-name">{name}</span>
       <button
         className="bar-menu-btn"
-        aria-label="Room menu"
+        aria-label={t("menu.open")}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
@@ -54,7 +55,7 @@ export default function RoomBar({
                 onRename();
               }}
             >
-              Rename
+              ✎ {t("menu.rename")}
             </button>
           )}
           {onNotes && (
@@ -64,7 +65,7 @@ export default function RoomBar({
                 onNotes();
               }}
             >
-              Notes
+              ✎ {t("menu.notes")}
             </button>
           )}
           {onRules && (
@@ -74,7 +75,7 @@ export default function RoomBar({
                 onRules();
               }}
             >
-              Treachery rules
+              📘 {t("menu.rules")}
             </button>
           )}
           {onDisplay && (
@@ -84,7 +85,7 @@ export default function RoomBar({
                 onDisplay();
               }}
             >
-              {displayLabel ?? "Use as table display"}
+              📺 {displayLabel ?? t("menu.display")}
             </button>
           )}
           <button
@@ -94,7 +95,7 @@ export default function RoomBar({
               onLeave();
             }}
           >
-            {leaveLabel}
+            {leaveLabel ?? t("menu.leaveGame")}
           </button>
         </div>
       )}

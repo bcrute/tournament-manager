@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, RoomState } from "./api";
+import { t } from "../i18n";
 import { useDebouncedDelta } from "./useDebouncedDelta";
 
 export default function LifePanel({
@@ -40,9 +41,9 @@ export default function LifePanel({
     <div className="life-panel">
       {me.eliminated ? (
         <div className="dead-banner">
-          ☠ Eliminated
+          ☠ {t("life.eliminated")}
           <button className="ghost" onClick={() => void eliminate(true)}>
-            undo
+            {t("life.undo")}
           </button>
         </div>
       ) : (
@@ -65,10 +66,10 @@ export default function LifePanel({
         </>
       )}
 
-      {lethal && <p className="error">⚠ 21+ commander damage from one commander is lethal</p>}
+      {lethal && <p className="error">⚠ {t("life.lethalWarning")}</p>}
 
       <button className="ghost cmd-toggle" onClick={() => setCmdOpen(!cmdOpen)}>
-        {cmdOpen ? "▾ " : "▸ "}Commander damage
+        {cmdOpen ? "▾ " : "▸ "}⚔ {t("life.commanderDamage")}
       </button>
       {cmdOpen && (
         <div className="cmd-list">
@@ -79,7 +80,7 @@ export default function LifePanel({
               <div key={p.pid} className={`cmd-row${amt >= 21 ? " lethal" : ""}`}>
                 <span className="cmd-name">
                   {p.name}
-                  {p.isMe && " (your own)"}
+                  {p.isMe && ` (${t("life.ownCommander")})`}
                 </span>
                 <button onClick={() => void cmd(p.pid, -1)} disabled={amt === 0}>
                   −
@@ -95,7 +96,7 @@ export default function LifePanel({
 
       {!me.eliminated && (
         <button className="ghost die-btn" onClick={() => void eliminate(false)}>
-          ☠ I&rsquo;m dead
+          ☠ {t("life.imDead")}
         </button>
       )}
     </div>

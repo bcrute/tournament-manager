@@ -235,7 +235,33 @@ attacked, and the decision taken for each.
 
 ---
 
-## 5. Clients
+## 5. Interface language
+
+Two rules, in order:
+
+1. **Prefer a symbol to a sentence.** Every string is a translation liability;
+   a symbol that needs no translation can't be mistranslated. Life ±, ☠, 👑, ⏱
+   and ⚔ carry themselves.
+2. **Where words are needed, translate them.** Icon-only interfaces trade one
+   ambiguity for another — 🚩 reads as report, penalty *or* flag-for-review
+   depending on who's looking. Icon plus a translated label is what actually
+   removes a language barrier.
+
+Calling an official uses a **raised hand ✋**, not a referee's shirt: striped
+officiating jerseys read as "referee" mainly in North American and European
+sports, whereas raising your hand is literally what a player does at a Magic
+table to call a judge. The icon mirrors the physical action.
+
+Icons ship as SVGs we control rather than emoji — emoji render differently per
+platform, and several carry skin-tone or gender variants we'd be choosing on a
+user's behalf. Every icon-only control still carries a translated `aria-label`;
+a screen reader can't infer a picture.
+
+Translations come from people who speak the language. A machine-translated UI is
+its own kind of barrier, and a wrong string under time pressure at a tournament
+is worse than an English one.
+
+## 6. Clients
 
 **Organizer management is desktop-first.** Pairing review, re-rolls, result
 overrides, timer control and standings all want screen area and a pointer;
@@ -244,7 +270,7 @@ be fast under pressure at a live event. Player and display clients stay
 mobile-first as they are today. Native/mobile management comes later — the API
 boundary means it's a client, not a rewrite.
 
-## 6. Settings
+## 7. Settings
 
 Everything contested is configurable rather than decided for the organizer.
 Defaults follow official rules where they exist, and prevailing Commander
@@ -303,7 +329,7 @@ this is a genuine fairness knob rather than cosmetics.
 | `staffRoles` | `off` · `judges` (result entry, timer, official calls; no re-pairing or deletion) | `judges` |
 | `allowOfficialCalls` | `on` · `off` (small leagues with no judge) | `on` |
 
-## 7. Still open
+## 8. Still open
 
 - Whether `rounds: auto` uses the usual Swiss table (log2 of entrants) or a
   Commander-specific curve — worth checking against real event structures.

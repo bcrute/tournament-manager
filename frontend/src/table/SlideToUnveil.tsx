@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { t } from "../i18n";
 
 const THUMB = 56;
 
@@ -54,7 +55,7 @@ export default function SlideToUnveil({ onUnveil }: { onUnveil: () => Promise<vo
       onContextMenu={(e) => e.preventDefault()}
     >
       <div className="slide-fill" style={{ width: x + THUMB }} />
-      <span className="slide-label">{busy ? "Unveiling…" : "Slide to unveil to the table"}</span>
+      <span className="slide-label">{busy ? t("card.unveiling") : t("card.slideToUnveil")}</span>
       <div
         className={`slide-thumb${dragging ? " dragging" : ""}`}
         style={{ transform: `translateX(${x}px)` }}

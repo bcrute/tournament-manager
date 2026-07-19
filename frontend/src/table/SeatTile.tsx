@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { PlayerInfo } from "./api";
+import { t } from "../i18n";
 import { SeatSlot, seatFonts } from "./seats";
 
 /**
@@ -75,12 +76,12 @@ export default function SeatTile({
         <button
           className={`seat-half dec${flash === -1 ? " flash" : ""}`}
           data-delta="-1"
-          aria-label={`${p.name} minus 1`}
+          aria-label={t("life.minus", { name: p.name, n: 1 })}
         />
         <button
           className={`seat-half inc${flash === 1 ? " flash" : ""}`}
           data-delta="1"
-          aria-label={`${p.name} plus 1`}
+          aria-label={t("life.plus", { name: p.name, n: 1 })}
         />
 
         {turn !== undefined && (

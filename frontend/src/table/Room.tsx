@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, ApiError, GameMode, PlayerInfo, RoomState } from "./api";
+import { t } from "../i18n";
 import { createBackGuard } from "./backGuard";
 import { CarouselEntry, carouselEntries, clampIndex, indexOfPid, step } from "./carousel";
 import { clearSession, loadSession } from "./session";
@@ -119,7 +120,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
     const p = prev.current;
     if (p && p.status === "playing" && state.room.status === "playing") {
       for (const rp of revealed) {
-        if (!p.pids.has(rp.pid)) pushToast(`⚔ ${rp.name} has revealed their identity — tap to view`, rp.pid);
+        if (!p.pids.has(rp.pid)) pushToast(`⚔ ${t("status.revealed", { name: rp.name })}`, rp.pid);
       }
     }
     if (p && p.status === "lobby" && state.room.status === "playing") {
@@ -132,8 +133,8 @@ function RoomInner({ code, token }: { code: string; token: string }) {
       const isLeader = state.room.mode === "treachery";
       pushToast(
         state.room.firstPid === state.me.pid
-          ? `🎲 You go first!`
-          : `🎲 ${who}${isLeader ? " (Leader)" : ""} goes first`,
+          ? `🎲 ${t("status.youGoFirst")}`
+          : `🎲 ${t("status.goesFirst", { name: `${who}${isLeader ? " (Leader)" : ""}` })}`,
       );
     }
     prev.current = { status: state.room.status, pids, first: state.room.firstPid };
@@ -295,10 +296,10 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         ))}
       </div>
       {zoomPlayer && <CardZoom p={zoomPlayer} onClose={() => setZoomPid(null)} />}
-      {stale && <div className="stale-pill">reconnecting…</div>}
+      {stale && <div className="stale-pill">{t("status.reconnecting")}</div>}
       {countdown !== null && countdown > 0 && (
         <div className="countdown-banner">
-          Game over — returning to the room in {countdown}…
+          {t("status.gameOver", { n: countdown })}
         </div>
       )}
 
@@ -349,14 +350,14 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         <nav className="bottom-nav" onPointerDown={(e) => e.stopPropagation()}>
           {treachery && (
             <button className={activeTab === "card" ? "active" : ""} onClick={() => setTab("card")}>
-              🎭 Card
+              🎭 {t("nav.card")}
             </button>
           )}
           <button className={activeTab === "life" ? "active" : ""} onClick={() => setTab("life")}>
-            ♥ Life
+            ♥ {t("nav.life")}
           </button>
           <button className={activeTab === "table" ? "active" : ""} onClick={() => setTab("table")}>
-            👥 Table
+            👥 {t("nav.table")}
           </button>
         </nav>
       )}
@@ -567,14 +568,14 @@ function RoleScreen({
       onContextMenu={(e) => e.preventDefault()}
     >
       <div className="carousel-label">
-        {entry?.isMe ? "Your card" : `${entry?.name}'s card`}
-        {showFace && card?.artist && <span className="art-credit">art by {card.artist}</span>}
+        {entry?.isMe ? t("card.yours") : t("card.theirs", { name: entry?.name ?? "" })}
+        {showFace && card?.artist && <span className="art-credit">{t("card.artBy", { artist: card.artist })}</span>}
       </div>
 
       {showFace && card ? (
         <img className="role-card" src={card.image} alt="" draggable={false} />
       ) : (
-        <CardBack label={me.name} hint="hold to peek" />
+        <CardBack label={me.name} hint={t("card.holdToPeek")} />
       )}
 
       <div className="role-footer" onPointerDown={(e) => e.stopPropagation()}>
@@ -613,7 +614,7 @@ function RoleScreen({
           </div>
         ) : me.revealed && card ? (
           <div className="unveiled-banner">
-            Unveiled — {card.name} ({card.role})
+            {t("card.unveiledAs", { name: card.name, role: card.role })}
           </div>
         ) : (
           <SlideToUnveil onUnveil={onUnveil} />
@@ -640,7 +641,7 @@ function CardZoom({ p, onClose }: { p: PlayerInfo; onClose: () => void }) {
       <div className="zoom-banner">
         This is <strong>{p.name}</strong>
         {p.isMe ? " (you)" : ""}&rsquo;s role card — {p.card.name} ({p.card.role})
-        {p.card.artist && <span className="art-credit">art by {p.card.artist}</span>}
+        {p.card.artist && <span className="art-credit">{t("card.artBy", { artist: p.card.artist })}</span>}
       </div>
       <img src={p.card.image} alt={p.card.name} draggable={false} />
       {p.card.rulings.length > 0 && (
@@ -653,7 +654,7 @@ function CardZoom({ p, onClose }: { p: PlayerInfo; onClose: () => void }) {
           </ul>
         </div>
       )}
-      <span className="zoom-hint">tap to close</span>
+      <span className="zoom-hint">{t("card.tapToClose")}</span>
     </div>
   );
 }
