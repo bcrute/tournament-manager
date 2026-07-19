@@ -262,7 +262,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
       {notesOpen && (
         <NotesSheet
           code={code}
-          gameNo={Math.max(1, state.room.gameNo ?? 1)}
+          gameNo={state.room.gameNo}
           onClose={() => setNotesOpen(false)}
           onNeedsAccount={() => {
             setNotesOpen(false);

@@ -226,3 +226,39 @@ class TestNotes:
         fresh.put(f"/api/account/notes/{code}/2", json={"text": "pod was brutal"})
         notes = fresh.get("/api/account/notes").json()["notes"]
         assert any(n["roomCode"] == code and n["gameNo"] == 2 for n in notes)
+
+
+class TestHistoryNotesLink:
+    def test_note_for_the_current_game_shows_in_history(self, fresh):
+        """Regression: notes were keyed to a clamped game number while history
+        looked up the room's real one, so saved notes never appeared."""
+        signup(fresh, "vera")
+        room = fresh.post("/api/table/rooms", json={"name": "vera", "mode": "life"}).json()
+        code, token = room["code"], room["playerToken"]
+        state = fresh.get(f"/api/table/rooms/{code}/me", headers={"X-Player-Token": token}).json()
+        game_no = state["room"]["gameNo"]  # 0 while still in the lobby
+        fresh.put(f"/api/account/notes/{code}/{game_no}", json={"text": "pre-game thoughts"})
+        game = next(g for g in fresh.get("/api/account/history").json()["games"] if g["roomCode"] == code)
+        assert game["note"] == "pre-game thoughts"
+
+    def test_note_follows_the_game_number_after_a_deal(self, fresh):
+        signup(fresh, "wes")
+        room = fresh.post("/api/table/rooms", json={"name": "wes", "mode": "life"}).json()
+        code, token = room["code"], room["playerToken"]
+        hdr = {"X-Player-Token": token}
+        fresh.post(f"/api/table/rooms/{code}/start", headers=hdr)
+        after = fresh.get(f"/api/table/rooms/{code}/me", headers=hdr).json()["room"]["gameNo"]
+        assert after == 1
+        fresh.put(f"/api/account/notes/{code}/{after}", json={"text": "game one"})
+        game = next(g for g in fresh.get("/api/account/history").json()["games"] if g["roomCode"] == code)
+        assert game["note"] == "game one"
+
+    def test_a_note_from_a_different_game_does_not_bleed_in(self, fresh):
+        signup(fresh, "xena")
+        room = fresh.post("/api/table/rooms", json={"name": "xena", "mode": "life"}).json()
+        code, token = room["code"], room["playerToken"]
+        hdr = {"X-Player-Token": token}
+        fresh.put(f"/api/account/notes/{code}/0", json={"text": "lobby note"})
+        fresh.post(f"/api/table/rooms/{code}/start", headers=hdr)
+        game = next(g for g in fresh.get("/api/account/history").json()["games"] if g["roomCode"] == code)
+        assert game["note"] is None  # room is on game 1 now; the game 0 note stays put
