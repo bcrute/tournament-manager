@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assignSeats, ringOrder, seatGrid, turnOrder, turnPositions } from "./seats";
+import { assignSeats, ringOrder, seatFonts, seatGrid, turnOrder, turnPositions } from "./seats";
 
 const P = (pid: number) => ({ pid, name: `p${pid}` });
 
@@ -60,6 +60,37 @@ describe("seatGrid", () => {
         expect(s.row).toBeLessThanOrEqual(g.rows);
       }
     }
+  });
+});
+
+describe("seatFonts", () => {
+  it("scales the life total with the card, not the viewport", () => {
+    const small = seatFonts(200, 400);
+    const big = seatFonts(500, 900);
+    expect(big.life).toBeGreaterThan(small.life);
+    expect(small.life).toBeCloseTo(200 * 0.42);
+  });
+
+  it("uses the narrow side so digits always fit", () => {
+    expect(seatFonts(300, 900).life).toBeCloseTo(seatFonts(300, 400).life);
+  });
+
+  it("keeps a readable floor for tiny cards", () => {
+    const f = seatFonts(10, 10);
+    expect(f.life).toBe(24);
+    expect(f.name).toBe(11);
+    expect(f.cmd).toBe(9);
+  });
+
+  it("survives an unmeasured card", () => {
+    const f = seatFonts(0, 0);
+    expect(f.life).toBe(24);
+    expect(Number.isFinite(f.cmdBar)).toBe(true);
+  });
+
+  it("reserves a commander bar proportional to its text", () => {
+    const f = seatFonts(400, 600);
+    expect(f.cmdBar).toBeCloseTo(f.cmd * 2.4);
   });
 });
 

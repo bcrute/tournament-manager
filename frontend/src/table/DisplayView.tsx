@@ -26,6 +26,17 @@ export default function DisplayView({
   const [localOrder, setLocalOrder] = useState<number[] | null>(null);
   const [dragPid, setDragPid] = useState<number | null>(null);
   const moved = useRef(false);
+  // brief tap feedback; :active can't be used because the seat captures the pointer
+  const [flash, setFlash] = useState<{ pid: number; delta: number } | null>(null);
+  const flashTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => () => window.clearTimeout(flashTimer.current), []);
+
+  function flashHalf(pid: number, delta: number) {
+    setFlash({ pid, delta });
+    window.clearTimeout(flashTimer.current);
+    flashTimer.current = window.setTimeout(() => setFlash(null), 180);
+  }
 
   const serverOrder = state.players.map((p) => p.pid);
   const order = localOrder ?? serverOrder;
@@ -68,7 +79,10 @@ export default function DisplayView({
     if (!moved.current) {
       // a tap, not a drag: which half of the card was hit?
       const delta = halfDelta(document.elementFromPoint(e.clientX, e.clientY));
-      if (delta !== null) await adjust(pid, delta);
+      if (delta !== null) {
+        flashHalf(pid, delta);
+        await adjust(pid, delta);
+      }
       return;
     }
     const pids = (localOrder ?? serverOrder).filter((p) => byPid.has(p));
@@ -138,6 +152,7 @@ export default function DisplayView({
               turn={state.room.firstPid !== null ? turns.get(player.pid) : undefined}
               nameOf={nameOf}
               dragging={dragPid === player.pid}
+              flash={flash?.pid === player.pid ? flash.delta : undefined}
               onDragStart={(e) => onDragStart(e, player.pid)}
               onDragMove={onDragMove}
               onDragEnd={(e) => void onDragEnd(e, player.pid)}

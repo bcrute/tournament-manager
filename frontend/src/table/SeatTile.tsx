@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { PlayerInfo } from "./api";
-import { SeatSlot } from "./seats";
+import { SeatSlot, seatFonts } from "./seats";
 
 /**
  * One player's seat on the table display, rotated to face them.
@@ -16,6 +16,7 @@ export default function SeatTile({
   turn,
   nameOf,
   dragging,
+  flash,
   onDragStart,
   onDragMove,
   onDragEnd,
@@ -26,6 +27,7 @@ export default function SeatTile({
   turn?: number;
   nameOf: Map<string, string>;
   dragging: boolean;
+  flash?: number;
   onDragStart: (e: React.PointerEvent) => void;
   onDragMove: (e: React.PointerEvent) => void;
   onDragEnd: (e: React.PointerEvent) => void;
@@ -47,6 +49,7 @@ export default function SeatTile({
 
   const turned = slot.rotate !== 0;
   const inner = turned ? { width: size.h, height: size.w } : { width: size.w, height: size.h };
+  const font = seatFonts(inner.width, inner.height);
   const cmd = Object.entries(p.cmdDamage);
 
   return (
@@ -67,8 +70,16 @@ export default function SeatTile({
         className={`seat-card${p.eliminated ? " dead" : ""}${p.left ? " gone" : ""}${dragging ? " dragging" : ""}`}
         style={{ ...inner, transform: `rotate(${slot.rotate}deg)` }}
       >
-        <button className="seat-half dec" data-delta="-1" aria-label={`${p.name} minus 1`} />
-        <button className="seat-half inc" data-delta="1" aria-label={`${p.name} plus 1`} />
+        <button
+          className={`seat-half dec${flash === -1 ? " flash" : ""}`}
+          data-delta="-1"
+          aria-label={`${p.name} minus 1`}
+        />
+        <button
+          className={`seat-half inc${flash === 1 ? " flash" : ""}`}
+          data-delta="1"
+          aria-label={`${p.name} plus 1`}
+        />
 
         {turn !== undefined && (
           <span className={`seat-turn${first ? " first" : ""}`} title="turn order">
@@ -76,16 +87,22 @@ export default function SeatTile({
           </span>
         )}
 
-        <div className="seat-face">
-          <span className="seat-name">
+        <div className="seat-face" style={{ bottom: font.cmdBar }}>
+          <span className="seat-name" style={{ fontSize: font.name }}>
             {first && "👑 "}
             {p.name}
             {p.card ? ` · ${p.card.role}` : ""}
           </span>
-          <span className="seat-life">{p.eliminated ? "☠" : (p.life ?? "—")}</span>
+          <span className="seat-life" style={{ fontSize: font.life }}>
+            {p.eliminated ? "☠" : (p.life ?? "—")}
+          </span>
         </div>
 
-        <div className="seat-cmd" onPointerDown={(e) => e.stopPropagation()}>
+        <div
+          className="seat-cmd"
+          style={{ fontSize: font.cmd, maxHeight: font.cmdBar }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
           {cmd.length === 0 ? (
             <span className="cmd-none">no commander damage</span>
           ) : (

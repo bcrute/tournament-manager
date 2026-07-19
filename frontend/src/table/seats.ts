@@ -52,6 +52,29 @@ export function assignSeats<T>(players: T[]): Array<{ player: T; slot: SeatSlot 
   return players.map((player, i) => ({ player, slot: slots[i] }));
 }
 
+export interface SeatFonts {
+  life: number;
+  name: number;
+  cmd: number;
+  cmdBar: number;
+}
+
+/**
+ * Type sizes for a seat card, scaled to the card itself rather than the
+ * viewport — a phone used as the display has small viewport units but plenty
+ * of room inside each card, and the life total has to read across a table.
+ */
+export function seatFonts(w: number, h: number): SeatFonts {
+  const base = Math.max(0, Math.min(w, h));
+  const cmd = Math.max(9, base * 0.075);
+  return {
+    life: Math.max(24, base * 0.42),
+    name: Math.max(11, base * 0.1),
+    cmd,
+    cmdBar: cmd * 2.4,
+  };
+}
+
 /**
  * Walk the seats the way you'd walk the table: down the left edge, across the
  * bottom, then back up the right edge. That is the physical circle, which is

@@ -496,8 +496,17 @@
   right: 0;
 }
 
-.seat-half:active {
-  background: rgba(201, 168, 76, 0.13);
+/* the seat captures the pointer for dragging, so :active would stick on;
+   feedback is a short, explicitly-cleared flash instead */
+.seat-half {
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  transition: background 0.18s ease-out;
+}
+
+.seat-half.flash {
+  background: rgba(201, 168, 76, 0.18);
+  transition: none;
 }
 
 /* turn position, implied by where the seat sits at the table */
@@ -527,7 +536,8 @@
 
 .seat-face {
   position: absolute;
-  inset: 0 0 1.6rem 0;
+  inset: 0 0 auto 0;
+  top: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -538,7 +548,6 @@
 
 .seat-name {
   color: #b8b0c8;
-  font-size: clamp(0.7rem, 2.2vmin, 1.05rem);
   max-width: 92%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -546,7 +555,6 @@
 }
 
 .seat-life {
-  font-size: clamp(2rem, 9vmin, 5rem);
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -565,9 +573,7 @@
   padding: 0.2rem 0.3rem;
   background: rgba(10, 7, 16, 0.55);
   border-top: 1px solid #241c33;
-  font-size: clamp(0.55rem, 1.6vmin, 0.75rem);
   color: #8a7fa0;
-  max-height: 2.6rem;
   overflow: hidden;
 }
 
