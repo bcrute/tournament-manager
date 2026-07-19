@@ -59,6 +59,12 @@ _db.executescript(
         left_game INTEGER NOT NULL DEFAULT 0,
         joined_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
+    CREATE TABLE IF NOT EXISTS bans (
+        subject TEXT PRIMARY KEY,   -- salted hash of a client IP, never the IP
+        until INTEGER NOT NULL,
+        strikes INTEGER NOT NULL DEFAULT 0,
+        last_strike INTEGER
+    );
     CREATE TABLE IF NOT EXISTS cmd_damage (
         room_code TEXT NOT NULL,
         defender_id INTEGER NOT NULL,
@@ -373,6 +379,15 @@ async def broadcast(code: str):
 @router.websocket("/ws/{code}")
 async def ws_room(ws: WebSocket, code: str):
     code = code.upper()
+    # HTTP middleware doesn't see websockets, so limit connections here
+    from .limits import client_id, client_ip  # imported late to avoid a cycle
+
+    limiter = getattr(ws.app.state, "limiter", None)
+    if limiter is not None:
+        allowed, _ = limiter.check(client_id(client_ip(ws)), "socket")
+        if not allowed:
+            await ws.close(code=1013)  # try again later
+            return
     await ws.accept()
     async with _ws_lock:
         _ws_rooms.setdefault(code, {})[ws] = None

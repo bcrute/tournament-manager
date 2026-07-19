@@ -1,12 +1,38 @@
-from fastapi import FastAPI
+import os
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .limits import RateLimiter, classify, client_id, client_ip
+from .table import q
 from .table import router as table_router
 
 app = FastAPI(title="mtg")
 
+# Counters are per-process; a second worker would need a shared store.
+limiter = RateLimiter(db=q) if os.environ.get("TABLE_RATELIMIT", "on") != "off" else None
+app.state.limiter = limiter  # websocket handler reads it from here
+
 app.include_router(table_router, prefix="/api/table")
+
+
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    """Limit API traffic per client. Static assets are left alone — they are
+    cached by browsers and cheap to serve."""
+    if limiter is None or not request.url.path.startswith("/api/"):
+        return await call_next(request)
+    cid = client_id(client_ip(request))
+    allowed, retry = limiter.check(cid, classify(request.url.path, request.method))
+    if not allowed:
+        return JSONResponse(
+            {"detail": "too many requests — slow down"},
+            status_code=429,
+            headers={"Retry-After": str(retry)},
+        )
+    return await call_next(request)
 
 
 @app.get("/api/health")
