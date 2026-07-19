@@ -1,5 +1,10 @@
 # Tournaments — research & roadmap
 
+> Unscheduled thoughts — paid registration, an event directory, and other
+> things not committed to — live in [`ideas.md`](./ideas.md), deliberately
+> apart from this roadmap.
+
+
 *Written 2026-07-18. Planning only; nothing here is implemented.*
 
 Goal: let an organizer run a tournament that spans several rooms, moving players
