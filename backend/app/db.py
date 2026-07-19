@@ -5,6 +5,7 @@ all reach the same database without importing each other.
 """
 
 import os
+import secrets
 import sqlite3
 import threading
 
@@ -209,6 +210,19 @@ _ensure_column("entrants", "external_ref", "TEXT")
 _ensure_column("tournaments", "game", "TEXT NOT NULL DEFAULT 'mtg'")
 # extra turns left after time was called; NULL means time hasn't been called
 _ensure_column("pods", "turns_remaining", "INTEGER")
+# The id shown to clients. The integer primary key stays internal: it is
+# sequential, and the roster is public to anyone holding a tournament code, so
+# exposing it would disclose roughly how many entrants have ever been created.
+_ensure_column("entrants", "public_id", "TEXT")
+for _row in _db.execute("SELECT id FROM entrants WHERE public_id IS NULL").fetchall():
+    _db.execute(
+        "UPDATE entrants SET public_id = ? WHERE id = ?",
+        (secrets.token_urlsafe(8), _row[0]),
+    )
+_db.execute(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_entrants_public ON entrants(public_id) "
+    "WHERE public_id IS NOT NULL"
+)
 _ensure_column("players", "eliminated_at", "INTEGER")  # ordering for tournament placement
 # indexes on migrated columns must come after the columns exist
 _db.execute(

@@ -74,6 +74,33 @@ DEFAULT_SETTINGS = defaults_for("mtg")
 # ---- helpers ----
 
 
+def new_public_id() -> str:
+    """Client-facing entrant id. Random, so it carries no ordering and leaks no
+    count — the roster is readable by anyone holding the tournament code."""
+    return secrets.token_urlsafe(8)
+
+
+def resolve_entrant(code: str, public_id) -> "object | None":
+    """Public id to row. Everything internal keys on the integer primary key;
+    only the boundary speaks public ids."""
+    if public_id is None:
+        return None
+    return q(
+        "SELECT * FROM entrants WHERE tournament_code = ? AND public_id = ?",
+        (code, str(public_id)),
+    ).fetchone()
+
+
+def public_ids(code: str) -> dict:
+    """Internal id to public id for one tournament, in a single query."""
+    return {
+        r["id"]: r["public_id"]
+        for r in q(
+            "SELECT id, public_id FROM entrants WHERE tournament_code = ?", (code,)
+        ).fetchall()
+    }
+
+
 def settings_of(row) -> dict:
     game = row["game"] if "game" in row.keys() else None
     return {**defaults_for(game), **json.loads(row["settings"] or "{}")}
@@ -139,7 +166,8 @@ def standings_rows(code: str):
         opp = sum(points.get(o, 0) for o in opponents.get(e["id"], ()))
         out.append(
             {
-                "entrantId": e["id"],
+                "entrantId": e["id"],          # internal; translated at the boundary
+                "publicId": e["public_id"],
                 "name": e["name"],
                 "points": points.get(e["id"], 0),
                 "opponentPoints": opp,
@@ -185,7 +213,7 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
         if pods:
             marks = ",".join("?" * len(pods))
             seats = q(
-                f"SELECT s.*, e.name FROM pod_seats s JOIN entrants e ON e.id = s.entrant_id "
+                f"SELECT s.*, e.name, e.public_id FROM pod_seats s JOIN entrants e ON e.id = s.entrant_id "
                 f"WHERE s.pod_id IN ({marks}) ORDER BY s.pod_id, s.seat",
                 tuple(p["id"] for p in pods),
             ).fetchall()
@@ -205,7 +233,7 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
             "extensionSeconds": p["extension_seconds"],
             "turnsRemaining": p["turns_remaining"],
             "seats": [
-                {"seat": s["seat"], "entrantId": s["entrant_id"], "name": s["name"],
+                {"seat": s["seat"], "entrantId": s["public_id"], "name": s["name"],
                  "place": s["place"], "points": s["points"]}
                 for s in members
             ],
@@ -255,11 +283,17 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
         "pods": pod_views,
         "myPod": my_pod,
         "me": (
-            {"entrantId": viewer_entrant["id"], "name": viewer_entrant["name"]}
+            {"entrantId": viewer_entrant["public_id"], "name": viewer_entrant["name"]}
             if viewer_entrant
             else None
         ),
-        "standings": standings_rows(t["code"]),
+        # standings carry the internal id for callers like pairing; the wire
+        # only ever sees the public one, and not both
+        "standings": [
+            {**{k: v for k, v in row.items() if k != "publicId"},
+             "entrantId": row["publicId"]}
+            for row in standings_rows(t["code"])
+        ],
         "calls": calls,
         "isOrganizer": organizer,
     }
@@ -282,7 +316,7 @@ class EntrantsBody(BaseModel):
 
 
 class ClaimBody(BaseModel):
-    entrantId: int
+    entrantId: str
     wizardsEmail: str | None = None
 
 
@@ -416,19 +450,23 @@ def add_entrants(code: str, body: EntrantsBody, request: Request):
             # re-running an import must find the same person, not clone them.
             # Matching on name would make display names identity.
             existing = q(
-                "SELECT id, name FROM entrants WHERE tournament_code = ? AND external_ref = ?",
+                "SELECT id, public_id, name FROM entrants WHERE tournament_code = ? AND external_ref = ?",
                 (t["code"], ref),
             ).fetchone()
             if existing:
                 if existing["name"] != name:  # they renamed upstream; follow it
                     q("UPDATE entrants SET name = ? WHERE id = ?", (name, existing["id"]))
-                matched.append({"entrantId": existing["id"], "name": name, "externalRef": ref})
+                matched.append(
+                    {"entrantId": existing["public_id"], "name": name, "externalRef": ref}
+                )
                 continue
-        cur = q(
-            "INSERT INTO entrants (tournament_code, name, external_ref) VALUES (?, ?, ?)",
-            (t["code"], name, ref),
+        pub = new_public_id()
+        q(
+            "INSERT INTO entrants (tournament_code, name, external_ref, public_id) "
+            "VALUES (?, ?, ?, ?)",
+            (t["code"], name, ref, pub),
         )
-        added.append({"entrantId": cur.lastrowid, "name": name, "externalRef": ref})
+        added.append({"entrantId": pub, "name": name, "externalRef": ref})
     touch(t["code"])
     return {"added": added, "matched": matched}
 
@@ -438,7 +476,7 @@ def roster(code: str):
     """Public by design: a player scans the code and picks their name."""
     t = get_tournament(code)
     rows = q(
-        "SELECT id, name, token IS NOT NULL AS claimed, dropped_at FROM entrants "
+        "SELECT public_id, name, token IS NOT NULL AS claimed, dropped_at FROM entrants "
         "WHERE tournament_code = ? ORDER BY name COLLATE NOCASE",
         (t["code"],),
     ).fetchall()
@@ -446,7 +484,7 @@ def roster(code: str):
         "name": t["name"],
         "status": t["status"],
         "entrants": [
-            {"entrantId": r["id"], "name": r["name"], "claimed": bool(r["claimed"]),
+            {"entrantId": r["public_id"], "name": r["name"], "claimed": bool(r["claimed"]),
              "dropped": r["dropped_at"] is not None}
             for r in rows
         ],
@@ -458,10 +496,7 @@ def claim(code: str, body: ClaimBody):
     """Claim a seat by id — names may repeat, ids don't. First claim wins; the
     organizer can release one if somebody taps the wrong name."""
     t = get_tournament(code)
-    row = q(
-        "SELECT * FROM entrants WHERE id = ? AND tournament_code = ?",
-        (body.entrantId, t["code"]),
-    ).fetchone()
+    row = resolve_entrant(t["code"], body.entrantId)
     if not row:
         raise HTTPException(404, "not on this roster")
     if row["token"]:
@@ -485,26 +520,30 @@ def claim(code: str, body: ClaimBody):
         (token, wiz, row["id"]),
     )
     touch(t["code"])
-    return {"entrantToken": token, "entrantId": row["id"], "name": row["name"]}
+    return {"entrantToken": token, "entrantId": row["public_id"], "name": row["name"]}
 
 
 @router.post("/{code}/entrants/{entrant_id}/release")
-def release_claim(code: str, entrant_id: int, request: Request):
+def release_claim(code: str, entrant_id: str, request: Request):
     t, _ = require_organizer(code, request)
+    row = resolve_entrant(t["code"], entrant_id)
+    if not row:
+        raise HTTPException(404, "no such entrant")
     q(
-        "UPDATE entrants SET token = NULL WHERE id = ? AND tournament_code = ?",
-        (entrant_id, t["code"]),
+        "UPDATE entrants SET token = NULL WHERE id = ?", (row["id"],),
     )
     return {"ok": True}
 
 
 @router.post("/{code}/entrants/{entrant_id}/undrop")
-def undrop_entrant(code: str, entrant_id: int, request: Request):
+def undrop_entrant(code: str, entrant_id: str, request: Request):
     """People come back — a drop entered by mistake shouldn't end someone's day."""
     t, _ = require_organizer(code, request)
+    row = resolve_entrant(t["code"], entrant_id)
+    if not row:
+        raise HTTPException(404, "no such entrant")
     q(
-        "UPDATE entrants SET dropped_at = NULL WHERE id = ? AND tournament_code = ?",
-        (entrant_id, t["code"]),
+        "UPDATE entrants SET dropped_at = NULL WHERE id = ?", (row["id"],),
     )
     touch(t["code"])
     return {"ok": True}
@@ -525,11 +564,13 @@ def end_tournament(code: str, request: Request):
 
 
 @router.post("/{code}/entrants/{entrant_id}/drop")
-def drop_entrant(code: str, entrant_id: int, request: Request):
+def drop_entrant(code: str, entrant_id: str, request: Request):
     t, _ = require_organizer(code, request)
+    row = resolve_entrant(t["code"], entrant_id)
+    if not row:
+        raise HTTPException(404, "no such entrant")
     q(
-        "UPDATE entrants SET dropped_at = unixepoch() WHERE id = ? AND tournament_code = ?",
-        (entrant_id, t["code"]),
+        "UPDATE entrants SET dropped_at = unixepoch() WHERE id = ?", (row["id"],),
     )
     return {"ok": True}
 
@@ -702,7 +743,14 @@ def report_result(code: str, pod_id: int, body: ResultBody, request: Request):
     ).fetchone()["v"]
     if body.expectedVersion is not None and body.expectedVersion != current:
         raise HTTPException(409, "someone else recorded a result — reload before overriding")
-    version = _write_result(t, pod, body.kind, body.places, "organizer", body.note)
+    # translate the wire's public ids into the internal ones _write_result uses
+    places = []
+    for entry in body.places:
+        row = resolve_entrant(t["code"], entry.get("entrantId"))
+        if not row:
+            raise HTTPException(400, f"no entrant {entry.get('entrantId')} in this tournament")
+        places.append({"entrantId": row["id"], "place": entry.get("place")})
+    version = _write_result(t, pod, body.kind, places, "organizer", body.note)
     touch(t["code"])
     return {"ok": True, "version": version}
 

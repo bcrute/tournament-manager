@@ -264,7 +264,8 @@ class TestResults:
         client.post(f"/api/tournament/{code}/rounds", json={})
         pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
         seats = q(
-            "SELECT entrant_id, room_token FROM pod_seats WHERE pod_id = ? ORDER BY seat",
+            "SELECT s.entrant_id, s.room_token, e.public_id FROM pod_seats s "
+            "JOIN entrants e ON e.id = s.entrant_id WHERE s.pod_id = ? ORDER BY s.seat",
             (pod["podId"],),
         ).fetchall()
         room = pod["roomCode"]
@@ -279,7 +280,7 @@ class TestResults:
             )
         standings = client.get(f"/api/tournament/{code}").json()["standings"]
         top = standings[0]
-        assert top["entrantId"] == seats[0]["entrant_id"]
+        assert top["entrantId"] == seats[0]["public_id"]
         assert top["points"] == 3
         result = q(
             "SELECT * FROM pod_results WHERE pod_id = ? ORDER BY version DESC LIMIT 1", (pod["podId"],)
@@ -293,13 +294,14 @@ class TestResults:
         client.post(f"/api/tournament/{code}/rounds", json={})
         pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
         seats = q(
-            "SELECT entrant_id, room_token FROM pod_seats WHERE pod_id = ? ORDER BY seat",
+            "SELECT s.entrant_id, s.room_token, e.public_id FROM pod_seats s "
+            "JOIN entrants e ON e.id = s.entrant_id WHERE s.pod_id = ? ORDER BY s.seat",
             (pod["podId"],),
         ).fetchall()
         client.post(
             f"/api/tournament/{code}/pods/{pod['podId']}/result",
             json={"kind": "draw",
-                  "places": [{"entrantId": s["entrant_id"], "place": 1} for s in seats],
+                  "places": [{"entrantId": s["public_id"], "place": 1} for s in seats],
                   "note": "time called"},
         )
         room = pod["roomCode"]
@@ -624,7 +626,8 @@ class TestTimeCalled:
         add(client, code, ["t5", "t6", "t7", "t8"])
         client.post(f"/api/tournament/{code}/rounds", json={})
         pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
-        seats = q("SELECT entrant_id, room_token FROM pod_seats WHERE pod_id = ? ORDER BY seat",
+        seats = q("SELECT s.entrant_id, s.room_token, e.public_id FROM pod_seats s "
+                  "JOIN entrants e ON e.id = s.entrant_id WHERE s.pod_id = ? ORDER BY s.seat",
                   (pod["podId"],)).fetchall()
         lives = [12, 30, 30, 5]
         for s, life in zip(seats, lives):
@@ -634,7 +637,7 @@ class TestTimeCalled:
         _play_extra_turns(client, code, pod["podId"])
         after = client.get(f"/api/tournament/{code}").json()["pods"][0]
         place = {s["entrantId"]: s["place"] for s in after["seats"]}
-        by_entrant = {s["entrant_id"]: life for s, life in zip(seats, lives)}
+        by_entrant = {s["public_id"]: life for s, life in zip(seats, lives)}
         # the two players on 30 tie for first; 12 then 5 follow
         top = [e for e, l in by_entrant.items() if l == 30]
         assert place[top[0]] == place[top[1]] == 1
@@ -647,7 +650,8 @@ class TestTimeCalled:
         add(client, code, ["t9", "t10", "t11", "t12"])
         client.post(f"/api/tournament/{code}/rounds", json={})
         pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
-        seats = q("SELECT entrant_id, room_token FROM pod_seats WHERE pod_id = ? ORDER BY seat",
+        seats = q("SELECT s.entrant_id, s.room_token, e.public_id FROM pod_seats s "
+                  "JOIN entrants e ON e.id = s.entrant_id WHERE s.pod_id = ? ORDER BY s.seat",
                   (pod["podId"],)).fetchall()
         # seat 4 is dead despite a high life total; it must not outrank the living
         q("UPDATE players SET life = 1 WHERE token = ?", (seats[0]["room_token"],))
@@ -657,7 +661,7 @@ class TestTimeCalled:
         _play_extra_turns(client, code, pod["podId"])
         after = client.get(f"/api/tournament/{code}").json()["pods"][0]
         place = {s["entrantId"]: s["place"] for s in after["seats"]}
-        assert place[seats[0]["entrant_id"]] < place[seats[3]["entrant_id"]]
+        assert place[seats[0]["public_id"]] < place[seats[3]["public_id"]]
 
     def test_organizer_decides_leaves_pods_awaiting_a_ruling(self, client):
         organizer(client, "hostAR")
@@ -733,7 +737,7 @@ class TestWizardsEmail:
         client.cookies.clear()
         client.post(f"/api/tournament/{code}/claim",
                     json={"entrantId": added[0]["entrantId"], "wizardsEmail": "a@b.com"})
-        stored = q("SELECT wizards_email FROM entrants WHERE id = ?",
+        stored = q("SELECT wizards_email FROM entrants WHERE public_id = ?",
                    (added[0]["entrantId"],)).fetchone()["wizards_email"]
         assert stored is None   # discarded: the organizer never asked for it
 
@@ -1179,7 +1183,7 @@ class TestIdentityStaysSeparate:
         client.post("/api/account/signup",
                     json={"username": "playerBW", "password": "a good long password"})
         client.post(f"/api/tournament/{code}/claim", json={"entrantId": added[0]["entrantId"]})
-        linked = q("SELECT account_id FROM entrants WHERE id = ?",
+        linked = q("SELECT account_id FROM entrants WHERE public_id = ?",
                    (added[0]["entrantId"],)).fetchone()["account_id"]
         assert linked is None
 
@@ -1189,3 +1193,65 @@ class TestIdentityStaysSeparate:
         add(client, code, ["n9", "n10", "n11", "n12"])
         body = json.dumps(client.get(f"/api/tournament/{code}/roster").json())
         assert "account" not in body.lower()
+
+
+class TestEntrantIdsAreOpaque:
+    """The roster is readable by anyone holding a tournament code, so the id it
+    hands out must not disclose how many entrants exist platform-wide."""
+
+    def test_ids_on_the_wire_are_not_sequential_integers(self, client):
+        organizer(client, "hostBY")
+        code = host(client)
+        added = add(client, code, ["o1", "o2", "o3", "o4"])
+        for e in added:
+            assert isinstance(e["entrantId"], str)
+            assert not e["entrantId"].isdigit()
+        # and distinct entrants get distinct ids
+        assert len({e["entrantId"] for e in added}) == 4
+
+    def test_consecutive_entrants_ids_are_unrelated(self, client):
+        """Sequential ids would let a stranger subtract two of them to learn the
+        platform's total. Random ones carry no such relationship."""
+        organizer(client, "hostBZ")
+        code = host(client)
+        added = add(client, code, [f"seq{i}" for i in range(6)])
+        ids = [e["entrantId"] for e in added]
+        assert len(ids) == len(set(ids))
+        # no shared prefix beyond coincidence, and no ordering
+        assert sorted(ids) != ids or len(set(i[:4] for i in ids)) > 1
+
+    def test_the_internal_primary_key_never_reaches_a_client(self, client):
+        organizer(client, "hostCA")
+        code = host(client)
+        added = add(client, code, ["p1", "p2", "p3", "p4"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        internal = {r["id"] for r in q(
+            "SELECT id FROM entrants WHERE tournament_code = ?", (code,)).fetchall()}
+        state = client.get(f"/api/tournament/{code}").json()
+        wire_ids = {s["entrantId"] for p in state["pods"] for s in p["seats"]}
+        wire_ids |= {s["entrantId"] for s in state["standings"]}
+        wire_ids |= {e["entrantId"] for e in
+                     client.get(f"/api/tournament/{code}/roster").json()["entrants"]}
+        assert wire_ids and not (wire_ids & {str(i) for i in internal})
+        assert all(isinstance(i, str) for i in wire_ids)
+        # the snapshot must not smuggle the internal id under another key either
+        assert "publicId" not in json.dumps(state)
+
+    def test_an_internal_id_is_rejected_where_a_public_one_belongs(self, client):
+        """Posting the integer must fail, not silently address the same row."""
+        organizer(client, "hostCB")
+        code = host(client)
+        added = add(client, code, ["q1", "q2", "q3", "q4"])
+        internal = q("SELECT id FROM entrants WHERE public_id = ?",
+                     (added[0]["entrantId"],)).fetchone()["id"]
+        assert client.post(f"/api/tournament/{code}/claim",
+                           json={"entrantId": str(internal)}).status_code == 404
+        assert client.post(f"/api/tournament/{code}/entrants/{internal}/drop").status_code == 404
+
+    def test_a_public_id_from_another_tournament_does_not_resolve(self, client):
+        organizer(client, "hostCC")
+        a, b = host(client, name="A"), host(client, name="B")
+        mine = add(client, a, ["r1"])[0]["entrantId"]
+        add(client, b, ["r2", "r3", "r4", "r5"])
+        assert client.post(f"/api/tournament/{b}/claim",
+                           json={"entrantId": mine}).status_code == 404

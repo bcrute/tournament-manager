@@ -138,14 +138,14 @@ describe("endpoints", () => {
 
   it("claims a seat by id, not by name", async () => {
     const fn = mockFetch({ entrantToken: "t", entrantId: 7, name: "Ada" });
-    await claimSeat("AB123", 7);
-    expect(lastCall(fn).body).toEqual({ entrantId: 7, wizardsEmail: null });
+    await claimSeat("AB123", "e_7xk");
+    expect(lastCall(fn).body).toEqual({ entrantId: "e_7xk", wizardsEmail: null });
   });
 
   it("sends a Wizards email only when one was given", async () => {
     const fn = mockFetch({ entrantToken: "t", entrantId: 7, name: "Ada" });
-    await claimSeat("AB123", 7, "a@b.com");
-    expect(lastCall(fn).body).toEqual({ entrantId: 7, wizardsEmail: "a@b.com" });
+    await claimSeat("AB123", "e_7xk", "a@b.com");
+    expect(lastCall(fn).body).toEqual({ entrantId: "e_7xk", wizardsEmail: "a@b.com" });
   });
 
   it("calls time on the round", async () => {
@@ -157,8 +157,8 @@ describe("endpoints", () => {
 
   it("brings a dropped entrant back", async () => {
     const fn = mockFetch();
-    await undropEntrant("AB123", 4);
-    expect(lastCall(fn).url).toBe("/api/tournament/AB123/entrants/4/undrop");
+    await undropEntrant("AB123", "e_4qz");
+    expect(lastCall(fn).url).toBe("/api/tournament/AB123/entrants/e_4qz/undrop");
   });
 
   it("ends the tournament and returns frozen standings", async () => {
@@ -176,10 +176,10 @@ describe("endpoints", () => {
 
   it("routes release and drop to distinct endpoints", async () => {
     const fn = mockFetch();
-    await releaseEntrant("AB123", 4);
-    expect(lastCall(fn).url).toBe("/api/tournament/AB123/entrants/4/release");
-    await dropEntrant("AB123", 4);
-    expect(lastCall(fn).url).toBe("/api/tournament/AB123/entrants/4/drop");
+    await releaseEntrant("AB123", "e_4qz");
+    expect(lastCall(fn).url).toBe("/api/tournament/AB123/entrants/e_4qz/release");
+    await dropEntrant("AB123", "e_4qz");
+    expect(lastCall(fn).url).toBe("/api/tournament/AB123/entrants/e_4qz/drop");
   });
 
   it("opens a round, and re-pairs only when asked", async () => {
@@ -198,7 +198,7 @@ describe("endpoints", () => {
 
   it("reports a placement result for a pod", async () => {
     const fn = mockFetch({ ok: true, version: 2 });
-    await reportResult("AB123", 9, { kind: "placement", places: [{ entrantId: 1, place: 1 }] });
+    await reportResult("AB123", 9, { kind: "placement", places: [{ entrantId: "e_1ab", place: 1 }] });
     expect(lastCall(fn).url).toBe("/api/tournament/AB123/pods/9/result");
     expect(lastCall(fn).body.kind).toBe("placement");
   });
@@ -247,7 +247,7 @@ describe("endpoints", () => {
 });
 
 describe("seat session", () => {
-  const seat = { code: "AB123", token: "tok", entrantId: 4, name: "Ada" };
+  const seat = { code: "AB123", token: "tok", entrantId: "e_4qz", name: "Ada" };
 
   it("round-trips a claimed seat", () => {
     saveSeat(seat);

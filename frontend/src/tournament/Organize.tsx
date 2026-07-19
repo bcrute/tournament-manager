@@ -323,7 +323,7 @@ function PodCard({
   run: (fn: () => Promise<unknown>) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
-  const [places, setPlaces] = useState<Record<number, number>>({});
+  const [places, setPlaces] = useState<Record<string, number>>({});
 
   const submitPlacement = () =>
     void run(async () => {

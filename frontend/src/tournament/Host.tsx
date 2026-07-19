@@ -62,9 +62,16 @@ export default function Host() {
       <main className="tq-host">
         <header>
           <h1>Host a tournament</h1>
-          <p className="tagline">Sign in to your organizer account</p>
+          <p className="tagline">
+            Organizers need an account — it&rsquo;s how you get back into your event
+          </p>
         </header>
-        <SignIn onDone={(a) => setAcct(a)} onCancel={() => navigate("/table")} />
+        <SignIn
+          purpose="required"
+          cancelLabel="Back"
+          onDone={(a) => setAcct(a)}
+          onCancel={() => navigate("/table")}
+        />
       </main>
     );
   }

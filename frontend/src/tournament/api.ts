@@ -39,7 +39,8 @@ export async function tapi<T>(
 
 export interface PodSeat {
   seat: number;
-  entrantId: number;
+  /** Opaque and tournament-scoped — never the database's own id. */
+  entrantId: string;
   name: string;
   place: number | null;
   points: number | null;
@@ -58,7 +59,7 @@ export interface PodView {
 }
 
 export interface StandingRow {
-  entrantId: number;
+  entrantId: string;
   name: string;
   points: number;
   opponentPoints: number;
@@ -100,14 +101,14 @@ export interface TournamentState {
   } | null;
   pods: PodView[];
   myPod: PodView | null;
-  me: { entrantId: number; name: string } | null;
+  me: { entrantId: string; name: string } | null;
   standings: StandingRow[];
   calls: OfficialCall[];
   isOrganizer: boolean;
 }
 
 export interface RosterEntry {
-  entrantId: number;
+  entrantId: string;
   name: string;
   claimed: boolean;
   dropped: boolean;
@@ -142,22 +143,22 @@ export const getState = (code: string, token?: string | null) =>
 export const getRoster = (code: string) =>
   tapi<{ name: string; status: string; entrants: RosterEntry[] }>(`/${code}/roster`);
 
-export const claimSeat = (code: string, entrantId: number, wizardsEmail?: string) =>
-  tapi<{ entrantToken: string; entrantId: number; name: string }>(`/${code}/claim`, {
+export const claimSeat = (code: string, entrantId: string, wizardsEmail?: string) =>
+  tapi<{ entrantToken: string; entrantId: string; name: string }>(`/${code}/claim`, {
     method: "POST",
     body: { entrantId, wizardsEmail: wizardsEmail ?? null },
   });
 
 export const addEntrants = (code: string, names: string[]) =>
-  tapi<{ added: { entrantId: number; name: string }[] }>(`/${code}/entrants`, {
+  tapi<{ added: { entrantId: string; name: string }[] }>(`/${code}/entrants`, {
     method: "POST",
     body: { names },
   });
 
-export const releaseEntrant = (code: string, id: number) =>
+export const releaseEntrant = (code: string, id: string) =>
   tapi<{ ok: boolean }>(`/${code}/entrants/${id}/release`, { method: "POST" });
 
-export const dropEntrant = (code: string, id: number) =>
+export const dropEntrant = (code: string, id: string) =>
   tapi<{ ok: boolean }>(`/${code}/entrants/${id}/drop`, { method: "POST" });
 
 export const openRound = (code: string, reroll = false) =>
@@ -171,7 +172,7 @@ export const callTime = (code: string) =>
     method: "POST",
   });
 
-export const undropEntrant = (code: string, id: number) =>
+export const undropEntrant = (code: string, id: string) =>
   tapi<{ ok: boolean }>(`/${code}/entrants/${id}/undrop`, { method: "POST" });
 
 export const endTournament = (code: string) =>
@@ -183,7 +184,7 @@ export const closeRound = (code: string) =>
 export const reportResult = (
   code: string,
   podId: number,
-  body: { kind: string; places?: { entrantId: number; place: number }[]; note?: string },
+  body: { kind: string; places?: { entrantId: string; place: number }[]; note?: string },
 ) => tapi<{ ok: boolean; version: number }>(`/${code}/pods/${podId}/result`, {
   method: "POST",
   body,
@@ -227,7 +228,7 @@ const SEAT_KEY = "tournament.seat";
 export interface SeatSession {
   code: string;
   token: string;
-  entrantId: number;
+  entrantId: string;
   name: string;
 }
 

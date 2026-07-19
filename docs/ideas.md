@@ -217,14 +217,9 @@ and schedules, which is a bigger model than "a code someone shares at a table".
   *does* decide at time, unlike Swiss).
 - **`/openapi.json` and `/docs` are public** on production, enumerating every
   route and schema on an otherwise hardened box.
-- **Entrant ids are sequential and semi-public.** They come from a single
-  autoincrement and the roster endpoint hands them to anyone holding a
-  tournament code, so entrant `#4,412` tells a stranger roughly how many
-  entrants the platform has ever created. Fix is a separate random public id
-  (or UUIDv7 if time-ordering is wanted) while keeping the integer primary key
-  everything already references — a v4 UUID as the PK scatters index writes for
-  no benefit at this scale. Worth doing on its own merits, unrelated to account
-  linking.
+- ~~Entrant ids are sequential and semi-public.~~ **Fixed 2026-07-19.**
+  `entrants.public_id` is a random string and is the only id on the wire; the
+  integer primary key stays internal.
 - **Entrant tokens ride in query strings**, so the reverse proxy strips query
   params from access logs. That coupling isn't obvious from either file; a
   header would remove the dependency.

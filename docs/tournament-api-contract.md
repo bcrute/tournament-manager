@@ -139,6 +139,13 @@ Claim a seat. No auth — possession of the tournament code is the only gate.
 → { "entrantToken": "…", "entrantId": 41, "name": "Ada" }
 ```
 
+**`entrantId` is an opaque random string, tournament-scoped.** The integer
+primary key never leaves the server: the roster is readable by anyone holding a
+tournament code, and a sequential id would disclose roughly how many entrants
+the platform has ever created. Posting an internal id where a public one belongs
+is a 404, not a silent hit on the same row, and a public id from another
+tournament does not resolve. Pinned by `TestEntrantIdsAreOpaque`.
+
 By **id, not name**: names legitimately repeat, ids don't. First claim wins;
 a second returns **409**. The organizer can `release` a mis-tap.
 

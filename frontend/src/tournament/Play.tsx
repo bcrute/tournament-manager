@@ -39,7 +39,7 @@ function ClaimSeat({
   onClaimed,
 }: {
   code: string;
-  onClaimed: (s: { code: string; token: string; entrantId: number; name: string }) => void;
+  onClaimed: (s: { code: string; token: string; entrantId: string; name: string }) => void;
 }) {
   const [roster, setRoster] = useState<{ name: string; entrants: RosterEntry[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -103,7 +103,7 @@ function SeatView({
   navigate,
 }: {
   code: string;
-  seat: { code: string; token: string; entrantId: number; name: string };
+  seat: { code: string; token: string; entrantId: string; name: string };
   onLeave: () => void;
   navigate: ReturnType<typeof useNavigate>;
 }) {

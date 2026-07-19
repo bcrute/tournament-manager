@@ -2,17 +2,26 @@ import { useState } from "react";
 import { Account, AccountError, login, signup } from "./account";
 
 /**
- * Optional sign-in. No email is asked for anywhere; recovery codes are shown
- * once on signup and are the whole recovery story unless the user later adds
- * an address themselves.
+ * Sign-in, used in two places that mean different things.
+ *
+ * For players an account is genuinely optional, and the copy says so loudly —
+ * everything works signed out. For organizers it isn't: hosting needs an
+ * account with a recovery email, so telling them accounts are optional is at
+ * best noise and at worst a lie about what they're about to do.
  */
 export default function SignIn({
   onDone,
   onCancel,
+  purpose = "optional",
+  cancelLabel = "Not now",
 }: {
   onDone: (a: Account) => void;
   onCancel: () => void;
+  /** "optional" — a player choosing to have one. "required" — hosting. */
+  purpose?: "optional" | "required";
+  cancelLabel?: string;
 }) {
+  const optional = purpose === "optional";
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [username, setUsername] = useState(localStorage.getItem("table.name") ?? "");
   const [password, setPassword] = useState("");
@@ -44,10 +53,9 @@ export default function SignIn({
       <div className="sheet">
         <h2>Save your recovery codes</h2>
         <p className="hint">
-          Because we don&rsquo;t ask for an email, these codes are how you get back in if
-          you forget your password. Each one works once. Screenshot or write them down
-          now — they aren&rsquo;t shown again. (You can add an email later as a second
-          route back in, but it&rsquo;s optional.)
+          {optional
+            ? "These codes are how you get back in if you forget your password, because we don’t ask for an email. Each one works once. Screenshot or write them down now — they aren’t shown again."
+            : "Each code works once and gets you back in if you forget your password. Screenshot or write them down now — they aren’t shown again. You’ll add a recovery email next, but keep these too."}
         </p>
         <ul className="codes">
           {codes.map((c) => (
@@ -75,16 +83,21 @@ export default function SignIn({
   return (
     <div className="sheet">
       <h2>{mode === "login" ? "Sign in" : "Create an account"}</h2>
-      <p className="notice">
-        <strong>Accounts are completely optional.</strong> Everything in the app works
-        signed out — an account only keeps a history of your games and your private notes.
-      </p>
-      <p className="hint">
-        <strong>No email required.</strong> Sign up with just a username and a password.
-        You can add an email later if you want, and it is used for one thing only:
-        recovering your account. It is never required, never shown to anyone, and never
-        used to contact you.
-      </p>
+      {optional && (
+        <>
+          <p className="notice">
+            <strong>Accounts are completely optional.</strong> Everything in the app works
+            signed out — an account only keeps a history of your games and your private
+            notes.
+          </p>
+          <p className="hint">
+            <strong>No email required.</strong> Sign up with just a username and a
+            password. You can add an email later if you want, and it is used for one thing
+            only: recovering your account. It is never required, never shown to anyone,
+            and never used to contact you.
+          </p>
+        </>
+      )}
       <div className="tr-mode">
         <button className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>
           Sign in
@@ -124,7 +137,7 @@ export default function SignIn({
         {busy ? "…" : mode === "login" ? "Sign in" : "Create account"}
       </button>
       <button className="ghost" onClick={onCancel}>
-        Not now
+        {cancelLabel}
       </button>
     </div>
   );
