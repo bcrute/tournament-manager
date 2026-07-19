@@ -57,8 +57,12 @@ h1 {
   color: inherit;
 }
 
-.tile-link:hover .tile {
-  border-color: #c9a84c;
+/* hover only where hovering is real: on a touch screen the state sticks after a
+   tap, leaving the last-tapped control highlighted until you touch elsewhere */
+@media (hover: hover) and (pointer: fine) {
+  .tile-link:hover .tile {
+    border-color: #c9a84c;
+  }
 }
 
 .tile-head {
@@ -121,8 +125,10 @@ button {
   color: #e8e4f0;
   cursor: pointer;
 }
-button:hover:not(:disabled) {
-  background: #2e2340;
+@media (hover: hover) and (pointer: fine) {
+  button:hover:not(:disabled) {
+    background: #2e2340;
+  }
 }
 button:disabled {
   opacity: 0.6;
