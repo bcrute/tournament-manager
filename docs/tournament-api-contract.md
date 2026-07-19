@@ -329,7 +329,62 @@ warning, not a block.
 
 ---
 
-## 8. Interoperability
+## 8. Game profiles
+
+The core is game-agnostic. Entrants, rounds, pods, seats, placements,
+standings, timers and judge calls are true of any tabletop event, and none of
+that code knows what Magic is. **MTG is a profile over the core, not the base
+of it.**
+
+What varies by game lives in `games.py` as a `GameProfile`:
+
+| Field | Meaning |
+|---|---|
+| `default_pod_size` | seats at a table — 4 for multiplayer Commander, 2 for a duel |
+| `default_round_minutes` | round length |
+| `resource`, `resource_start`, `resource_direction`, `resource_goal` | what players track and which way it moves: MTG counts life *down* from 40 to 0; a game like Lorcana counts lore *up* to a target |
+| `modes` | room modes valid for this game; empty means no live table state, scored by hand |
+| `time_called_policies` | offered policies, first is the default |
+| `sanctioning_account` | label for the publisher account email, or `None` |
+
+### `GET /api/tournament/games`
+```jsonc
+{ "games": [ { "key": "mtg", "name": "Magic: The Gathering",
+               "publisher": "Wizards of the Coast", "defaultPodSize": 4,
+               "modes": ["life", "treachery"], "resource": "life",
+               "timeCalledPolicies": [ … ], "sanctioningAccount": "Wizards account email" } ] }
+```
+
+`POST /api/tournament` takes `game` (default `"mtg"`) and validates `mode` and
+`timeCalledPolicy` against that profile — a game is rejected with the list of
+what this server runs, rather than silently accepting nonsense.
+
+`tournaments.game` is `NOT NULL DEFAULT 'mtg'`, so the migration backfilled
+existing events rather than leaving nulls. `profile_for()` still degrades to
+the default for an unrecognised string, so a row written by a newer build
+cannot 500 an older one.
+
+### Adding a game
+
+1. Add a `GameProfile` to `games.py` and register it.
+2. If it needs live table state, add a room mode; if not, leave `modes` empty
+   and organizers report results by hand — which already works.
+3. Nothing in `tournaments.py` should need editing. If it does, that is the
+   bug: the fact belongs in the profile.
+
+**Deliberately not in a profile:** anything resembling a rules engine. A profile
+supplies defaults and vocabulary; it never adjudicates a game.
+
+**Known MTG leakage still to clean up:** the settings key `startingLife` keeps
+its name because the room API already speaks it and renaming a live key buys
+nothing today — read it as "the profile's resource start". Likewise
+`collectWizardsEmail` is really "publisher account email", and the
+`highest_life` policy is really "highest resource". Rename them together when a
+second game lands, not before.
+
+---
+
+## 9. Interoperability
 
 The resource hierarchy intentionally mirrors
 [TopDeck Tournaments V2](https://topdeck.gg/docs/tournaments-v2) so an import
@@ -363,7 +418,7 @@ that adding one later doesn't require a migration of live event data.
 
 ---
 
-## 9. Known gaps
+## 10. Known gaps
 
 - **Auto-result is test-covered, not event-proven.** The room → placement path
   has never run in a real game inside a tournament pod. Prove it with a
@@ -372,7 +427,7 @@ that adding one later doesn't require a migration of live event data.
 - **No top cut / playoff re-podding**, and no `rounds: auto` recommendation.
   These are the largest remaining gaps for running a full competitive event.
 - **No entrant rename** outside an import.
-- **No import adapter** yet; the data model is ready for one (§8).
+- **No import adapter** yet; the data model is ready for one (§9).
 - **`/openapi.json` and `/docs` are publicly served**, enumerating every route
   and schema. Authentication still holds, but it's free reconnaissance on an
   otherwise hardened box. Disable with

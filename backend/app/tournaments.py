@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from .accounts import require_account
 from .db import q
+from .games import known_games, profile_for
 from .pairing import Entrant as PairEntrant
 from .pairing import pair_round, seat_pods
 
@@ -31,28 +32,46 @@ router = APIRouter()
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 IDLE_TIMEOUT = 12 * 60 * 60  # a tournament day, not a room's 3h
 
-DEFAULT_SETTINGS = {
+# Game-independent defaults. Anything that varies by game comes from the game
+# profile instead — see games.py. Keep this list free of MTG assumptions.
+GENERIC_SETTINGS = {
     "scoring": "win_draw_loss",      # win_draw_loss | placement
     "winPoints": 3,
     "drawPoints": 1,
     "lossPoints": 0,
     "placementPoints": [4, 3, 2, 1],
     "byeScoring": "win",
-    "podSize": 4,
     "seatAssignment": "random",       # random | by_standings | manual
-    "roundMinutes": 60,
-    "timeCalledPolicy": "draw_all",   # draw_all | draw_survivors | highest_life | organizer_decides
-    "startingLife": 40,
     "allowOfficialCalls": True,
-    "collectWizardsEmail": "off",     # off | optional | required
+    "collectWizardsEmail": "off",     # off | optional | required (publisher account)
 }
+
+
+def defaults_for(game: str | None) -> dict:
+    """Generic defaults plus whatever this game says about tables and resources."""
+    p = profile_for(game)
+    return {
+        **GENERIC_SETTINGS,
+        "podSize": p.default_pod_size,
+        "roundMinutes": p.default_round_minutes,
+        "timeCalledPolicy": p.time_called_policies[0],
+        # wire name kept as startingLife: the room API already speaks it, and
+        # renaming a live settings key buys nothing. It is the profile's
+        # resource start, whatever that resource is called.
+        "startingLife": p.resource_start,
+    }
+
+
+# Back-compat alias: the shape of an MTG tournament's settings.
+DEFAULT_SETTINGS = defaults_for("mtg")
 
 
 # ---- helpers ----
 
 
 def settings_of(row) -> dict:
-    return {**DEFAULT_SETTINGS, **json.loads(row["settings"] or "{}")}
+    game = row["game"] if "game" in row.keys() else None
+    return {**defaults_for(game), **json.loads(row["settings"] or "{}")}
 
 
 def touch(code: str):
@@ -208,6 +227,7 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
         "tournament": {
             "code": t["code"],
             "name": t["name"],
+            "game": t["game"] if "game" in t.keys() else "mtg",
             "mode": t["mode"],
             "status": t["status"],
             "settings": cfg,
@@ -242,6 +262,7 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
 
 class CreateBody(BaseModel):
     name: str = Field(min_length=1, max_length=80)
+    game: str = Field(default="mtg")
     mode: str = Field(default="life")
     settings: dict = Field(default_factory=dict)
 
@@ -282,6 +303,12 @@ class CallBody(BaseModel):
 # ---- lifecycle ----
 
 
+@router.get("/games")
+def list_games():
+    """What this server can run. One profile today; the registry is the point."""
+    return {"games": known_games()}
+
+
 @router.post("")
 def create_tournament(body: CreateBody, request: Request):
     """Hosting requires an account with a recovery email: an organizer locked out
@@ -294,16 +321,24 @@ def create_tournament(body: CreateBody, request: Request):
             "add a recovery email to your account before hosting — "
             "an organizer who loses access mid-event strands the whole room",
         )
-    if body.mode not in ("life", "treachery"):
-        raise HTTPException(400, "unknown mode")
+    known = {g["key"] for g in known_games()}
+    if body.game not in known:
+        raise HTTPException(400, f"unknown game — this server runs {', '.join(sorted(known))}")
+    profile = profile_for(body.game)
+    if profile.modes and body.mode not in profile.modes:
+        raise HTTPException(400, f"{profile.name} has no '{body.mode}' mode")
+
     code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(5))
-    cfg = {k: v for k, v in body.settings.items() if k in DEFAULT_SETTINGS}
+    allowed = defaults_for(body.game)
+    cfg = {k: v for k, v in body.settings.items() if k in allowed}
+    if "timeCalledPolicy" in cfg and cfg["timeCalledPolicy"] not in profile.time_called_policies:
+        raise HTTPException(400, f"{profile.name} does not offer that time-called policy")
     q(
-        "INSERT INTO tournaments (code, name, organizer_account_id, mode, settings, last_active) "
-        "VALUES (?, ?, ?, ?, ?, unixepoch())",
-        (code, body.name.strip(), acct["id"], body.mode, json.dumps(cfg)),
+        "INSERT INTO tournaments (code, name, organizer_account_id, game, mode, settings, last_active) "
+        "VALUES (?, ?, ?, ?, ?, ?, unixepoch())",
+        (code, body.name.strip(), acct["id"], body.game, body.mode, json.dumps(cfg)),
     )
-    return {"code": code}
+    return {"code": code, "game": body.game}
 
 
 @router.get("/{code}")

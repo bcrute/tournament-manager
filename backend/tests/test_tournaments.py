@@ -739,3 +739,71 @@ class TestWizardsEmail:
                     json={"entrantId": added[0]["entrantId"], "wizardsEmail": "secret@b.com"})
         assert "secret@b.com" not in json.dumps(client.get(f"/api/tournament/{code}/roster").json())
         assert "secret@b.com" not in json.dumps(client.get(f"/api/tournament/{code}").json())
+
+
+class TestGameSurface:
+    """MTG is a profile over a generic core, not the core itself."""
+
+    def test_the_server_advertises_its_game_profiles(self, client):
+        games = client.get("/api/tournament/games").json()["games"]
+        assert [g["key"] for g in games] == ["mtg"]
+        mtg = games[0]
+        assert mtg["defaultPodSize"] == 4 and "treachery" in mtg["modes"]
+        assert mtg["publisher"] == "Wizards of the Coast"
+
+    def test_games_route_is_not_shadowed_by_the_tournament_code_route(self, client):
+        """/games must not be read as a 5-char tournament code."""
+        r = client.get("/api/tournament/games")
+        assert r.status_code == 200 and "games" in r.json()
+
+    def test_defaults_come_from_the_profile_not_a_hardcoded_table(self, client):
+        organizer(client, "hostBA")
+        code = host(client)
+        cfg = client.get(f"/api/tournament/{code}").json()["tournament"]["settings"]
+        from app.games import MTG
+        assert cfg["podSize"] == MTG.default_pod_size
+        assert cfg["startingLife"] == MTG.resource_start
+        assert cfg["roundMinutes"] == MTG.default_round_minutes
+        assert cfg["timeCalledPolicy"] == MTG.time_called_policies[0]
+
+    def test_an_unknown_game_is_rejected_with_what_is_available(self, client):
+        organizer(client, "hostBB")
+        r = client.post("/api/tournament",
+                        json={"name": "Lorcana night", "game": "lorcana", "mode": "life"})
+        assert r.status_code == 400 and "mtg" in r.json()["detail"]
+
+    def test_a_mode_the_game_does_not_have_is_rejected(self, client):
+        organizer(client, "hostBC")
+        r = client.post("/api/tournament",
+                        json={"name": "x", "game": "mtg", "mode": "lore-race"})
+        assert r.status_code == 400
+
+    def test_a_time_called_policy_the_game_does_not_offer_is_rejected(self, client):
+        organizer(client, "hostBD")
+        r = client.post("/api/tournament", json={
+            "name": "x", "settings": {"timeCalledPolicy": "sudden-death"}})
+        assert r.status_code == 400
+
+    def test_the_game_is_reported_on_the_snapshot(self, client):
+        organizer(client, "hostBE")
+        code = host(client)
+        assert client.get(f"/api/tournament/{code}").json()["tournament"]["game"] == "mtg"
+
+    def test_the_migration_backfills_rather_than_leaving_nulls(self, client):
+        """Tournaments created before profiles existed are MTG events. The
+        column is NOT NULL DEFAULT 'mtg', so the migration backfilled them and
+        a null is impossible — assert that rather than a fallback that can
+        never fire in practice."""
+        import sqlite3
+        organizer(client, "hostBF")
+        code = host(client)
+        with pytest.raises(sqlite3.IntegrityError):
+            q("UPDATE tournaments SET game = NULL WHERE code = ?", (code,))
+        assert q("SELECT game FROM tournaments WHERE code = ?", (code,)).fetchone()["game"] == "mtg"
+
+    def test_an_unrecognised_game_string_still_resolves_a_profile(self, client):
+        """Defence in depth: a row written by a newer build, or a profile
+        removed from the registry, must degrade rather than 500."""
+        from app.games import profile_for
+        assert profile_for("some-future-game").key == "mtg"
+        assert profile_for(None).key == "mtg"

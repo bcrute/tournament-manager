@@ -81,7 +81,9 @@ export interface TournamentState {
   tournament: {
     code: string;
     name: string;
-    mode: "life" | "treachery";
+    /** Which game profile this event runs. MTG is one surface, not the base. */
+    game: string;
+    mode: string;
     status: "setup" | "running" | "ended";
     settings: Record<string, unknown>;
     roundCount: number;
@@ -108,8 +110,28 @@ export interface RosterEntry {
   dropped: boolean;
 }
 
-export const createTournament = (name: string, mode: string, settings: Record<string, unknown>) =>
-  tapi<{ code: string }>("", { method: "POST", body: { name, mode, settings } });
+export interface GameProfile {
+  key: string;
+  name: string;
+  publisher: string;
+  defaultPodSize: number;
+  modes: string[];
+  resource: string;
+  timeCalledPolicies: string[];
+  sanctioningAccount: string | null;
+}
+
+export const listGames = () => tapi<{ games: GameProfile[] }>("/games");
+
+export const createTournament = (
+  name: string,
+  mode: string,
+  settings: Record<string, unknown>,
+  game = "mtg",
+) => tapi<{ code: string; game: string }>("", {
+  method: "POST",
+  body: { name, game, mode, settings },
+});
 
 export const getState = (code: string, token?: string | null) =>
   tapi<TournamentState>(`/${code}${token ? `?token=${encodeURIComponent(token)}` : ""}`);

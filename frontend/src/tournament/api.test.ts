@@ -13,6 +13,7 @@ import {
   formatClock,
   getRoster,
   getState,
+  listGames,
   loadSeat,
   openRound,
   releaseEntrant,
@@ -95,7 +96,24 @@ describe("endpoints", () => {
     const { url, opts, body } = lastCall(fn);
     expect(url).toBe("/api/tournament");
     expect(opts.method).toBe("POST");
-    expect(body).toEqual({ name: "Friday Night", mode: "life", settings: { podSize: 4 } });
+    expect(body).toEqual({
+      name: "Friday Night", game: "mtg", mode: "life", settings: { podSize: 4 },
+    });
+  });
+
+  it("lists the game profiles this server can run", async () => {
+    const fn = mockFetch({ games: [{ key: "mtg" }] });
+    const r = await listGames();
+    expect(lastCall(fn).url).toBe("/api/tournament/games");
+    expect(r.games[0].key).toBe("mtg");
+  });
+
+  it("defaults to mtg but sends the game explicitly", async () => {
+    const fn = mockFetch({ code: "AB123", game: "mtg" });
+    await createTournament("Night", "life", {});
+    expect(lastCall(fn).body.game).toBe("mtg");
+    await createTournament("Night", "life", {}, "lorcana");
+    expect(lastCall(fn).body.game).toBe("lorcana");
   });
 
   it("passes an entrant token as a query parameter when one is held", async () => {

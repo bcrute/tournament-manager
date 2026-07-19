@@ -205,6 +205,8 @@ _ensure_column("pod_seats", "room_token", "TEXT")   # this entrant's token in th
 # person instead of duplicating them. Matching on display name would make names
 # identity — the exact flaw we rejected in TopDeck's shape.
 _ensure_column("entrants", "external_ref", "TEXT")
+# which game profile this event runs; MTG is one surface over a generic core
+_ensure_column("tournaments", "game", "TEXT NOT NULL DEFAULT 'mtg'")
 _ensure_column("players", "eliminated_at", "INTEGER")  # ordering for tournament placement
 # indexes on migrated columns must come after the columns exist
 _db.execute(
