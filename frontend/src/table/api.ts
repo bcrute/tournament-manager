@@ -56,6 +56,19 @@ export interface RoomState {
   };
 }
 
+export interface SeatInfo {
+  pid: number;
+  name: string;
+  vacant: boolean;
+  eliminated: boolean;
+}
+
+export interface SeatsResponse {
+  status: RoomStatus;
+  mode: GameMode;
+  seats: SeatInfo[];
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,

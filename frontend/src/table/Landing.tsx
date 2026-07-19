@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { api, ApiError, GameMode } from "./api";
+import { api, ApiError, GameMode, SeatInfo, SeatsResponse } from "./api";
 import { clearSession, landingAction, loadSession, saveSession } from "./session";
 
 function randomName() {
@@ -23,6 +23,36 @@ export default function Landing() {
   const [asDisplay, setAsDisplay] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // a game already in progress: offer the seats so a dropped player can return
+  const [rejoin, setRejoin] = useState<{ code: string; seats: SeatInfo[] } | null>(null);
+
+  async function offerRejoin(roomCode: string) {
+    try {
+      const s = await api<SeatsResponse>(`/rooms/${roomCode}/seats`);
+      setRejoin({ code: roomCode, seats: s.seats });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function takeSeat(seat: SeatInfo) {
+    if (!rejoin) return;
+    if (!seat.vacant && !window.confirm(`${seat.name}'s seat is still in use. Take it over?`)) return;
+    setBusy(true);
+    try {
+      const res = await api<{ code: string; playerToken: string }>(
+        `/rooms/${rejoin.code}/reclaim`,
+        { method: "POST", body: { pid: seat.pid, force: !seat.vacant } },
+      );
+      saveSession({ code: res.code, token: res.playerToken });
+      navigate(`/table/r/${res.code}`, { replace: true });
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not take that seat");
+    } finally {
+      setBusy(false);
+    }
+  }
   const [autoJoining, setAutoJoining] = useState(() => landingAction(loadSession(), params.get("join")) === "autojoin");
   const autoRan = useRef(false);
 
@@ -51,10 +81,13 @@ export default function Landing() {
           saveSession({ code: res.code, token: res.playerToken });
           navigate(`/table/r/${res.code}`, { replace: true });
         } catch (e) {
-          // fall back to the manual form (name taken, room gone, game started, ...)
+          const roomCode = joinParam.trim().toUpperCase();
           setAutoJoining(false);
           setMode("join");
+          setJoinCode(roomCode);
           setName(nm);
+          // a game in progress isn't a dead end — offer the seats to reclaim
+          if (e instanceof ApiError && e.status === 409 && (await offerRejoin(roomCode))) return;
           setError(e instanceof ApiError ? e.message : "Could not join the room");
         }
       })();
@@ -110,10 +143,47 @@ export default function Landing() {
       saveSession({ code: res.code, token: res.playerToken });
       navigate(`/table/r/${res.code}`);
     } catch (e) {
+      const roomCode = joinCode.trim().toUpperCase();
+      if (mode === "join" && e instanceof ApiError && e.status === 409 && (await offerRejoin(roomCode))) {
+        setBusy(false);
+        return;
+      }
       setError(e instanceof ApiError ? e.message : "Something went wrong");
     } finally {
       setBusy(false);
     }
+  }
+
+  if (rejoin) {
+    return (
+      <main className="tr-landing">
+        <header>
+          <h1>Rejoin {rejoin.code}</h1>
+          <p className="tagline">That game is already under way — pick your seat</p>
+        </header>
+        <ul className="seat-picker">
+          {rejoin.seats.map((s) => (
+            <li key={s.pid}>
+              <button
+                className={s.vacant ? "primary" : "ghost"}
+                disabled={busy}
+                onClick={() => void takeSeat(s)}
+              >
+                {s.name}
+                {s.eliminated && " ☠"}
+                <span className="seat-state">{s.vacant ? "left — tap to return" : "in use"}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        {error && <p className="error">{error}</p>}
+        <footer>
+          <button className="ghost" onClick={() => setRejoin(null)}>
+            ← back
+          </button>
+        </footer>
+      </main>
+    );
   }
 
   return (

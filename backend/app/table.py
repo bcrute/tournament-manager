@@ -380,6 +380,11 @@ class OrderBody(BaseModel):
     pids: list[int]
 
 
+class ReclaimBody(BaseModel):
+    pid: int
+    force: bool = False
+
+
 @router.post("/rooms")
 def create_room(body: CreateBody):
     if body.mode not in MODES:
@@ -422,6 +427,54 @@ async def join_room(code: str, body: JoinBody):
         (room["code"], token, name),
     )
     log_event(room["code"], f"{name} joined")
+    touch(room["code"])
+    await broadcast(room["code"])
+    return {"code": room["code"], "playerToken": token}
+
+
+@router.get("/rooms/{code}/seats")
+def seats(code: str):
+    """Seats in a room, so someone who dropped out can find their way back in.
+    Knowing the room code is the credential here, same as joining."""
+    room = get_room(code)
+    rows = q(
+        "SELECT id, name, left_game, eliminated FROM players WHERE room_code = ? AND is_display = 0 "
+        "ORDER BY COALESCE(seat_order, 1000000), joined_at, id",
+        (room["code"],),
+    ).fetchall()
+    return {
+        "status": norm_status(room["status"]),
+        "mode": room["mode"],
+        "seats": [
+            {
+                "pid": r["id"],
+                "name": r["name"],
+                "vacant": bool(r["left_game"]),
+                "eliminated": bool(r["eliminated"]),
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.post("/rooms/{code}/reclaim")
+async def reclaim(code: str, body: ReclaimBody):
+    """Take back a seat after leaving or losing a session. The seat keeps its
+    life, commander damage and identity — only the device token changes."""
+    room = get_room(code)
+    if norm_status(room["status"]) == "ended":
+        raise HTTPException(409, "that game has ended")
+    row = q(
+        "SELECT * FROM players WHERE room_code = ? AND id = ? AND is_display = 0",
+        (room["code"], body.pid),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "seat not found")
+    if not row["left_game"] and not body.force:
+        raise HTTPException(409, "that seat is still in use")
+    token = secrets.token_urlsafe(24)  # the old device's token stops working
+    q("UPDATE players SET token = ?, left_game = 0 WHERE id = ?", (token, row["id"]))
+    log_event(room["code"], f"{row['name']} rejoined")
     touch(room["code"])
     await broadcast(room["code"])
     return {"code": room["code"], "playerToken": token}

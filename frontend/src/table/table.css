@@ -188,6 +188,32 @@
   top: calc(3.2rem + env(safe-area-inset-top));
 }
 
+/* rejoining a game in progress */
+.seat-picker {
+  list-style: none;
+  padding: 0;
+  margin: 1.5rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.seat-picker button {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.8rem;
+  font-size: 1.1rem;
+  padding: 0.9rem 1.1rem;
+}
+
+.seat-state {
+  font-size: 0.78rem;
+  color: #8a7fa0;
+  font-weight: 400;
+}
+
 .rename-btn {
   font-size: 0.85rem;
   padding: 0.15rem 0.5rem;
