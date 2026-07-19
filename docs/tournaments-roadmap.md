@@ -9,6 +9,9 @@ official Magic APIs (because the answer shapes the design), then the plan.
 Sections 6–8 cover the commercial case: what already exists, where the actual
 gap is, and the content rules a paid tier would have to live by.
 
+The API and data model live in [tournament-api-design.md](./tournament-api-design.md),
+including a stress-test of the design and the decisions it forced.
+
 ---
 
 ## 1. Is there an official Wizards API?
