@@ -182,3 +182,76 @@ class TestActions:
                  (code,)).fetchone()["status"] == "ended"
         assert q("SELECT COUNT(*) c FROM trounds WHERE tournament_code = ? AND status = 'active'",
                  (code,)).fetchone()["c"] == 0
+
+
+class TestLogsAreSeparate:
+    """One combined log would ruin both: an admin log full of rejected probes
+    hides the real action, and a security log full of routine admin work stops
+    being read."""
+
+    def test_a_denied_probe_lands_in_security_not_the_admin_log(self, client):
+        from app.audit import ADMIN_DENY
+        signin(client, ADMIN)
+        before = len(client.get("/api/admin/log").json()["entries"])
+        client.cookies.clear()
+        client.get("/api/admin/overview")            # a probe
+        signin(client, ADMIN)
+        assert len(client.get("/api/admin/log").json()["entries"]) == before
+        sec = client.get("/api/admin/security", params={"kind": ADMIN_DENY}).json()["entries"]
+        assert any("/api/admin/overview" in (e["detail"] or "") for e in sec)
+
+    def test_a_failed_login_is_a_security_event_with_the_right_kind(self, client):
+        from app.audit import AUTH_FAIL, AUTH_UNKNOWN_USER
+        client.cookies.clear()
+        client.post("/api/account/signup",
+                    json={"username": "logtarget", "password": "a good long password"})
+        client.post("/api/account/login",
+                    json={"username": "logtarget", "password": "wrong password here"})
+        client.post("/api/account/login",
+                    json={"username": "nosuchperson", "password": "wrong password here"})
+        signin(client, ADMIN)
+        kinds = {e["kind"] for e in client.get("/api/admin/security").json()["entries"]}
+        # separate kinds: a burst against unknown names is enumeration, a burst
+        # against one real name is a brute-force
+        assert AUTH_FAIL in kinds and AUTH_UNKNOWN_USER in kinds
+
+    def test_the_security_log_never_records_a_password(self, client):
+        import json as _json
+        client.cookies.clear()
+        client.post("/api/account/login",
+                    json={"username": "someone", "password": "hunter2-very-secret"})
+        signin(client, ADMIN)
+        body = _json.dumps(client.get("/api/admin/security").json())
+        assert "hunter2" not in body
+
+    def test_admin_actions_do_not_appear_in_the_security_log(self, client):
+        client.cookies.clear()
+        code = client.post("/api/table/rooms", json={"name": "p", "mode": "life"}).json()["code"]
+        signin(client, ADMIN)
+        client.post(f"/api/admin/rooms/{code}/close", json={"reason": "tidy"})
+        sec = client.get("/api/admin/security").json()["entries"]
+        assert not any(e["detail"] == "tidy" for e in sec)
+        assert any(e["detail"] == "tidy" for e in client.get("/api/admin/log").json()["entries"])
+
+    def test_security_counts_summarise_the_last_day(self, client):
+        signin(client, ADMIN)
+        body = client.get("/api/admin/security").json()
+        assert isinstance(body["last24h"], list)
+        assert all({"kind", "n"} == set(c) for c in body["last24h"])
+
+    def test_the_two_logs_have_different_retention(self, client):
+        """Security noise ages out; a privileged action is worth keeping."""
+        from app.audit import ADMIN_RETENTION_DAYS, SECURITY_RETENTION_DAYS
+        assert SECURITY_RETENTION_DAYS < ADMIN_RETENTION_DAYS
+
+    def test_pruning_drops_old_security_rows_but_keeps_admin_ones(self, client):
+        import time as _t
+        from app.audit import prune
+        from app.db import q as dbq
+        dbq("INSERT INTO security_log (at, kind, subject) VALUES (?, 'auth.fail', 'old')",
+            (int(_t.time()) - 400 * 86400,))
+        dbq("INSERT INTO admin_log (at, actor, action) VALUES (?, 'someone', 'room.close')",
+            (int(_t.time()) - 100 * 86400,))
+        prune()
+        assert dbq("SELECT COUNT(*) c FROM security_log WHERE subject = 'old'").fetchone()["c"] == 0
+        assert dbq("SELECT COUNT(*) c FROM admin_log WHERE actor = 'someone'").fetchone()["c"] == 1

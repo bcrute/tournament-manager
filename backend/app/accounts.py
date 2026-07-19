@@ -18,6 +18,7 @@ import time
 from fastapi import APIRouter, Cookie, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
+from .audit import AUTH_FAIL, AUTH_UNKNOWN_USER, security_event
 from .db import q
 
 router = APIRouter()
@@ -28,7 +29,10 @@ SESSION_DAYS = 90
 # so a stolen cookie has a bounded life rather than the full 90 days.
 SESSION_IDLE_DAYS = 30
 RECOVERY_CODE_COUNT = 8
-USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,24}$")
+# `@` and `+` are permitted so an email address can be used as a username. We
+# discourage it — see the note in signup — but the choice is the user's, and a
+# regex that silently refuses is a worse experience than a clear warning.
+USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.+@-]{3,64}$")
 
 # scrypt parameters: ~64 MB of memory per hash, which is the point.
 _SCRYPT = {"n": 2**16, "r": 8, "p": 1, "maxmem": 96 * 1024 * 1024}
@@ -147,8 +151,14 @@ def require_account(request: Request):
 
 
 class Credentials(BaseModel):
-    username: str = Field(min_length=3, max_length=24)
+    username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=8, max_length=200)
+
+
+class SignupBody(Credentials):
+    #: optional at signup, exactly as it is afterwards. Recovery codes are the
+    #: working recovery path either way — see the note in the signup handler.
+    email: str | None = None
 
 
 class EmailBody(BaseModel):
@@ -199,15 +209,20 @@ def _public(acct) -> dict:
 
 
 @router.post("/signup")
-def signup(body: Credentials, response: Response):
+def signup(body: SignupBody, response: Response):
     username = body.username.strip()
     if not USERNAME_RE.match(username):
-        raise HTTPException(400, "usernames are 3-24 characters: letters, numbers, . _ -")
+        raise HTTPException(
+            400, "usernames are 3-64 characters: letters, numbers, and . _ - + @"
+        )
     if q("SELECT 1 FROM accounts WHERE username = ?", (username,)).fetchone():
         raise HTTPException(409, "that username is taken")
+    email = (body.email or "").strip() or None
+    if email and ("@" not in email or len(email) < 5):
+        raise HTTPException(400, "that doesn't look like an email address")
     cur = q(
-        "INSERT INTO accounts (username, pw_hash) VALUES (?, ?)",
-        (username, hash_password(body.password)),
+        "INSERT INTO accounts (username, pw_hash, email) VALUES (?, ?, ?)",
+        (username, hash_password(body.password), email),
     )
     account_id = cur.lastrowid
     codes = _issue_recovery_codes(account_id)
@@ -224,8 +239,20 @@ def login(body: Credentials, response: Response):
     # hash when the account is absent keeps the timing indistinguishable.
     if not acct:
         verify_password(body.password, _absent_account_hash())
+        # separate kind: a burst against names that don't exist is enumeration,
+        # a burst against one that does is a brute-force. Same response, and
+        # the log is where the difference lives.
+        # Record that an unknown name was tried, but not the name itself when
+        # it looks like an address — someone using their email as a username
+        # would otherwise have it written to the security log on every typo.
+        attempted = body.username.strip()
+        security_event(
+            AUTH_UNKNOWN_USER,
+            "<email-shaped>" if "@" in attempted else attempted[:64],
+        )
         raise HTTPException(401, "wrong username or password")
     if not verify_password(body.password, acct["pw_hash"]):
+        security_event(AUTH_FAIL, acct["username"], "password")
         raise HTTPException(401, "wrong username or password")
     q("UPDATE accounts SET last_seen = unixepoch() WHERE id = ?", (acct["id"],))
     _set_cookie(response, _new_session(acct["id"]))

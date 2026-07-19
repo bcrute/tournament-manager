@@ -74,8 +74,9 @@ class TestSignup:
         assert signup(fresh, "erin").status_code == 409
 
     def test_rejects_bad_usernames(self, fresh):
-        for bad in ("ab", "has space", "emoji🙂", "way-too-long-a-username-here"):
-            assert signup(fresh, bad).status_code in (400, 422)
+        # the limit is 64 so an email address fits; `@` and `+` are allowed
+        for bad in ("ab", "has space", "emoji🙂", "x" * 65, "semi;colon"):
+            assert signup(fresh, bad).status_code in (400, 422), bad
 
     def test_rejects_short_passwords(self, fresh):
         assert signup(fresh, "shorty", "abc").status_code == 422
@@ -346,3 +347,55 @@ class TestAuthTimingAndSessions:
         row = dbq("SELECT last_seen FROM sessions ORDER BY rowid DESC LIMIT 1").fetchone()
         import time as _t
         assert _t.time() - row["last_seen"] < 60
+
+
+class TestSignupEmail:
+    def test_an_email_is_optional_at_signup(self, fresh):
+        r = signup(fresh, "noemailuser")
+        assert r.status_code == 200
+        assert r.json()["account"]["hasEmail"] is False
+
+    def test_an_email_can_be_given_at_signup(self, fresh):
+        r = fresh.post("/api/account/signup", json={
+            "username": "withemailuser", "password": "correct horse battery",
+            "email": "someone@example.com"})
+        assert r.status_code == 200 and r.json()["account"]["hasEmail"] is True
+
+    def test_the_address_itself_is_never_returned(self, fresh):
+        import json as _json
+        r = fresh.post("/api/account/signup", json={
+            "username": "privateemail", "password": "correct horse battery",
+            "email": "private@example.com"})
+        assert "private@example.com" not in _json.dumps(r.json())
+        assert "private@example.com" not in _json.dumps(fresh.get("/api/account/me").json())
+
+    def test_a_nonsense_address_is_rejected(self, fresh):
+        r = fresh.post("/api/account/signup", json={
+            "username": "bademailuser", "password": "correct horse battery",
+            "email": "nope"})
+        assert r.status_code == 400
+
+    def test_an_email_is_allowed_as_a_username(self, fresh):
+        """Discouraged in the UI, never prevented. The user's call."""
+        r = fresh.post("/api/account/signup", json={
+            "username": "ben@example.com", "password": "correct horse battery"})
+        assert r.status_code == 200
+        assert r.json()["account"]["username"] == "ben@example.com"
+
+    def test_an_email_shaped_username_is_not_written_to_the_security_log(self, fresh):
+        """A typo at sign-in must not put someone's address in a log they can't
+        see. The attempt is recorded; the address is not."""
+        from app.db import q as dbq
+        fresh.post("/api/account/login", json={
+            "username": "nobody@example.com", "password": "wrong password here"})
+        rows = dbq("SELECT subject FROM security_log WHERE kind = 'auth.unknown' "
+                   "ORDER BY id DESC LIMIT 5").fetchall()
+        subjects = [r["subject"] for r in rows]
+        assert "<email-shaped>" in subjects
+        assert not any(s and "@" in s for s in subjects)
+
+    def test_recovery_codes_are_issued_whether_or_not_an_email_was_given(self, fresh):
+        r = fresh.post("/api/account/signup", json={
+            "username": "codesanyway", "password": "correct horse battery",
+            "email": "codes@example.com"})
+        assert len(r.json()["recoveryCodes"]) == 8

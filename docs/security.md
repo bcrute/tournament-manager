@@ -97,7 +97,7 @@ These are part of the model, not omissions from it:
 | Question | Decision | Rationale |
 | --- | --- | --- |
 | Session timeout | Account sessions expire server-side; the cookie is httpOnly, Secure, SameSite. | Sessions are a convenience over an optional account, not access to sensitive data. |
-| Second-factor recovery | No second factor. Recovery is 8 single-use codes, shown once at signup, plus an optional email. | Requiring MFA on an optional account for a game-night app would cost more accounts than it protects. Recovery codes work without collecting an address. |
+| Second-factor recovery | No second factor. Recovery is 8 single-use codes, shown once at signup. An email may be stored but **email recovery is not implemented**, so the codes are the only working path and the UI says exactly that. | Requiring MFA on an optional account for a game-night app would cost more accounts than it protects. Recovery codes work without collecting an address. |
 | Identity provider dependency | None — no external IdP. | No third-party dependency to be unavailable. |
 | Break-glass access | The admin surface *is* the break-glass path. It is off unless `TABLE_ADMINS` names an account, and every action it takes is logged. | A deployment that never sets the variable has no admin surface at all, which is the default. |
 | Strong authenticators | Not supported. | See second-factor recovery. |
@@ -271,7 +271,11 @@ internal detail. It was reaching the client and coming back trusted.
 ## Known gaps, carried deliberately
 
 1. **No off-host backup.** The largest real risk. Deferred with a trigger above.
-2. **Email recovery is stored but not implemented.** See above.
+2. **Email recovery is stored but not implemented.** Signup now collects an
+   optional address, which raises the stakes on this: the copy is careful to
+   say the codes are the only way back in, but the longer an address is stored
+   without the feature existing, the more it reads as a promise. Owner: Ben.
+   Trigger: implement it or stop collecting it before the first outside user.
 3. **No application logging at all.** There is no `import logging` anywhere in
    `backend/app/`: no authorization denial, authentication failure, ban, or
    rate-limit trip is recorded, and `broadcast` swallows exceptions with a bare

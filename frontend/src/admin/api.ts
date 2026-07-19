@@ -87,6 +87,18 @@ export const getTournaments = () => adm<{ tournaments: AdminTournament[] }>("/to
 export const getBans = () => adm<{ bans: Ban[] }>("/bans");
 export const getLog = () => adm<{ entries: LogEntry[] }>("/log");
 
+export interface SecurityEntry {
+  at: number;
+  kind: string;
+  subject: string | null;
+  detail: string | null;
+}
+
+export const getSecurity = (kind?: string) =>
+  adm<{ entries: SecurityEntry[]; last24h: { kind: string; n: number }[] }>(
+    `/security${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`,
+  );
+
 export const closeRoom = (code: string, reason?: string) =>
   adm<{ ok: boolean }>(`/rooms/${code}/close`, { method: "POST", body: { reason: reason ?? null } });
 

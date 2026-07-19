@@ -1582,3 +1582,16 @@ button.ghost.danger {
   gap: 0.5rem;
   margin-top: 0.25rem;
 }
+
+.suggest-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0;
+  flex-wrap: wrap;
+}
+
+.suggest {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 0.4rem 0.7rem;
+}

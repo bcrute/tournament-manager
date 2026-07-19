@@ -58,10 +58,10 @@ export async function account<T>(
 
 export const getAccount = () => account<{ account: Account | null }>("/me");
 
-export const signup = (username: string, password: string) =>
+export const signup = (username: string, password: string, email?: string) =>
   account<{ account: Account; recoveryCodes: string[] }>("/signup", {
     method: "POST",
-    body: { username, password },
+    body: { username, password, email: email ?? null },
   });
 
 export const login = (username: string, password: string) =>

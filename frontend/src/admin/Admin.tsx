@@ -12,10 +12,12 @@ import {
   getLog,
   getOverview,
   getRooms,
+  getSecurity,
   getTournaments,
   liftBan,
   LogEntry,
   Overview,
+  SecurityEntry,
 } from "./api";
 
 /**
@@ -32,6 +34,9 @@ export default function Admin() {
   const [tournaments, setTournaments] = useState<AdminTournament[]>([]);
   const [bans, setBans] = useState<Ban[]>([]);
   const [log, setLog] = useState<LogEntry[]>([]);
+  // kept separate from the admin log on purpose — see backend/app/audit.py
+  const [security, setSecurity] = useState<SecurityEntry[]>([]);
+  const [counts, setCounts] = useState<{ kind: string; n: number }[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,16 +45,19 @@ export default function Admin() {
       const o = await getOverview();
       setOverview(o);
       setDenied(false);
-      const [r, t, b, l] = await Promise.all([
+      const [r, t, b, l, s] = await Promise.all([
         getRooms(),
         getTournaments(),
         getBans(),
         getLog(),
+        getSecurity(),
       ]);
       setRooms(r.rooms);
       setTournaments(t.tournaments);
       setBans(b.bans);
       setLog(l.entries);
+      setSecurity(s.entries);
+      setCounts(s.last24h);
     } catch (e) {
       if (e instanceof AdminError && e.status === 404) setDenied(true);
       else setError(e instanceof Error ? e.message : "Something went wrong");
@@ -232,7 +240,36 @@ export default function Admin() {
       </section>
 
       <section className="adm-panel">
-        <h2>Audit log</h2>
+        <h2>Security events</h2>
+        <p className="hint">
+          Failures and probes — noisy by nature, which is why they are kept apart from
+          the admin log. Subjects are salted hashes or usernames, never addresses.
+          {counts.length > 0 && (
+            <> Last 24h: {counts.map((c) => `${c.kind} ${c.n}`).join(" · ")}.</>
+          )}
+        </p>
+        <table>
+          <thead>
+            <tr><th>When</th><th>Kind</th><th>Subject</th><th>Detail</th></tr>
+          </thead>
+          <tbody>
+            {security.slice(0, 50).map((e, i) => (
+              <tr key={`${e.at}-${i}`}>
+                <td>{new Date(e.at * 1000).toLocaleString()}</td>
+                <td className="mono">{e.kind}</td>
+                <td className="mono trunc">{e.subject ?? "—"}</td>
+                <td className="trunc">{e.detail ?? "—"}</td>
+              </tr>
+            ))}
+            {security.length === 0 && (
+              <tr><td colSpan={4} className="hint">Nothing recorded</td></tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="adm-panel">
+        <h2>Admin actions</h2>
         <table>
           <thead>
             <tr><th>When</th><th>Who</th><th>Action</th><th>Target</th><th>Reason</th></tr>

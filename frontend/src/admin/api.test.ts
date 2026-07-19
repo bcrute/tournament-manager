@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { adm, AdminError, ago, closeRoom, endTournament, getOverview, liftBan } from "./api";
+import { adm, AdminError, ago, closeRoom, endTournament, getOverview, getSecurity, liftBan } from "./api";
 
 function mockFetch(body: unknown = { ok: true }, status = 200) {
   const fn = vi.fn().mockResolvedValue({
@@ -52,6 +52,20 @@ describe("actions", () => {
     const fn = mockFetch();
     await liftBan("a/b+c=");
     expect(last(fn).url).toBe("/api/admin/bans/a%2Fb%2Bc%3D/lift");
+  });
+});
+
+describe("security log", () => {
+  it("reads the security log separately from the admin log", async () => {
+    const fn = mockFetch({ entries: [], last24h: [] });
+    await getSecurity();
+    expect(last(fn).url).toBe("/api/admin/security");
+  });
+
+  it("filters by kind without breaking on an odd value", async () => {
+    const fn = mockFetch({ entries: [], last24h: [] });
+    await getSecurity("auth.fail");
+    expect(last(fn).url).toBe("/api/admin/security?kind=auth.fail");
   });
 });
 

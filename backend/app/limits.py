@@ -13,6 +13,8 @@ import time
 from collections import defaultdict, deque
 from hashlib import sha256
 
+from .audit import BAN_ISSUED, RATELIMIT_TRIP, security_event
+
 # Requests allowed per window, by route class.
 DEFAULT_RULES = {
     # room/account creation and seat claiming — the abusable ones
@@ -138,10 +140,24 @@ class RateLimiter:
         if len(hits) >= limit:
             until = self._strike(cid)
             if until:
+                # a ban is rare and worth a line; the trips leading to it are
+                # recorded too, but they are the noisy half by design
+                self._log(BAN_ISSUED, cid, f"{route_class} until={int(until)}")
                 return False, max(1, int(until - now))
+            self._log(RATELIMIT_TRIP, cid, route_class)
             return False, max(1, int(hits[0] + window - now))
         hits.append(now)
         return True, 0
+
+    def _log(self, kind: str, cid: str, detail: str):
+        """Best-effort: a failure to record must never turn a rate-limit
+        decision into a 500. The limiter is in the request path."""
+        if not self.db:
+            return
+        try:
+            security_event(kind, cid, detail)
+        except Exception:  # noqa: BLE001 - logging must not break the limiter
+            pass
 
     def prune(self, older_than: int = 3600):
         """Drop idle counters so memory doesn't grow with unique visitors, and
@@ -154,6 +170,8 @@ class RateLimiter:
             self._strikes.pop(key, None)
         if self.db:
             self.db("DELETE FROM bans WHERE until < ?", (now - BAN_RETENTION,))
+            from .audit import prune as prune_logs
+            prune_logs(now)
         for cid, until in [(c, u) for c, u in self._bans.items() if u < now - BAN_RETENTION]:
             self._bans.pop(cid, None)
             self._ban_count.pop(cid, None)

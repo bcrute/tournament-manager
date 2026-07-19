@@ -197,6 +197,20 @@ _db.executescript(
         detail TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_admin_log_at ON admin_log(at DESC);
+
+    -- Kept apart from admin_log on purpose: this one is noise-heavy and mostly
+    -- failures, and mixing the two would bury the rare deliberate action among
+    -- thousands of rejected probes. Different question, different reader,
+    -- different retention.
+    CREATE TABLE IF NOT EXISTS security_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        at INTEGER NOT NULL DEFAULT (unixepoch()),
+        kind TEXT NOT NULL,
+        subject TEXT,               -- salted client hash or username, never an IP
+        detail TEXT                 -- never a token, password, or recovery code
+    );
+    CREATE INDEX IF NOT EXISTS idx_security_log_at ON security_log(at DESC);
+    CREATE INDEX IF NOT EXISTS idx_security_log_kind ON security_log(kind, at DESC);
     """
 )
 

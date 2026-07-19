@@ -20,6 +20,7 @@ export default defineConfig({
         "src/table/seats.ts",
         "src/tournament/api.ts",
         "src/admin/api.ts",
+        "src/username.ts",
       ],
       thresholds: {
         statements: 90,

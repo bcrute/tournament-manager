@@ -26,6 +26,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .accounts import current_account
+from .audit import ADMIN_DENY, admin_action, security_event
 from .db import q
 
 router = APIRouter()
@@ -48,15 +49,14 @@ def require_admin(request: Request):
         raise HTTPException(404, "Not Found")   # admin disabled entirely
     acct = current_account(request)
     if not acct or acct["username"].lower() not in allowed:
+        # Someone reached an unlisted surface. Worth knowing about even though
+        # the response gives them nothing.
+        security_event(ADMIN_DENY, acct["username"] if acct else None, str(request.url.path))
         raise HTTPException(404, "Not Found")
     return acct
 
 
-def record(actor: str, action: str, target: str | None = None, detail: str | None = None):
-    q(
-        "INSERT INTO admin_log (actor, action, target, detail) VALUES (?, ?, ?, ?)",
-        (actor, action, target, detail),
-    )
+record = admin_action   # the writer lives in audit.py; this is the local name
 
 
 # ---- read ----
@@ -122,12 +122,36 @@ def bans(request: Request):
 
 @router.get("/log")
 def log(request: Request, limit: int = 100):
+    """Admin actions only — deliberate, rare, and each one a decision."""
     require_admin(request)
     rows = q(
         "SELECT at, actor, action, target, detail FROM admin_log ORDER BY id DESC LIMIT ?",
         (min(limit, 500),),
     ).fetchall()
     return {"entries": [dict(r) for r in rows]}
+
+
+@router.get("/security")
+def security(request: Request, kind: str | None = None, limit: int = 200):
+    """Security events — separate from the admin log because this one is mostly
+    failures and would otherwise bury the actions worth reading."""
+    require_admin(request)
+    if kind:
+        rows = q(
+            "SELECT at, kind, subject, detail FROM security_log WHERE kind = ? "
+            "ORDER BY id DESC LIMIT ?",
+            (kind, min(limit, 1000)),
+        ).fetchall()
+    else:
+        rows = q(
+            "SELECT at, kind, subject, detail FROM security_log ORDER BY id DESC LIMIT ?",
+            (min(limit, 1000),),
+        ).fetchall()
+    counts = q(
+        "SELECT kind, COUNT(*) AS n FROM security_log WHERE at > unixepoch() - 86400 "
+        "GROUP BY kind ORDER BY n DESC"
+    ).fetchall()
+    return {"entries": [dict(r) for r in rows], "last24h": [dict(c) for c in counts]}
 
 
 # ---- act ----

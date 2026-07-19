@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Account, AccountError, login, signup } from "./account";
+import { looksLikeEmail, suggestUsername } from "../username";
 
 /**
  * Sign-in, used in two places that mean different things.
@@ -29,13 +30,20 @@ export default function SignIn({
   const [error, setError] = useState<string | null>(null);
   const [codes, setCodes] = useState<string[] | null>(null);
   const [emailWarning, setEmailWarning] = useState(false);
+  // generated lazily so the same suggestion persists while the notice is up,
+  // rather than shuffling under the user's finger on every keystroke
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  // only offer to reuse what they typed once; after they touch the field it is
+  // theirs, and re-filling it would fight them
+  const [emailTouched, setEmailTouched] = useState(false);
 
   async function go() {
     setBusy(true);
     setError(null);
     try {
       if (mode === "signup") {
-        const res = await signup(username.trim(), password);
+        const res = await signup(username.trim(), password, email.trim() || undefined);
         setCodes(res.recoveryCodes); // shown once, then never again
         return;
       }
@@ -53,9 +61,9 @@ export default function SignIn({
       <div className="sheet">
         <h2>Save your recovery codes</h2>
         <p className="hint">
-          {optional
-            ? "These codes are how you get back in if you forget your password, because we don’t ask for an email. Each one works once. Screenshot or write them down now — they aren’t shown again."
-            : "Each code works once and gets you back in if you forget your password. Screenshot or write them down now — they aren’t shown again. You’ll add a recovery email next, but keep these too."}
+          <strong>These are the only way back into your account.</strong> Each code works
+          once. Screenshot them or write them down now — they are never shown again, and
+          an email on file does not replace them.
         </p>
         <ul className="codes">
           {codes.map((c) => (
@@ -114,16 +122,66 @@ export default function SignIn({
         value={username}
         onChange={(e) => {
           setUsername(e.target.value);
-          setEmailWarning(e.target.value.includes("@"));
+          const looksEmail = looksLikeEmail(e.target.value);
+          setEmailWarning(looksEmail);
+          if (looksEmail && !suggestion) setSuggestion(suggestUsername());
+          // hand what they typed to the field it actually belongs in
+          if (looksEmail && !emailTouched) setEmail(e.target.value.trim());
         }}
       />
       {emailWarning && (
-        <p className="notice warn">
-          We discourage using an email address as a username — usernames are shown to other
-          players and can&rsquo;t be stored encrypted, because we have to look them up on
-          every sign-in. You can add an email privately in your account settings after
-          logging in if you want one for recovery. You&rsquo;re free to continue either way.
-        </p>
+        <div className="notice warn">
+          <p>
+            <strong>Using your email as a username works, but we&rsquo;d suggest not
+            to.</strong> A username is looked up every time you sign in, so it can&rsquo;t
+            be stored encrypted — the optional email field below can be treated as
+            private in a way a username can&rsquo;t. We&rsquo;ve copied your address there
+            for you. You can absolutely carry on with it as your username if you prefer.
+          </p>
+          {mode === "signup" && suggestion && (
+            <p className="suggest-row">
+              <button
+                type="button"
+                className="suggest"
+                onClick={() => {
+                  setUsername(suggestion);
+                  setEmailWarning(false);
+                }}
+              >
+                Use <strong>{suggestion}</strong>
+              </button>
+              <button
+                type="button"
+                className="link"
+                onClick={() => setSuggestion(suggestUsername())}
+              >
+                another
+              </button>
+            </p>
+          )}
+        </div>
+      )}
+      {mode === "signup" && (
+        <>
+          <input
+            type="email"
+            placeholder="Email (optional)"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setEmailTouched(true);
+            }}
+          />
+          <p className="hint">
+            <strong>Email is optional.</strong> It stays private, is never shown to
+            anyone, and is only ever used to help you back into your account.{" "}
+            <strong>
+              Either way, save the recovery codes on the next screen — right now they are
+              the only way back in if you forget your password.
+            </strong>
+          </p>
+        </>
       )}
       <input
         type="password"
