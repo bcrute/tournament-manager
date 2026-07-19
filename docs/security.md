@@ -55,6 +55,7 @@ an open threat.
 3. **Player → their own pod** — a token grants one seat, not the table.
 4. **Organizer → their own tournament** — a session owns one event, not all.
 5. **Anonymous → account** — password plus optional recovery.
+6. **Account → admin** — an account session whose username is in `TABLE_ADMINS`.
 
 ### Threats and the actual control
 
@@ -74,6 +75,9 @@ an open threat.
 | T12 | 1 | Denial of service by room or event creation | Per-client rate limits; rooms idle out at 3h, tournaments at 12h | Mitigated |
 | T13 | 3 | Alter another player's life total | Every room mutation resolves the actor from `X-Player-Token` scoped to that room | Mitigated |
 | T14 | 4 | Player disputes an organizer's ruling | Results are versioned and never mutated; `source` records `auto` vs `organizer` | Mitigated by design |
+| T15 | 6 | Find and use the unlisted admin surface | Not the URL — `require_admin` on every endpoint, admin list in the environment rather than the database, 404 for everyone else so probing yields nothing | Mitigated — `test_admin.py::TestAccess` |
+| T16 | 6 | Escalate to admin by writing to the database | Admin membership is read from `TABLE_ADMINS` at call time; no column grants it | Mitigated — `test_admin_is_not_settable_from_the_database` |
+| T17 | 6 | An admin quietly alters or ends someone's game | Cannot be prevented — admin is trusted by definition — but every change writes actor, action, target and reason to `admin_log`, and failed actions do not | Detected, not prevented |
 
 ### Assumptions
 
@@ -95,9 +99,9 @@ These are part of the model, not omissions from it:
 | Session timeout | Account sessions expire server-side; the cookie is httpOnly, Secure, SameSite. | Sessions are a convenience over an optional account, not access to sensitive data. |
 | Second-factor recovery | No second factor. Recovery is 8 single-use codes, shown once at signup, plus an optional email. | Requiring MFA on an optional account for a game-night app would cost more accounts than it protects. Recovery codes work without collecting an address. |
 | Identity provider dependency | None — no external IdP. | No third-party dependency to be unavailable. |
-| Break-glass access | None. There is no administrative UI or role. | Nothing to break into; server access is SSH-only, key-only. |
+| Break-glass access | The admin surface *is* the break-glass path. It is off unless `TABLE_ADMINS` names an account, and every action it takes is logged. | A deployment that never sets the variable has no admin surface at all, which is the default. |
 | Strong authenticators | Not supported. | See second-factor recovery. |
-| Bootstrap/first admin | Not applicable — no admin accounts exist. | The app has no privileged user class. |
+| Bootstrap/first admin | Admins are named in `TABLE_ADMINS` (an environment variable), matched case-insensitively against an ordinary account. There is no in-app promotion. | Privilege from the environment, not the database: a flag in `accounts` is one bad `UPDATE` or one signup bug away from escalation. Changing it requires restarting the process, which needs host access already. |
 
 **Player and entrant credentials** are bearer tokens, not accounts:
 
@@ -113,11 +117,11 @@ the authorization, and they grant nothing outside their room or tournament.
 
 | Question | Decision | Rationale |
 | --- | --- | --- |
-| Role model | Three implicit roles: organizer (owns a tournament), player (holds a token), anonymous. Permissions are additive from nothing. | No role can be over-privileged by default because there is no default grant. |
+| Role model | Four: admin (named in `TABLE_ADMINS`), organizer (owns a tournament), player (holds a token), anonymous. Permissions are additive from nothing. | No role can be over-privileged by default because there is no default grant. |
 | Custom roles | Not supported. | No demand, and a role editor is a large attack surface for a game app. |
 | Sensitive export | No bulk export exists. | Nothing to export — see data minimisation. |
-| Access review cadence | Not applicable — no standing administrative access. | |
-| Separation of duties | An organizer both runs and rules on their own event. Accepted. | Inherent to a one-person tournament; the alternative is requiring two staff, which the target user doesn't have. Results are versioned so an override leaves a trail. |
+| Access review cadence | Review `TABLE_ADMINS` whenever it changes, and read `admin_log` after any incident. | The list is short and lives in deployment config, so drift is visible in the diff. |
+| Separation of duties | An organizer both runs and rules on their own event, and an admin can act on any event unreviewed. Both accepted. | Inherent to a one-person tournament; the alternative is requiring two staff, which the target user doesn't have. Results are versioned so an override leaves a trail. |
 
 **Enforcement boundaries** — the ones a change could plausibly break:
 
@@ -157,8 +161,13 @@ the authorization, and they grant nothing outside their room or tournament.
 
 ## Audit and logging
 
+The admin surface has a real audit trail (`admin_log`); the rest of the app
+does not, and that split is deliberate — admin acts on people who cannot see
+it happening.
+
 | Question | Decision | Rationale |
 | --- | --- | --- |
+| Admin actions | Every state change through `/api/admin` records actor, action, target and a free-text reason. Failed actions record nothing. | An audit log that fills with rejected attempts stops being read. |
 | Audit immutability | Game events are append-only in practice but not enforced at the database level. Accepted. | The audit consumer is a player wondering who killed them, not a regulator. Hash chaining would be theatre here. |
 | Audit granularity | Game events record actor, action, target and timestamp. Result changes are versioned with source (`auto` vs `organizer`) and a note. | An organizer overriding a result is the one action with real consequences, so it keeps history rather than mutating. |
 | Audit retention | Tied to the room's lifetime; account history persists until the account is deleted. | |

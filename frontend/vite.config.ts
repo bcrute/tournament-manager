@@ -19,6 +19,7 @@ export default defineConfig({
         "src/table/fetchPolicy.ts",
         "src/table/seats.ts",
         "src/tournament/api.ts",
+        "src/admin/api.ts",
       ],
       thresholds: {
         statements: 90,

@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .accounts import router as accounts_router
+from .admin import router as admin_router
 from .db import q
 from .limits import RateLimiter, classify, client_id, client_ip
 from .table import router as table_router
@@ -32,6 +33,8 @@ app.state.limiter = limiter  # websocket handler reads it from here
 app.include_router(table_router, prefix="/api/table")
 app.include_router(accounts_router, prefix="/api/account")
 app.include_router(tournaments_router, prefix="/api/tournament")
+# unlisted; authorization is in admin.require_admin, not in the absence of a link
+app.include_router(admin_router, prefix="/api/admin")
 
 
 _last_prune = 0.0

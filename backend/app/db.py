@@ -183,6 +183,24 @@ _db.executescript(
 )
 
 
+_db.executescript(
+    """
+    -- Every privileged action taken through the admin surface. This is the one
+    -- part of the app with a real audit requirement: admin actions affect other
+    -- people's games and are invisible to them.
+    CREATE TABLE IF NOT EXISTS admin_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        at INTEGER NOT NULL DEFAULT (unixepoch()),
+        actor TEXT NOT NULL,        -- admin username
+        action TEXT NOT NULL,
+        target TEXT,
+        detail TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_admin_log_at ON admin_log(at DESC);
+    """
+)
+
+
 def _ensure_column(table: str, col: str, decl: str):
     cols = [r[1] for r in _db.execute(f"PRAGMA table_info({table})")]
     if col not in cols:

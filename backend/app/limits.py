@@ -169,6 +169,7 @@ SENSITIVE_SUFFIXES = (
     # with the tournament code — at the normal limit a script could claim every
     # seat in an event in seconds
     "/claim",
+    "/lift",       # admin: privileged, and a prober shouldn't get free retries
     "/entrants",
     "/turn",
     "/display",

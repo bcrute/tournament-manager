@@ -8,9 +8,11 @@ import Room from "./table/Room";
 import Host from "./tournament/Host";
 import Organize from "./tournament/Organize";
 import Play from "./tournament/Play";
+import Admin from "./admin/Admin";
 import "./index.css";
 import "./table/table.css";
 import "./tournament/tournament.css";
+import "./admin/admin.css";
 
 function LegacyRoomRedirect() {
   const { code = "" } = useParams();
@@ -28,6 +30,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <Route path="/tournament" element={<Host />} />
         <Route path="/tournament/:code" element={<Play />} />
         <Route path="/tournament/:code/organize" element={<Organize />} />
+        {/* unlisted: nothing links here. The server enforces access, not the absence of a link. */}
+        <Route path="/admin" element={<Admin />} />
         <Route path="/treachery" element={<Navigate to="/table" replace />} />
         <Route path="/treachery/r/:code" element={<LegacyRoomRedirect />} />
       </Routes>

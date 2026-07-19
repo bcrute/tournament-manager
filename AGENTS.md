@@ -85,12 +85,50 @@ fail, the change is wrong until proven otherwise:
   cite the actual document and version (see `docs/tournament-api-contract.md`).
   A plausible-sounding rule reference is worse than none.
 
+## The three surfaces
+
+Every feature belongs to exactly one of these. **Decide which before writing
+code** — the surface determines who can reach it, what it may assume, and where
+it lives.
+
+| Surface | Who | Assumes | Lives in |
+| --- | --- | --- | --- |
+| **Table** | Anyone at a game, no account | Nothing. Mobile-first. A player may be anonymous, may have joined by QR, may lose their token | `backend/app/table.py`, `frontend/src/table/` |
+| **Tournament** | Organizers (account + email) and entrants (token) | An event exists and someone is running it. Desktop-first for the organizer console, mobile for players | `backend/app/tournaments.py`, `frontend/src/tournament/` |
+| **Admin** | Operators of this deployment, set by `TABLE_ADMINS` | Full trust. Acts across all events and rooms | `backend/app/admin.py`, `frontend/src/admin/` |
+
+**Choosing:**
+
+- If an ordinary player at a table needs it → **table**.
+- If it only makes sense while an event is running → **tournament**.
+- If it acts across events, or on someone else's data, or needs to see the
+  instance as a whole → **admin**.
+
+**Rules that follow from the split:**
+
+- **Never solve an admin problem in the table surface.** "Let the host force-end
+  any room" is an admin feature wearing a player's clothes.
+- **The tournament surface may use the table surface, never the reverse.** A pod
+  is backed by an ordinary room, and `table.py` must keep working with no
+  tournament in sight. It reaches tournaments only through
+  `report_tournament_result` and the read-only clock context.
+- **Admin is unlisted but not hidden.** Nothing links to `/admin`, and that is
+  not a control. Access is `TABLE_ADMINS` plus an account session, checked
+  server-side on every endpoint. Non-admins get **404, not 403**, so probing
+  reveals nothing.
+- **Admin actions are logged; the other two are not.** Every state change made
+  through admin writes to `admin_log` with actor, action, target and reason.
+  This is the one surface acting on people who cannot see it happening.
+- **Admin reads counts, not contents.** It shows how many rooms exist, not
+  what's in them, and never a player's notes. Operating the instance does not
+  require reading anyone's game.
+
 ## Layout
 
 - `backend/app/` — FastAPI. `db.py` owns the schema and migrations; `table.py`
-  rooms and games; `tournaments.py` events; `accounts.py` optional accounts;
-  `limits.py` rate limiting and bans; `games.py` game profiles.
-- `frontend/src/` — Vite + React + TS. `table/` the game app, `tournament/` the
-  event app.
+  rooms and games; `tournaments.py` events; `admin.py` the operator surface;
+  `accounts.py` optional accounts; `limits.py` rate limiting and bans;
+  `games.py` game profiles.
+- `frontend/src/` — Vite + React + TS. `table/`, `tournament/`, `admin/`.
 - `docs/` — design, the API contract, security decisions, and an ideas parking
   lot that is explicitly not a roadmap.
