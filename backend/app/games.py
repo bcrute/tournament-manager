@@ -49,6 +49,11 @@ class GameProfile:
     #: collect for sanctioned play. None means the game has no such concept.
     sanctioning_account: str | None = None
 
+    #: turns played after time is called before the game is decided. The app
+    #: cannot detect a turn passing, so this is a counter players advance
+    #: themselves — which is what they already do at the table.
+    extra_turns_at_time: int = 0
+
     #: event structures an organizer may pick from, official ones first.
     structures: tuple = ()
 
@@ -218,6 +223,9 @@ MTG = GameProfile(
     # only draw_survivors is purely a house convention.
     time_called_policies=("draw_all", "draw_survivors", "highest_life", "organizer_decides"),
     sanctioning_account="Wizards account email",
+    # MTR 2.4: the current turn is finished, then five additional turns.
+    # (Two-Headed Giant uses three; that would be its own profile.)
+    extra_turns_at_time=5,
     structures=(MTR_PREMIER, MTR_PREMIER_LIMITED, COMMANDER_PODS, COMMANDER_NO_CUT),
     notes={
         # verified against the primary document, 2026-02-27 revision
@@ -267,6 +275,7 @@ def known_games() -> list[dict]:
             "resource": p.resource,
             "timeCalledPolicies": list(p.time_called_policies),
             "sanctioningAccount": p.sanctioning_account,
+            "extraTurnsAtTime": p.extra_turns_at_time,
             "structures": [
                 {"key": s.key, "name": s.name, "official": s.official,
                  "source": s.source, "podSize": s.pod_size, "notes": s.notes}

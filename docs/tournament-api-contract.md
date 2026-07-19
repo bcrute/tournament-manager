@@ -38,6 +38,22 @@ It never appears in `pods[]`, which every entrant can read. Three tests in
 
 ## 2. Lifecycle
 
+### The round clock
+
+There is no clock in a room and nothing syncing one. `trounds.ends_at` is a
+single absolute timestamp written when the organizer starts the timer; every
+client counts down against it locally, using the server's `now` only to correct
+a device whose clock is wrong. Pause records `paused_at`; resume adds the gap
+back onto `ends_at`. A pod's `extension_seconds` is added on read, so a judge
+extending one table moves only that table.
+
+Because the timer lives on the tournament and players are looking at the *room*,
+room state carries a `tournament` block (round, deadline, pause, turns) and
+tournament writes that change a clock push to the affected rooms over the
+room's existing WebSocket. Without that push a pause is invisible to players —
+their timer keeps visibly running.
+
+
 ```
 create ──▶ add entrants ──▶ open round ──▶ [play] ──▶ results ──▶ close round ──┐
              ▲                                                                  │
@@ -208,6 +224,25 @@ named for what they are rather than presented as official.
 Eliminated players never outrank survivors, whatever their life total was when
 they died.
 
+**Time called does not decide the pod.** MTR 2.4: the current turn is finished
+and five additional turns are played, and only an incomplete game *after* them
+is a draw. So `rounds/time` puts each pod into `extra_turns` with a countdown;
+the policy applies when the count reaches zero. A pod with no room to count in
+is decided immediately rather than stranded.
+
+### `POST /api/tournament/{code}/pods/{pod_id}/turn`
+```jsonc
+{ "delta": -1 }   // -1 counts a turn; +1 undoes a mis-tap or adds a turn
+→ { "ok": true, "turnsRemaining": 4, "decided": false }
+```
+Any player at the table may call this with their entrant token — a judge should
+not have to stand there for five turns. The app cannot detect a turn passing;
+the table counts them, which is what players already do by hand.
+
+The count may exceed where it started: MTR 2.6 says certain slow-play penalties
+add turns rather than time, and those are added to the end-of-match additional
+turns.
+
 ### `POST /api/tournament/{code}/rounds/close`  *(organizer)*
 Refuses with **409** if any pod lacks a result, or any official call is still
 open. Both messages name the count.
@@ -261,6 +296,13 @@ with a problem should be able to raise a hand even if a phone lost its token.
 
 ### `POST /api/tournament/{code}/calls/{id}/ack`  *(organizer)*
 ### `POST /api/tournament/{code}/calls/{id}/resolve`  *(organizer)*
+Resolving reports `openSeconds` and a `suggestedMinutes` extension, and accepts
+`extendMinutes` to grant time to that table. **The app suggests; the judge
+grants.** MTR 2.6: a pause of *more than one minute* should be extended
+"appropriately" — a judgment call, and a deck check has its own formula
+(duration plus three minutes) that only the judge knows applies. Nothing is
+added automatically.
+
 `ack` = "on my way" (only affects `open` calls). `resolve` closes it and stores
 `note` as the resolution. Both idempotent and both return `{"ok": true}` even
 when nothing matched — a judge double-tapping should not see an error.

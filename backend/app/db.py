@@ -207,6 +207,8 @@ _ensure_column("pod_seats", "room_token", "TEXT")   # this entrant's token in th
 _ensure_column("entrants", "external_ref", "TEXT")
 # which game profile this event runs; MTG is one surface over a generic core
 _ensure_column("tournaments", "game", "TEXT NOT NULL DEFAULT 'mtg'")
+# extra turns left after time was called; NULL means time hasn't been called
+_ensure_column("pods", "turns_remaining", "INTEGER")
 _ensure_column("players", "eliminated_at", "INTEGER")  # ordering for tournament placement
 # indexes on migrated columns must come after the columns exist
 _db.execute(

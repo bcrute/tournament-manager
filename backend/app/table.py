@@ -3,6 +3,7 @@ import json
 import os
 import random
 import secrets
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -222,6 +223,41 @@ def cmd_matrix(code: str):
     return out
 
 
+def tournament_context(room_code: str):
+    """Round clock and extra-turn count for a room that backs a tournament pod.
+
+    Players routed into a pod otherwise have no idea how long is left — the
+    timer lives on the tournament, and the room is what they're actually
+    looking at. One query, and None for an ordinary room.
+    """
+    row = q(
+        "SELECT p.id AS pod_id, p.number AS table_no, p.turns_remaining, p.extension_seconds, "
+        "r.number AS round_no, r.status AS round_status, r.ends_at, r.paused_at, "
+        "t.code AS tournament_code, t.name AS tournament_name "
+        "FROM pods p JOIN trounds r ON r.id = p.round_id "
+        "JOIN tournaments t ON t.code = r.tournament_code "
+        "WHERE p.room_code = ? ORDER BY p.id DESC LIMIT 1",
+        (room_code,),
+    ).fetchone()
+    if not row:
+        return None
+    ends_at = row["ends_at"]
+    if ends_at is not None and row["extension_seconds"]:
+        ends_at += row["extension_seconds"]   # a judge extended this table only
+    return {
+        "code": row["tournament_code"],
+        "name": row["tournament_name"],
+        "podId": row["pod_id"],
+        "table": row["table_no"],
+        "round": row["round_no"],
+        "roundStatus": row["round_status"],
+        "endsAt": ends_at,
+        "pausedAt": row["paused_at"],
+        "turnsRemaining": row["turns_remaining"],
+        "now": int(time.time()),   # clients derive an offset; never trust local clocks
+    }
+
+
 def room_snapshot(code: str):
     """Everything a room's state depends on, fetched once. Personalizing it per
     client is then pure CPU with no further queries — which is what makes
@@ -242,6 +278,7 @@ def room_snapshot(code: str):
         "players": players,
         "cmd": cmd_matrix(room["code"]),
         "events": events,
+        "tournament": tournament_context(room["code"]),
         "by_token": {p["token"]: p for p in players},
     }
 
@@ -291,6 +328,8 @@ def personalize(snap, me):
     first_name = next((p["name"] for p in players if p["id"] == first_pid), None)
     return {
         "log": [{"at": e["at"], "text": e["text"]} for e in snap["events"]],
+        # None for an ordinary room; the round clock for a tournament pod
+        "tournament": snap.get("tournament"),
         "room": {
             "code": room["code"],
             "status": status,

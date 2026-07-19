@@ -31,8 +31,24 @@ export interface LogEntry {
   text: string;
 }
 
+/** Present only when this room backs a tournament pod. */
+export interface RoomTournament {
+  code: string;
+  name: string;
+  podId: number;
+  table: number;
+  round: number;
+  roundStatus: string;
+  endsAt: number | null;
+  pausedAt: number | null;
+  /** Non-null once time has been called: additional turns still to play. */
+  turnsRemaining: number | null;
+  now: number;
+}
+
 export interface RoomState {
   log: LogEntry[];
+  tournament: RoomTournament | null;
   room: {
     code: string;
     status: RoomStatus;

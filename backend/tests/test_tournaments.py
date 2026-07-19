@@ -591,6 +591,14 @@ def _finish_pods(client, code):
         })
 
 
+def _play_extra_turns(client, code, pod_id, turns=5):
+    """Tap through the additional turns MTR 2.4 requires after time."""
+    last = None
+    for _ in range(turns):
+        last = client.post(f"/api/tournament/{code}/pods/{pod_id}/turn", json={"delta": -1}).json()
+    return last
+
+
 class TestTimeCalled:
     def test_default_policy_draws_every_unfinished_pod(self, client):
         """MTR 2.4: a match going to time is a draw, not a life-total ranking."""
@@ -599,7 +607,13 @@ class TestTimeCalled:
         add(client, code, ["t1", "t2", "t3", "t4"])
         client.post(f"/api/tournament/{code}/rounds", json={})
         r = client.post(f"/api/tournament/{code}/rounds/time").json()
-        assert r["decided"] == 1 and r["policy"] == "draw_all"
+        # time called starts the additional turns; it does not decide yet
+        assert r["decided"] == 0 and r["extraTurns"] == 1 and r["turns"] == 5
+        pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
+        assert pod["status"] == "extra_turns" and pod["turnsRemaining"] == 5
+
+        last = _play_extra_turns(client, code, pod["podId"])
+        assert last["decided"] is True
         pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
         assert pod["status"] == "complete"
         assert {s["place"] for s in pod["seats"]} == {1}   # all drew
@@ -617,6 +631,7 @@ class TestTimeCalled:
             q("UPDATE players SET life = ? WHERE token = ?", (life, s["room_token"]))
 
         client.post(f"/api/tournament/{code}/rounds/time")
+        _play_extra_turns(client, code, pod["podId"])
         after = client.get(f"/api/tournament/{code}").json()["pods"][0]
         place = {s["entrantId"]: s["place"] for s in after["seats"]}
         by_entrant = {s["entrant_id"]: life for s, life in zip(seats, lives)}
@@ -639,6 +654,7 @@ class TestTimeCalled:
         q("UPDATE players SET life = 99, eliminated = 1, eliminated_at = 500 WHERE token = ?",
           (seats[3]["room_token"],))
         client.post(f"/api/tournament/{code}/rounds/time")
+        _play_extra_turns(client, code, pod["podId"])
         after = client.get(f"/api/tournament/{code}").json()["pods"][0]
         place = {s["entrantId"]: s["place"] for s in after["seats"]}
         assert place[seats[0]["entrant_id"]] < place[seats[3]["entrant_id"]]
@@ -649,7 +665,9 @@ class TestTimeCalled:
         add(client, code, ["t13", "t14", "t15", "t16"])
         client.post(f"/api/tournament/{code}/rounds", json={})
         r = client.post(f"/api/tournament/{code}/rounds/time").json()
-        assert r["decided"] == 0
+        assert r["extraTurns"] == 1          # the turns are played regardless of policy
+        pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
+        _play_extra_turns(client, code, pod["podId"])
         assert client.get(f"/api/tournament/{code}").json()["pods"][0]["status"] == "awaiting_result"
 
     def test_calling_time_never_overwrites_a_reported_result(self, client):
@@ -891,3 +909,174 @@ class TestEventStructures:
         assert official["commander_pods_house"] is False
         # the multiplayer caveat must reach the UI, not just the source
         assert "no multiplayer" in mtg["notes"]["multiplayer"].lower()
+
+
+class TestAdditionalTurns:
+    """MTR 2.4/2.6. The app can't detect a turn passing, so the table counts
+    them — which is what players already do by hand."""
+
+    def _pod(self, client, code):
+        return client.get(f"/api/tournament/{code}").json()["pods"][0]
+
+    def test_a_pod_counts_down_and_only_then_is_decided(self, client):
+        organizer(client, "hostBK")
+        code = host(client)
+        add(client, code, ["x1", "x2", "x3", "x4"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        client.post(f"/api/tournament/{code}/rounds/time")
+        pod = self._pod(client, code)
+        for expected in (4, 3, 2, 1):
+            r = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/turn",
+                            json={"delta": -1}).json()
+            assert r["turnsRemaining"] == expected and r["decided"] is False
+        final = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/turn",
+                            json={"delta": -1}).json()
+        assert final["decided"] is True
+        assert self._pod(client, code)["status"] == "complete"
+
+    def test_a_mis_tap_can_be_undone(self, client):
+        organizer(client, "hostBL")
+        code = host(client)
+        add(client, code, ["x5", "x6", "x7", "x8"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        client.post(f"/api/tournament/{code}/rounds/time")
+        pod = self._pod(client, code)
+        client.post(f"/api/tournament/{code}/pods/{pod['podId']}/turn", json={"delta": -1})
+        r = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/turn",
+                        json={"delta": 1}).json()
+        assert r["turnsRemaining"] == 5
+
+    def test_turns_can_exceed_the_starting_count(self, client):
+        """MTR 2.6: certain slow-play penalties add turns rather than time, and
+        those are added to the end-of-match additional turns."""
+        organizer(client, "hostBM")
+        code = host(client)
+        add(client, code, ["x9", "x10", "x11", "x12"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        client.post(f"/api/tournament/{code}/rounds/time")
+        pod = self._pod(client, code)
+        r = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/turn",
+                        json={"delta": 1}).json()
+        assert r["turnsRemaining"] == 6
+
+    def test_any_player_at_the_table_may_count_a_turn(self, client):
+        """A judge shouldn't have to stand at the table for five turns."""
+        organizer(client, "hostBN")
+        code = host(client)
+        added = add(client, code, ["x13", "x14", "x15", "x16"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        pod = self._pod(client, code)
+        client.post(f"/api/tournament/{code}/rounds/time")
+        client.cookies.clear()          # no organizer session at all
+        token = client.post(f"/api/tournament/{code}/claim",
+                            json={"entrantId": added[0]["entrantId"]}).json()["entrantToken"]
+        r = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/turn",
+                        params={"token": token}, json={"delta": -1})
+        assert r.status_code == 200 and r.json()["turnsRemaining"] == 4
+
+    def test_counting_turns_before_time_is_called_is_a_conflict(self, client):
+        organizer(client, "hostBO")
+        code = host(client)
+        add(client, code, ["x17", "x18", "x19", "x20"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        pod = self._pod(client, code)
+        r = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/turn", json={"delta": -1})
+        assert r.status_code == 409
+
+    def test_a_pod_with_no_room_is_decided_immediately(self, client):
+        """Nowhere to count turns, so don't strand the pod."""
+        organizer(client, "hostBP")
+        code = host(client)
+        add(client, code, ["x21", "x22", "x23", "x24"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        pod = self._pod(client, code)
+        q("UPDATE pods SET room_code = NULL WHERE id = ?", (pod["podId"],))
+        r = client.post(f"/api/tournament/{code}/rounds/time").json()
+        assert r["decided"] == 1 and r["extraTurns"] == 0
+
+    def test_the_room_shows_its_pod_the_round_clock(self, client):
+        """Players are looking at the room, not the tournament page."""
+        organizer(client, "hostBQ")
+        code = host(client)
+        added = add(client, code, ["x25", "x26", "x27", "x28"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        client.post(f"/api/tournament/{code}/timer", json={"action": "start", "minutes": 50})
+        client.cookies.clear()
+        tok = client.post(f"/api/tournament/{code}/claim",
+                          json={"entrantId": added[0]["entrantId"]}).json()["entrantToken"]
+        my = client.get(f"/api/tournament/{code}", params={"token": tok}).json()["myPod"]
+        state = client.get(f"/api/table/rooms/{my['roomCode']}/me",
+                           headers={"X-Player-Token": my["roomToken"]}).json()
+        tr = state["tournament"]
+        assert tr["code"] == code and tr["round"] == 1
+        assert tr["endsAt"] and tr["now"] and tr["endsAt"] > tr["now"]
+
+    def test_a_per_table_extension_only_moves_that_tables_clock(self, client):
+        organizer(client, "hostBR")
+        code = host(client)
+        add(client, code, [f"y{i}" for i in range(8)])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        client.post(f"/api/tournament/{code}/timer", json={"action": "start", "minutes": 50})
+        pods = client.get(f"/api/tournament/{code}").json()["pods"]
+        client.post(f"/api/tournament/{code}/timer",
+                    json={"action": "extend", "minutes": 10, "podId": pods[0]["podId"]})
+        ends = []
+        for p in pods:
+            seat = q("SELECT room_token FROM pod_seats WHERE pod_id = ? LIMIT 1",
+                     (p["podId"],)).fetchone()
+            st = client.get(f"/api/table/rooms/{p['roomCode']}/me",
+                            headers={"X-Player-Token": seat["room_token"]}).json()
+            ends.append(st["tournament"]["endsAt"])
+        assert ends[0] - ends[1] == 600
+
+
+class TestJudgeExtensions:
+    """MTR 2.6 — a judge grants time, the app only suggests it."""
+
+    def test_a_short_call_suggests_nothing(self, client):
+        from app.tournaments import suggested_extension
+        assert suggested_extension(0) == 0
+        assert suggested_extension(59) == 0
+        assert suggested_extension(60) == 0      # "more than one minute"
+
+    def test_a_longer_call_rounds_up_to_the_minute(self, client):
+        from app.tournaments import suggested_extension
+        assert suggested_extension(61) == 2
+        assert suggested_extension(150) == 3
+        assert suggested_extension(600) == 10
+
+    def test_resolving_grants_nothing_unless_the_judge_says_so(self, client):
+        organizer(client, "hostBS")
+        code = host(client)
+        add(client, code, ["z1", "z2", "z3", "z4"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
+        call = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call", json={}).json()
+        r = client.post(f"/api/tournament/{code}/calls/{call['callId']}/resolve",
+                        json={"note": "ruled"}).json()
+        assert r["grantedMinutes"] == 0
+        assert q("SELECT extension_seconds e FROM pods WHERE id = ?",
+                 (pod["podId"],)).fetchone()["e"] == 0
+
+    def test_a_judge_can_grant_time_while_resolving(self, client):
+        organizer(client, "hostBT")
+        code = host(client)
+        add(client, code, ["z5", "z6", "z7", "z8"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
+        call = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call", json={}).json()
+        r = client.post(f"/api/tournament/{code}/calls/{call['callId']}/resolve",
+                        json={"note": "deck check", "extendMinutes": 7}).json()
+        assert r["grantedMinutes"] == 7
+        assert q("SELECT extension_seconds e FROM pods WHERE id = ?",
+                 (pod["podId"],)).fetchone()["e"] == 420
+
+    def test_the_open_call_queue_reports_how_long_it_has_waited(self, client):
+        organizer(client, "hostBU")
+        code = host(client)
+        add(client, code, ["z9", "z10", "z11", "z12"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
+        client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call", json={})
+        call = client.get(f"/api/tournament/{code}").json()["calls"][0]
+        assert "openSeconds" in call and "suggestedMinutes" in call

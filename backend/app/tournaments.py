@@ -60,6 +60,7 @@ def defaults_for(game: str | None) -> dict:
         # renaming a live settings key buys nothing. It is the profile's
         # resource start, whatever that resource is called.
         "startingLife": p.resource_start,
+        "extraTurns": p.extra_turns_at_time,
     }
 
 
@@ -199,6 +200,7 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
             "status": p["status"],
             "roomCode": p["room_code"],
             "extensionSeconds": p["extension_seconds"],
+            "turnsRemaining": p["turns_remaining"],
             "seats": [
                 {"seat": s["seat"], "entrantId": s["entrant_id"], "name": s["name"],
                  "place": s["place"], "points": s["points"]}
@@ -216,7 +218,9 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
     if organizer:
         calls = [
             {"id": c["id"], "podId": c["pod_id"], "status": c["status"],
-             "category": c["category"], "note": c["note"], "createdAt": c["created_at"]}
+             "category": c["category"], "note": c["note"], "createdAt": c["created_at"],
+             "openSeconds": max(0, int(time.time()) - c["created_at"]),
+             "suggestedMinutes": suggested_extension(max(0, int(time.time()) - c["created_at"]))}
             for c in q(
                 "SELECT * FROM official_calls WHERE tournament_code = ? AND status != 'resolved' "
                 "ORDER BY created_at",
@@ -299,6 +303,9 @@ class TimerBody(BaseModel):
 class CallBody(BaseModel):
     category: str | None = None
     note: str | None = None
+    #: minutes to add to this table when resolving. Omitted means none — a
+    #: judge grants time, the app never grants it on their behalf.
+    extendMinutes: int | None = None
 
 
 # ---- lifecycle ----
@@ -723,6 +730,27 @@ def record_room_result(room_code: str, game_no: int, order: list[int], kind: str
     touch(t["code"])
 
 
+async def push_to_pods(round_id: int | None = None, room_codes=None):
+    """Tell the pods' rooms their clock changed.
+
+    The room shows the round timer, but the timer lives on the tournament, so a
+    pause or an extension is invisible to players until something pushes it.
+    Only organizer actions land here, so this is rare and cheap — far cheaper
+    than every phone polling for a number that changes a few times an hour.
+    """
+    from . import table as table_mod
+
+    codes = list(room_codes or [])
+    if round_id is not None:
+        codes += [
+            r["room_code"]
+            for r in q("SELECT room_code FROM pods WHERE round_id = ?", (round_id,)).fetchall()
+            if r["room_code"]
+        ]
+    for code in dict.fromkeys(codes):
+        await table_mod.broadcast(code)
+
+
 def resolve_pod_at_time(t, cfg, pod):
     """Decide one unfinished pod when time is called.
 
@@ -781,7 +809,7 @@ def resolve_pod_at_time(t, cfg, pod):
 
 
 @router.post("/{code}/rounds/time")
-def call_time(code: str, request: Request):
+async def call_time(code: str, request: Request):
     """Organizer calls time on the round. Every pod without a result is decided
     by the tournament's time-called policy; pods already reported are untouched,
     and an organizer ruling is never overwritten."""
@@ -795,20 +823,73 @@ def call_time(code: str, request: Request):
     pods = q(
         "SELECT * FROM pods WHERE round_id = ? AND status != 'complete'", (rnd["id"],)
     ).fetchall()
-    decided = 0
+
+    # MTR 2.4: at time the current turn is finished and N additional turns are
+    # played — the game is only decided after them. The app can't detect a turn
+    # passing, so the pod counts them down itself; players are already doing
+    # this by hand at the table.
+    extra = cfg["extraTurns"]
+    decided, counting = 0, 0
     for pod in pods:
+        if extra > 0 and pod["room_code"]:
+            q("UPDATE pods SET turns_remaining = ?, status = 'extra_turns' WHERE id = ?",
+              (extra, pod["id"]))
+            counting += 1
+            continue
+        # no room to count turns in (or the game doesn't have the procedure):
+        # decide immediately rather than stranding the pod
         if resolve_pod_at_time(t, cfg, pod) is not None:
             decided += 1
     q("UPDATE trounds SET ends_at = ? WHERE id = ?", (int(time.time()), rnd["id"]))
     touch(t["code"])
-    return {"ok": True, "decided": decided, "policy": cfg["timeCalledPolicy"]}
+    await push_to_pods(rnd["id"])
+    return {"ok": True, "decided": decided, "extraTurns": counting,
+            "turns": extra, "policy": cfg["timeCalledPolicy"]}
+
+
+class TurnBody(BaseModel):
+    delta: int = -1          # -1 counts a turn down; +1 undoes a mis-tap
+
+
+@router.post("/{code}/pods/{pod_id}/turn")
+async def advance_turn(code: str, pod_id: int, body: TurnBody, token: str | None = None):
+    """Count an additional turn at the table. Any player in the pod may tap it
+    — a judge shouldn't have to stand there — and +1 undoes a mis-tap. When the
+    count reaches zero the pod is decided by the time-called policy."""
+    t = get_tournament(code)
+    cfg = settings_of(t)
+    pod = q("SELECT * FROM pods WHERE id = ?", (pod_id,)).fetchone()
+    if not pod:
+        raise HTTPException(404, "pod not found")
+    if pod["turns_remaining"] is None:
+        raise HTTPException(409, "time has not been called on this pod")
+    if pod["status"] == "complete":
+        raise HTTPException(409, "this pod already has a result")
+
+    # A tap counts one turn down. Counting *up* is not just undo: MTR 2.6 says
+    # certain slow-play penalties add turns rather than time, and those are
+    # added to the end-of-match additional turns — so the count must be able to
+    # exceed where it started. Bounded only to keep a stuck finger from
+    # producing an absurd number.
+    step = 1 if body.delta > 0 else -1
+    left = min(99, max(0, pod["turns_remaining"] + step))
+    q("UPDATE pods SET turns_remaining = ? WHERE id = ?", (left, pod["id"]))
+    touch(t["code"])
+
+    if left == 0:
+        pod = q("SELECT * FROM pods WHERE id = ?", (pod_id,)).fetchone()
+        resolve_pod_at_time(t, cfg, pod)
+        await push_to_pods(room_codes=[pod["room_code"]] if pod["room_code"] else [])
+        return {"ok": True, "turnsRemaining": 0, "decided": True}
+    await push_to_pods(room_codes=[pod["room_code"]] if pod["room_code"] else [])
+    return {"ok": True, "turnsRemaining": left, "decided": False}
 
 
 # ---- timer ----
 
 
 @router.post("/{code}/timer")
-def timer(code: str, body: TimerBody, request: Request):
+async def timer(code: str, body: TimerBody, request: Request):
     t, _ = require_organizer(code, request)
     cfg = settings_of(t)
     rnd = q(
@@ -843,6 +924,7 @@ def timer(code: str, body: TimerBody, request: Request):
     else:
         raise HTTPException(400, "unknown timer action")
     touch(t["code"])
+    await push_to_pods(rnd["id"])
     return {"ok": True}
 
 
@@ -880,12 +962,52 @@ def ack_call(code: str, call_id: int, request: Request):
     return {"ok": True}
 
 
+def suggested_extension(open_seconds: int) -> int:
+    """Minutes MTR 2.6 suggests for a pause of this length.
+
+    "If a judge pauses a match for more than one minute while the round clock is
+    running, they should extend the match time appropriately." Under a minute,
+    nothing. Over it, round up to the minute. This is a *suggestion* the judge
+    accepts or overrides — "appropriately" is their call, not ours, and a deck
+    check has its own formula (duration plus three minutes) that only they know
+    applies.
+    """
+    if open_seconds <= 60:
+        return 0
+    return -(-open_seconds // 60)   # ceiling division
+
+
 @router.post("/{code}/calls/{call_id}/resolve")
-def resolve_call(code: str, call_id: int, body: CallBody, request: Request):
+async def resolve_call(code: str, call_id: int, body: CallBody, request: Request):
     t, _ = require_organizer(code, request)
+    call = q(
+        "SELECT * FROM official_calls WHERE id = ? AND tournament_code = ?",
+        (call_id, t["code"]),
+    ).fetchone()
+    if not call:
+        return {"ok": True}   # already gone; a double-tap is not an error
+
     q(
         "UPDATE official_calls SET status = 'resolved', resolved_at = unixepoch(), resolution = ? "
         "WHERE id = ? AND tournament_code = ?",
         (body.note, call_id, t["code"]),
     )
-    return {"ok": True}
+
+    open_for = max(0, int(time.time()) - call["created_at"])
+    granted = 0
+    if body.extendMinutes and call["pod_id"]:
+        granted = max(0, body.extendMinutes)
+        q(
+            "UPDATE pods SET extension_seconds = extension_seconds + ? WHERE id = ?",
+            (granted * 60, call["pod_id"]),
+        )
+        room = q("SELECT room_code FROM pods WHERE id = ?", (call["pod_id"],)).fetchone()
+        if room and room["room_code"]:
+            await push_to_pods(room_codes=[room["room_code"]])
+    touch(t["code"])
+    return {
+        "ok": True,
+        "openSeconds": open_for,
+        "suggestedMinutes": suggested_extension(open_for),
+        "grantedMinutes": granted,
+    }

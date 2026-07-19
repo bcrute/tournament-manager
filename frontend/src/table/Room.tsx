@@ -11,6 +11,7 @@ import DisplayView from "./DisplayView";
 import LifePanel from "./LifePanel";
 import NotesSheet from "./NotesSheet";
 import RoomBar from "./RoomBar";
+import RoundClock from "./RoundClock";
 import RulesSheet from "./RulesSheet";
 import SlideToUnveil from "./SlideToUnveil";
 import { useAutoHide } from "./useAutoHide";
@@ -47,8 +48,21 @@ interface Toast {
 type Tab = "card" | "life" | "table";
 
 function RoomInner({ code, token }: { code: string; token: string }) {
+  // counting an additional turn is a tournament action; the room is just where
+  // the players happen to be looking when time is called
+  async function countTurn(delta: number) {
+    const t = state?.tournament;
+    if (!t) return;
+    await fetch(`/api/tournament/${t.code}/pods/${t.podId}/turn`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ delta }),
+    }).catch(() => {});
+    await refetch();
+  }
+
   const navigate = useNavigate();
-  const { state, gone, error, stale } = useRoom(code, token);
+  const { state, gone, error, stale, refetch } = useRoom(code, token);
   const [tab, setTab] = useState<Tab | null>(null);
   const [cardIndex, setCardIndex] = useState(0);
   const [zoomPid, setZoomPid] = useState<number | null>(null);
@@ -222,6 +236,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   if (state.room.status === "lobby") {
     return (
       <>
+        {state.tournament && <RoundClock t={state.tournament} onTurn={(d) => void countTurn(d)} />}
         <RoomBar
           code={code}
           name={state.me.name}
@@ -259,6 +274,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
 
   return (
     <div className="tr-room">
+      {state.tournament && <RoundClock t={state.tournament} onTurn={(d) => void countTurn(d)} />}
       <RoomBar
         code={code}
         name={state.me.name}
