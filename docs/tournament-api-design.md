@@ -1,5 +1,11 @@
 # Tournament API — design
 
+> **This is the design, not the contract.** It records what we intended before
+> building, including the stress test that shaped it. The API as actually shipped
+> is in [`tournament-api-contract.md`](./tournament-api-contract.md); where the two
+> disagree, the contract is right. Divergences are listed there with reasoning.
+
+
 *Written 2026-07-19. Design only; nothing here is implemented.*
 
 Companion to [tournaments-roadmap.md](./tournaments-roadmap.md), which covers the

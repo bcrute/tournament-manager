@@ -1,0 +1,286 @@
+# Tournament API — contract
+
+What the server *actually* serves, as shipped. `tournament-api-design.md` is the
+design that preceded it and has diverged in places; where the two disagree, this
+file is right. Divergences are listed in §7 with the reasoning, so the design doc
+stays readable as a record of intent.
+
+Base path: `/api/tournament`. All bodies and responses are JSON. Times are Unix
+seconds (integers), UTC.
+
+---
+
+## 1. Authentication
+
+Three separate credentials, deliberately unequal:
+
+| Caller | Credential | Carried in | Grants |
+|---|---|---|---|
+| Organizer | account session | `session` cookie (httpOnly, Secure, SameSite) | full control of tournaments they own |
+| Entrant | entrant token | `?token=` query parameter | their own view; calling an official |
+| Player in a pod | room token | `X-Player-Token` header (table API) | one seat in one room |
+
+An organizer must own the tournament — `require_organizer` matches the session's
+account against `tournaments.organizer_account_id`. Any other account gets 403,
+no session gets 401.
+
+**Entrant tokens are query parameters, not headers**, because the player client
+reads state from a plain `GET` it can retry cheaply. That places the token in
+request URLs, so it must never be logged: the reverse proxy strips query strings
+from access logs. A header would be tidier and is the obvious future change.
+
+**Room tokens are seat credentials.** `GET /{code}` returns one only on
+`myPod.roomToken`, for the caller's own seat, derived from their entrant token.
+It never appears in `pods[]`, which every entrant can read. Three tests in
+`test_tournaments.py::TestPlayerView` pin this; treat them as load-bearing.
+
+---
+
+## 2. Lifecycle
+
+```
+create ──▶ add entrants ──▶ open round ──▶ [play] ──▶ results ──▶ close round ──┐
+             ▲                                                                  │
+             └──────────────────────── next round ◀─────────────────────────────┘
+```
+
+`tournaments.status`: `setup` → `running` (first round opens) → `ended`.
+`trounds.status`: `active` → `closed`. `pods.status`: `active` →
+`awaiting_result` → `complete`.
+
+Only one round is active at a time. Opening a second while one is active is a
+409 unless `reroll` is set.
+
+---
+
+## 3. Endpoints
+
+### `POST /api/tournament`
+Create. **Organizer session required, and the account must have an email** —
+without one this returns **409**, not 403. Rationale in §6.
+
+```jsonc
+// request
+{ "name": "Friday Night Commander",   // 1–80 chars
+  "mode": "life",                      // life | treachery
+  "settings": { "podSize": 4 } }       // unknown keys are dropped, not rejected
+// response
+{ "code": "K7M2Q" }                    // 5 chars, alphabet excludes I/L/O/0/1
+```
+
+### `GET /api/tournament/{code}`
+The single snapshot every client polls. Personalized in memory from one query
+set — no N+1, no per-viewer queries.
+
+Optional `?token=` (entrant). Organizer recognized by cookie.
+
+```jsonc
+{ "tournament": { "code", "name", "mode", "status", "settings", "roundCount" },
+  "round": { "number", "status", "endsAt", "pausedAt",
+             "now": 1784500123 },      // server clock; clients derive an offset
+  "pods": [ { "podId", "table", "status", "roomCode", "extensionSeconds",
+              "seats": [ {"seat", "entrantId", "name", "place", "points"} ] } ],
+  "myPod": { /* same shape, plus: */ "roomToken": "…", "mySeat": 2 },
+  "me": { "entrantId", "name" },       // null when anonymous
+  "standings": [ {"entrantId","name","points","opponentPoints",
+                  "podsPlayed","claimed","dropped","rank"} ],
+  "calls": [ … ],                      // organizer only; [] for everyone else
+  "isOrganizer": false }
+```
+
+`round.now` exists so clients never trust the local clock — a phone with a wrong
+time would otherwise show a wrong round timer. Clients compute
+`offset = now*1000 - Date.now()` once per poll.
+
+`standings` is always present and always fully sorted (points, then opponents'
+points, then name). Ranks are dense positions after sorting, 1-based.
+
+### `GET /api/tournament/{code}/roster`
+**Public and unauthenticated by design** — a player scans a code and needs the
+name list before they have any credential.
+
+```jsonc
+{ "name": "Friday Night Commander", "status": "running",
+  "entrants": [ {"entrantId", "name", "claimed", "dropped"} ] }
+```
+
+Exposes display names and claim state only. No tokens, no email, no counts that
+aren't already visible in the room.
+
+### `POST /api/tournament/{code}/claim`
+Claim a seat. No auth — possession of the tournament code is the only gate.
+
+```jsonc
+{ "entrantId": 41 }
+→ { "entrantToken": "…", "entrantId": 41, "name": "Ada" }
+```
+
+By **id, not name**: names legitimately repeat, ids don't. First claim wins;
+a second returns **409**. The organizer can `release` a mis-tap.
+
+### `POST /api/tournament/{code}/entrants`  *(organizer)*
+```jsonc
+{ "names": ["Ada", "Grace", ""] }      // blanks skipped
+→ { "added": [ {"entrantId", "name"} ] }
+```
+Duplicates are allowed — two people really can be named Ada.
+
+### `POST /api/tournament/{code}/entrants/{id}/release`  *(organizer)*
+Clears the entrant's token so the seat can be claimed again. Idempotent.
+
+### `POST /api/tournament/{code}/entrants/{id}/drop`  *(organizer)*
+Sets `dropped_at`. Dropped entrants are excluded from future pairings but keep
+their points and history. Idempotent; there is no un-drop endpoint yet (§8).
+
+### `POST /api/tournament/{code}/rounds`  *(organizer)*
+Pair, seat, and create one room per pod.
+
+```jsonc
+{ "reroll": false }  → { "round": 2, "pods": 3 }
+```
+
+- `reroll: false` with a round already active → **409**.
+- `reroll: true` discards the current round's pods and re-pairs with an
+  incremented seed. Only sane before play starts; the API does not stop you.
+- No undropped entrants → **400**.
+
+Pairing is deterministic given `(field, points, met, seed)`. Everything is
+computed and persisted before the round is announced, so opening a round is a
+broadcast of settled state rather than work done while clients poll.
+
+Pod sizes never fall below 3 — remainders of 1–2 are absorbed into neighbours.
+
+### `POST /api/tournament/{code}/rounds/close`  *(organizer)*
+Refuses with **409** if any pod lacks a result, or any official call is still
+open. Both messages name the count.
+
+### `POST /api/tournament/{code}/pods/{pod_id}/result`  *(organizer)*
+```jsonc
+{ "kind": "placement",                 // placement | draw | unfinished
+  "places": [ {"entrantId": 41, "place": 1} ],
+  "note": "ruled a draw at time",
+  "expectedVersion": 2 }               // optional optimistic-concurrency guard
+→ { "ok": true, "version": 3 }
+```
+
+Results are **versioned, never mutated** — an override appends. If
+`expectedVersion` is supplied and doesn't match the current max, **409**
+("someone else recorded a result — reload before overriding"). Omit it to force.
+
+Points come from `settings.scoring` (`win_draw_loss` or `placement`) and are
+written onto `pod_seats` at decision time, so changing scoring settings
+mid-event does not silently rewrite history.
+
+### Automatic results (no endpoint)
+When a game ends in a pod's room, the room reports placement from **elimination
+order** — last standing is 1st. Written with `source: "auto"`.
+
+**An `auto` result never overwrites an `organizer` one.** The reverse is allowed:
+that's what override means. This is the least-tested path in the system (§8).
+
+### `POST /api/tournament/{code}/timer`  *(organizer)*
+```jsonc
+{ "action": "start", "minutes": 60 }   // start | pause | resume | extend
+{ "action": "extend", "minutes": 5, "podId": 12 }   // one table only
+```
+- `start` without `minutes` uses `settings.roundMinutes`.
+- `resume` adds the paused duration to `endsAt`, so a pause never eats clock.
+- `extend` **with** `podId` adds to that pod's `extensionSeconds`; **without**,
+  extends the whole round.
+- No active round → **409**. Unknown action → **400**.
+
+### `POST /api/tournament/{code}/pods/{pod_id}/call?token=…`  *(entrant)*
+```jsonc
+{ "category": null, "note": "judge please" }
+→ { "ok": true, "callId": 7, "alreadyOpen": true }   // when one is already open
+```
+**One open call per pod.** A second returns the existing `callId` with
+`alreadyOpen: true` rather than queueing duplicates — four players tapping the
+same button must not summon four judges. Disabled tournaments return **409**.
+
+The token is optional; an anonymous call records `entrant_id: null`. A table
+with a problem should be able to raise a hand even if a phone lost its token.
+
+### `POST /api/tournament/{code}/calls/{id}/ack`  *(organizer)*
+### `POST /api/tournament/{code}/calls/{id}/resolve`  *(organizer)*
+`ack` = "on my way" (only affects `open` calls). `resolve` closes it and stores
+`note` as the resolution. Both idempotent and both return `{"ok": true}` even
+when nothing matched — a judge double-tapping should not see an error.
+
+---
+
+## 4. Errors
+
+`{"detail": "message"}`, with the HTTP status carrying the meaning:
+
+| Status | Means |
+|---|---|
+| 400 | malformed input, or nothing to pair |
+| 401 | no session where one is required |
+| 403 | authenticated, but not this tournament's organizer |
+| 404 | no such tournament / pod |
+| 409 | **state conflict** — seat claimed, round open, result superseded, calls outstanding, organizer has no email |
+
+409 is doing a lot of work on purpose: nearly every one is recoverable by the
+caller re-reading state, and the messages are written to be shown to a human
+verbatim.
+
+---
+
+## 5. Rate limiting
+
+Shared limiter (`limits.py`). Tournament paths classify as `normal`
+(900 req / 60 s per client) except `POST /claim` and account endpoints, which
+are `sensitive` (20 / 600). Clients are identified by a salted HMAC of the IP —
+pseudonymous, never the raw address. Repeat offenders escalate 1h → 6h → 24h → 7d.
+
+Polling at 5 s (30 s hidden) with ~50 attendees is ~10 req/s — two orders of
+magnitude inside the limit.
+
+---
+
+## 6. Why hosting requires an email
+
+Every other part of the app works with no email, and accounts are optional
+throughout. Hosting is the exception: an organizer locked out mid-event strands
+every table, and recovery codes are no help when they're in a drawer at home.
+It is enforced at create time (**409**), never at signup, so the requirement
+lands on the person choosing to host rather than on everyone.
+
+The address is stored plainly and used only for recovery. It is never returned
+by any endpoint — `/api/account/me` exposes `hasEmail: bool`, not the value.
+
+Usernames, by contrast, cannot be encrypted: they're looked up on every sign-in,
+and searchable encryption means deterministic encryption or a blind index, both
+of which leak equality. That's why signup discourages email-as-username — a
+warning, not a block.
+
+---
+
+## 7. Divergences from `tournament-api-design.md`
+
+| Design | Shipped | Why |
+|---|---|---|
+| `GET /rounds/latest`, `/standings`, `/calls` | folded into `GET /{code}` | three polls became one snapshot; cheaper and race-free |
+| `/tables/{id}` | `/pods/{pod_id}` | "pod" is the word players use |
+| `WS /{code}/ws` | not built | polling is enough at this scale and costs nothing idle; see §8 |
+| `GET /rounds/{n}` (history) | not built | nothing needs it yet |
+| organizer secret returned once | account session + email | recoverable; a lost secret mid-event is unrecoverable |
+| — | `POST /rounds/close` | the design had no way to end a round |
+| — | `entrants/{id}/release`, `/drop` | mis-taps and departures both happen constantly |
+
+---
+
+## 8. Known gaps
+
+- **Auto-result is test-covered, not event-proven.** The room → placement path
+  has never run in a real game inside a tournament pod. Prove it with a
+  throwaway 4-player event before running anything that counts.
+- **No WebSocket.** Timer updates lag by up to one poll (5 s foreground).
+- **No un-drop**, no entrant rename, no top-cut re-podding, no `rounds: auto`.
+- **No import adapter** (TopDeck et al.) — §"Adapters" in the design doc.
+- **`/openapi.json` and `/docs` are publicly served**, enumerating every route
+  and schema. Authentication still holds, but it's free reconnaissance on an
+  otherwise hardened box. Disable with
+  `FastAPI(openapi_url=None, docs_url=None)` in `main.py`, or gate them behind
+  the organizer session.
