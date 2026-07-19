@@ -44,6 +44,9 @@ that the players' own devices show.
 - **table** (pod) — round, table number, bound `room_code` + `game_no`, status
 - **seat** — table, entrant, seat index (= turn order), result placement
 - **result** — per table: kind, places, source, decided_at
+- **official_call** — a judge call raised from a table: caller entrant,
+  category, note, status (`open`/`acknowledged`/`resolved`), who claimed it and
+  when, resolution note, and any time extension granted
 
 ## 3. Endpoints
 
@@ -59,6 +62,10 @@ GET    /api/tournament/{code}/rounds/{n}    historical round
 POST   /api/tournament/{code}/tables/{id}/result   report or override
 GET    /api/tournament/{code}/standings     points + tiebreakers
 POST   /api/tournament/{code}/timer         organizer: start/pause/extend
+POST   /api/tournament/{code}/tables/{id}/call     player: call an official
+GET    /api/tournament/{code}/calls         staff: open + recent calls
+POST   /api/tournament/{code}/calls/{id}/ack       staff: claim it ("on the way")
+POST   /api/tournament/{code}/calls/{id}/resolve   staff: close, optionally +time
 WS     /api/tournament/{code}/ws            tournament-level push
 ```
 
@@ -160,6 +167,33 @@ attacked, and the decision taken for each.
     round closes.
 25. **Display devices** attach per pod exactly as today; a tournament-wide
     overview display is deferred but the model doesn't preclude it.
+
+### Calling an official
+
+36. **One button, from the table.** Any seated player raises a call from the ⋮
+    menu; it carries the table number and room code so a judge knows where to
+    walk. Optional category (rules question, slow play, deck problem, other)
+    and a free-text note, both skippable — someone with a problem shouldn't
+    face a form.
+37. **Acknowledge is a distinct step from resolve.** A judge claims the call,
+    which tells the table someone is coming and stops a second judge walking to
+    the same pod. Resolution is separate and can carry a note.
+38. **Calls are attributed, not anonymous.** Penalty tracking and repeat-issue
+    patterns need to know who called; the log records it, and the whole call
+    history stays with the tournament.
+39. **One open call per table.** A second tap while a call is open is a no-op
+    rather than a queue of duplicates. Rate-limited like other write routes.
+40. **Resolving can grant a time extension in the same action.** This is how
+    judges actually work — the ruling costs the table minutes, so the extension
+    belongs on the resolution, applied to that table's deadline (§ per-table
+    extensions), not the round's.
+41. **Unacknowledged calls escalate visually.** The staff queue sorts by age and
+    flags anything waiting; a call nobody sees is worse than no button.
+42. **A round can't quietly close over an open call.** Closing prompts the
+    organizer to resolve or explicitly dismiss outstanding calls, so they end up
+    in the record either way.
+43. **The caller may drop or be eliminated.** The call survives its caller —
+    it belongs to the table, not the person.
 
 ### Timer
 
@@ -266,6 +300,8 @@ this is a genuine fairness knob rather than cosmetics.
 | `organizerAuth` | `secret` (device-held) · `account` (recoverable, multi-device) | `account` when signed in, else `secret` |
 | `collectWizardsEmail` | `off` · `optional` · `required` | `off` |
 | `spectatorView` | `public` · `code_only` · `off` | `code_only` |
+| `staffRoles` | `off` · `judges` (result entry, timer, official calls; no re-pairing or deletion) | `judges` |
+| `allowOfficialCalls` | `on` · `off` (small leagues with no judge) | `on` |
 
 ## 7. Still open
 
