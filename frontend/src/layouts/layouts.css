@@ -294,3 +294,54 @@
     padding: 1.25rem;
   }
 }
+
+/* Screenshots: a horizontal strip on a phone, a grid once there's room.
+   Fixed aspect so lazy-loaded images don't shift the page as they arrive. */
+.shots {
+  margin-top: 2.5rem;
+}
+
+.shot-strip {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  padding: 0.5rem 0 1rem;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+}
+
+.shot-strip figure {
+  margin: 0;
+  flex: 0 0 auto;
+  width: min(62vw, 15rem);
+  scroll-snap-align: start;
+}
+
+.shot-strip img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 390 / 844;
+  border-radius: 12px;
+  border: 1px solid #2a2f3a;
+  background: #0f1218;
+  display: block;
+}
+
+.shot-strip figcaption {
+  margin-top: 0.5rem;
+  font-size: 0.82rem;
+  opacity: 0.75;
+  line-height: 1.35;
+}
+
+@media (min-width: 60rem) {
+  .shot-strip {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    overflow: visible;
+  }
+
+  .shot-strip figure {
+    width: auto;
+  }
+}

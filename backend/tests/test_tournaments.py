@@ -916,10 +916,12 @@ class TestEventStructures:
             client.post(f"/api/tournament/{code}/entrants/{e['entrantId']}/drop")
         assert client.get(f"/api/tournament/{code}/plan").json()["players"] == 15
 
-    def test_an_unknown_structure_key_falls_back_to_the_first(self, client):
+    def test_an_unknown_structure_key_falls_back_to_one_that_fits_the_seating(self, client):
+        """Not simply the first: a pods event must not be advised from the 1v1
+        table just because an unknown key was stored."""
         organizer(client, "hostBJ")
-        code = host(client, settings={"structure": "does-not-exist"})
-        assert client.get(f"/api/tournament/{code}/plan").json()["structure"] == "mtr_premier"
+        code = host(client, settings={"structure": "does-not-exist", "podSize": 4})
+        assert client.get(f"/api/tournament/{code}/plan").json()["structure"] == "commander_pods_house"
 
     def test_structures_are_advertised_with_their_provenance(self, client):
         mtg = client.get("/api/tournament/games").json()["games"][0]
@@ -1537,3 +1539,28 @@ class TestRecords:
         for row in client.get(f"/api/tournament/{code}").json()["standings"]:
             assert row["points"] == 1, row["name"]
             assert row["draws"] == 1 and row["podsPlayed"] == 1
+
+    def test_the_default_structure_matches_how_the_event_is_seated(self, client):
+        """Regression: a pods event fell back to the 1v1 Premier table, which
+        advised 0 Swiss rounds and a top-8 cut for eight players — correct for
+        duels, nonsense for pods."""
+        organizer(client, "hostBK2")
+        code = host(client, settings={"podSize": 4})
+        add(client, code, [f"s{i}" for i in range(8)])
+        plan = client.get(f"/api/tournament/{code}/plan").json()
+        assert plan["structure"] == "commander_pods_house"
+        assert plan["swissRounds"] >= 2, plan
+        assert plan["official"] is False
+
+    def test_a_duel_event_still_gets_the_official_table(self, client):
+        organizer(client, "hostBK3")
+        code = host(client, settings={"podSize": 2})
+        add(client, code, [f"d{i}" for i in range(8)])
+        plan = client.get(f"/api/tournament/{code}/plan").json()
+        assert plan["structure"] == "mtr_premier" and plan["official"] is True
+
+    def test_an_explicit_choice_still_wins_over_the_seating(self, client):
+        organizer(client, "hostBK4")
+        code = host(client, settings={"podSize": 4, "structure": "mtr_premier"})
+        add(client, code, [f"e{i}" for i in range(8)])
+        assert client.get(f"/api/tournament/{code}/plan").json()["structure"] == "mtr_premier"

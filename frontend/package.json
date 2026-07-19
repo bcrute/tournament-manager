@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "test": "vitest run --coverage",
-    "preview": "vite preview"
+    "e2e": "playwright test",
+    "preview": "vite preview",
+    "shots": "playwright test -c shots/capture.config.ts"
   },
   "dependencies": {
     "qrcode.react": "^4.2.0",
@@ -16,12 +18,13 @@
     "react-router-dom": "^7.6.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.61.1",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/react": "^16.3.0",
     "@types/react": "^19.1.0",
-    "@vitest/coverage-v8": "^3.2.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.5.0",
+    "@vitest/coverage-v8": "^3.2.0",
     "jsdom": "^26.1.0",
     "typescript": "^5.8.0",
     "vite": "^7.0.0",

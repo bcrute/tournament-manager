@@ -79,6 +79,33 @@ export default function Home() {
         </article>
       </section>
 
+      <section className="shots">
+        <h2>What it looks like</h2>
+        <p className="lede">
+          Real screens, captured from the running app — not mockups.
+        </p>
+        <div className="shot-strip">
+          {[
+            ["table-player", "Your own phone: life, commander damage, and nothing else in the way."],
+            ["table-display", "One phone showing the whole table, without giving up its seat."],
+            ["table-commander", "Commander damage as a grid — left to remove, right to add."],
+            ["tournament-console", "Running an event: pods, pairings, timer and judge calls."],
+            ["tournament-standings", "Standings players can read from inside their game."],
+          ].map(([file, caption]) => (
+            <figure key={file}>
+              <img
+                src={`/shots/${file}.png`}
+                alt={caption}
+                loading="lazy"
+                width={390}
+                height={844}
+              />
+              <figcaption>{caption}</figcaption>
+            </figure>
+          ))}
+        </div>
+      </section>
+
       <section className="site-status">
         <span className={`dot ${health}`} /> Service {health}
       </section>

@@ -8,3 +8,5 @@ __pycache__/
 # test artifacts
 .coverage
 coverage/
+frontend/test-results/
+frontend/playwright-report/

@@ -102,4 +102,9 @@ class SPAStaticFiles(StaticFiles):
         return response
 
 
-app.mount("/", SPAStaticFiles(directory="static", html=True), name="static")
+# Configurable so end-to-end tests can serve the real built frontend from
+# frontend/dist without a copy step. Production leaves it at the default.
+_STATIC_DIR = os.environ.get("TABLE_STATIC_DIR", "static")
+
+if os.path.isdir(_STATIC_DIR):
+    app.mount("/", SPAStaticFiles(directory=_STATIC_DIR, html=True), name="static")

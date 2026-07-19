@@ -484,7 +484,7 @@ def plan(code: str, request: Request, players: int | None = None):
     t = get_tournament(code)
     cfg = settings_of(t)
     game = t["game"] if "game" in t.keys() else None
-    struct = structure_for(game, cfg.get("structure"))
+    struct = structure_for(game, cfg.get("structure"), cfg.get("podSize"))
     if not struct:
         raise HTTPException(409, "this game has no event structures")
     if players is None:

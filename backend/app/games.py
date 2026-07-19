@@ -256,11 +256,27 @@ def profile_for(key: str | None) -> GameProfile:
     return _PROFILES.get(key or DEFAULT_GAME, MTG)
 
 
-def structure_for(game: str | None, key: str | None) -> EventStructure | None:
+def structure_for(
+    game: str | None, key: str | None, pod_size: int | None = None
+) -> EventStructure | None:
+    """Resolve a structure, defaulting to one that fits how the event is seated.
+
+    Falling back to the first structure meant a four-to-a-pod Commander event
+    was advised from the 1v1 Premier table — "0 Swiss rounds, cut to top 8" for
+    eight players, which is right for duels and nonsense for pods. When no
+    structure was chosen, prefer one whose seating matches.
+    """
     p = profile_for(game)
     if not p.structures:
         return None
-    return next((s for s in p.structures if s.key == key), p.structures[0])
+    chosen = next((s for s in p.structures if s.key == key), None)
+    if chosen:
+        return chosen
+    if pod_size:
+        fits = next((s for s in p.structures if s.pod_size == pod_size), None)
+        if fits:
+            return fits
+    return p.structures[0]
 
 
 def known_games() -> list[dict]:

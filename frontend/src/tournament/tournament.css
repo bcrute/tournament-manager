@@ -358,3 +358,16 @@ button.link {
   font-style: normal;
   opacity: 0.8;
 }
+
+
+/* The code is what a player types or scans; the full URL is desktop detail and
+   on a phone it just wraps and dominates the header. */
+.tq-join-url {
+  display: none;
+}
+
+@media (min-width: 48rem) {
+  .tq-join-url {
+    display: inline;
+  }
+}

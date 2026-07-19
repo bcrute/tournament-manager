@@ -1690,8 +1690,16 @@ button.ghost.danger {
   font-variant-numeric: tabular-nums;
 }
 
+.cmd-cell.zero {
+  background: rgba(255, 255, 255, 0.03);
+}
+
 .cmd-cell.zero .cmd-amt {
-  opacity: 0.35;
+  opacity: 0.3;
+}
+
+.cmd-cell.zero .cmd-src {
+  opacity: 0.4;
 }
 
 /* your own commander counts toward the 21, so it must be visibly different

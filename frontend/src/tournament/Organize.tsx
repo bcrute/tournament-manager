@@ -129,8 +129,8 @@ export default function Organize() {
       subtitle={
         <>
           Join code <strong className="tq-code">{tournament.code}</strong>
-          <span className="dot-sep">·</span>
-          <span className="hint">{joinUrl}</span>
+          <span className="dot-sep tq-join-url">·</span>
+          <span className="hint tq-join-url">{joinUrl}</span>
         </>
       }
       status={clock}
@@ -228,8 +228,7 @@ export default function Organize() {
                 )}
               </span>
               <span className="hint">
-                {plan.official ? "Per " : "House convention — "}
-                {plan.source}
+                {plan.official ? `Per ${plan.source}` : plan.source}
                 {plan.cutTo > 0 && ". Running the cut is not automated yet."}
               </span>
             </div>

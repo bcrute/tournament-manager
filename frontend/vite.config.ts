@@ -5,6 +5,9 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: "jsdom",
+    // Playwright specs are driven by `npm run e2e`, not vitest — they import a
+    // different test runner and fail at collection here
+    exclude: ["node_modules/**", "dist/**", "e2e/**", "shots/**"],
     coverage: {
       // gate the regression-prone logic modules; presentational components are
       // intentionally excluded (they change constantly and break loudly in use)
