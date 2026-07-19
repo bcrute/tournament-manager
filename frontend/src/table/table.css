@@ -1340,3 +1340,59 @@ button.ghost {
   line-height: 1.5;
   margin: 0;
 }
+
+/* privacy summary + account deletion */
+.privacy {
+  margin-top: 2rem;
+  text-align: left;
+  border-top: 1px solid #241c33;
+  padding-top: 1rem;
+}
+
+.privacy h2 {
+  font-size: 0.85rem;
+  color: #8a7fa0;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.privacy ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  color: #b8b0c8;
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.account-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  align-items: center;
+  margin-top: 2rem;
+}
+
+button.ghost.danger {
+  color: #e06c75;
+  border-color: #5e2c2c;
+}
+
+.delete-box {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #5e2c2c;
+  border-radius: 12px;
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.delete-box input {
+  font-size: 1rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid #322747;
+  background: #14101c;
+  color: #e8e4f0;
+}

@@ -27,6 +27,11 @@ BAN_STEPS = (3600, 6 * 3600, 24 * 3600, 7 * 24 * 3600)
 STRIKES_BEFORE_BAN = 5
 STRIKE_WINDOW = 900  # strikes older than this are forgotten
 
+# Retention: a lapsed ban is kept only long enough to make a returning abuser's
+# next ban longer. After this it is deleted — there is no reason to hold an
+# identifier (even a hashed one) for someone who stopped months ago.
+BAN_RETENTION = 30 * 24 * 3600
+
 
 def _salt() -> bytes:
     """Stable per-deployment salt. Set TABLE_IP_SALT to keep bans across
@@ -139,12 +144,19 @@ class RateLimiter:
         return True, 0
 
     def prune(self, older_than: int = 3600):
-        """Drop idle counters so memory doesn't grow with unique visitors."""
-        cutoff = self.clock() - older_than
+        """Drop idle counters so memory doesn't grow with unique visitors, and
+        delete ban records past their retention window."""
+        now = self.clock()
+        cutoff = now - older_than
         for key in [k for k, v in self._hits.items() if not v or v[-1] < cutoff]:
             self._hits.pop(key, None)
         for key in [k for k, v in self._strikes.items() if not v or v[-1] < cutoff]:
             self._strikes.pop(key, None)
+        if self.db:
+            self.db("DELETE FROM bans WHERE until < ?", (now - BAN_RETENTION,))
+        for cid, until in [(c, u) for c, u in self._bans.items() if u < now - BAN_RETENTION]:
+            self._bans.pop(cid, None)
+            self._ban_count.pop(cid, None)
 
 
 # Route classification. Anything that creates state or claims a seat is

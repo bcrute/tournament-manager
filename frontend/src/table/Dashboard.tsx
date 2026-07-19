@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Account, AccountError, getAccount, getHistory, HistoryGame, logout, saveNote } from "./account";
+import {
+  Account,
+  AccountError,
+  deleteAccount,
+  getAccount,
+  getHistory,
+  HistoryGame,
+  logout,
+  saveNote,
+} from "./account";
 import SignIn from "./SignIn";
 
 /** Your games and notes. Signed-out visitors get the sign-in panel instead. */
@@ -10,6 +19,8 @@ export default function Dashboard() {
   const [editing, setEditing] = useState<HistoryGame | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteText, setDeleteText] = useState("");
 
   useEffect(() => {
     getAccount()
@@ -121,14 +132,72 @@ export default function Dashboard() {
         ))}
       </ul>
 
-      <footer>
-        <button
-          className="ghost"
-          onClick={() => void logout().then(() => setAcct(null))}
-        >
+      <section className="privacy">
+        <h2>What&rsquo;s stored</h2>
+        <ul>
+          <li>Your username, a hashed password, and games you played while signed in.</li>
+          <li>Your private notes — visible only to you.</li>
+          <li>An email only if you chose to add one, used solely to recover your account.</li>
+          <li>
+            For abuse prevention we keep a one-way hash of connection addresses (never the
+            address itself), separate from accounts, deleted after 30 days.
+          </li>
+        </ul>
+      </section>
+
+      <footer className="account-actions">
+        <button className="ghost" onClick={() => void logout().then(() => setAcct(null))}>
           Sign out
         </button>
         <Link to="/table">← back to Table</Link>
+        {!confirmDelete ? (
+          <button className="ghost danger" onClick={() => setConfirmDelete(true)}>
+            Delete account
+          </button>
+        ) : (
+          <div className="delete-box">
+            <p className="hint">
+              This erases your account, notes and recovery codes for good. Games you played
+              stay in their rooms for the other players, but are no longer linked to you.
+              Type <strong>{acct.username}</strong> to confirm.
+            </p>
+            <input
+              type="text"
+              placeholder="your username"
+              autoCapitalize="none"
+              value={deleteText}
+              onChange={(e) => setDeleteText(e.target.value)}
+            />
+            <div className="history-actions">
+              <button
+                className="ghost danger"
+                disabled={deleteText.trim().toLowerCase() !== acct.username.toLowerCase()}
+                onClick={() =>
+                  void deleteAccount(deleteText.trim())
+                    .then(() => {
+                      setAcct(null);
+                      setConfirmDelete(false);
+                      setDeleteText("");
+                    })
+                    .catch((e) =>
+                      setError(e instanceof AccountError ? e.message : "Couldn't delete account"),
+                    )
+                }
+              >
+                Delete my account
+              </button>
+              <button
+                className="ghost"
+                onClick={() => {
+                  setConfirmDelete(false);
+                  setDeleteText("");
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </footer>
     </main>
   );

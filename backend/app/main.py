@@ -1,4 +1,5 @@
 import os
+import time
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -20,12 +21,21 @@ app.include_router(table_router, prefix="/api/table")
 app.include_router(accounts_router, prefix="/api/account")
 
 
+_last_prune = 0.0
+
+
 @app.middleware("http")
 async def rate_limit(request: Request, call_next):
     """Limit API traffic per client. Static assets are left alone — they are
     cached by browsers and cheap to serve."""
     if limiter is None or not request.url.path.startswith("/api/"):
         return await call_next(request)
+    # housekeeping: drop idle counters and ban records past their retention
+    global _last_prune
+    now = time.time()
+    if now - _last_prune > 3600:
+        _last_prune = now
+        limiter.prune()
     cid = client_id(client_ip(request))
     allowed, retry = limiter.check(cid, classify(request.url.path, request.method))
     if not allowed:

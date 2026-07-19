@@ -144,6 +144,10 @@ class NoteBody(BaseModel):
     text: str = Field(max_length=10_000)
 
 
+class DeleteBody(BaseModel):
+    confirm: str
+
+
 # ---- account lifecycle ----
 
 
@@ -260,6 +264,28 @@ def recover(body: RecoverBody, response: Response):
     q("DELETE FROM sessions WHERE account_id = ?", (acct["id"],))
     _set_cookie(response, _new_session(acct["id"]))
     return {"account": _public(acct)}
+
+
+@router.post("/delete")
+def delete_account(body: DeleteBody, request: Request, response: Response):
+    """Erase the account. Typing the username is required so this can't happen
+    by accident.
+
+    What goes: the account, its sessions, recovery codes and private notes.
+    What stays: the games themselves, unlinked. Other players at those tables
+    have their own record of what happened, and the seat only ever held a
+    display name — after unlinking, nothing ties it to a person.
+    """
+    acct = require_account(request)
+    if body.confirm.strip().lower() != acct["username"].lower():
+        raise HTTPException(400, "type your username exactly to confirm")
+
+    # keep shared game history intact, but strip the link to this person
+    q("UPDATE players SET account_id = NULL WHERE account_id = ?", (acct["id"],))
+    # notes, sessions and recovery codes go with the account (ON DELETE CASCADE)
+    q("DELETE FROM accounts WHERE id = ?", (acct["id"],))
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return {"ok": True}
 
 
 # ---- history and notes ----

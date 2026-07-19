@@ -76,3 +76,6 @@ export const getNote = (code: string, gameNo: number) =>
 
 export const saveNote = (code: string, gameNo: number, text: string) =>
   account<{ ok: boolean }>(`/notes/${code}/${gameNo}`, { method: "PUT", body: { text } });
+
+export const deleteAccount = (confirm: string) =>
+  account<{ ok: boolean }>("/delete", { method: "POST", body: { confirm } });

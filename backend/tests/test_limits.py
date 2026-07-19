@@ -125,7 +125,7 @@ class TestBans:
 
 class TestPersistence:
     def test_bans_survive_a_restart(self, clock):
-        from app.table import q
+        from app.db import q
 
         first = RateLimiter(rules={"normal": (1, 60)}, clock=clock, db=q)
         for _ in range(1 + STRIKES_BEFORE_BAN):
@@ -138,7 +138,7 @@ class TestPersistence:
         second.clear("persisted-subject")
 
     def test_repeat_offenders_climb_the_ladder(self, clock):
-        from app.table import q
+        from app.db import q
 
         lim = RateLimiter(rules={"normal": (1, 60)}, clock=clock, db=q)
         subject = "repeat-offender"
@@ -176,3 +176,33 @@ class TestMemory:
         limiter.prune(3600)
         assert not any(k[0] == "old" for k in limiter._hits)
         assert any(k[0] == "new" for k in limiter._hits)
+
+
+class TestRetention:
+    def test_prune_deletes_bans_past_retention(self, clock):
+        from app.db import q
+        from app.limits import BAN_RETENTION
+
+        lim = RateLimiter(rules={"normal": (1, 60)}, clock=clock, db=q)
+        subject = "retention-subject"
+        lim.clear(subject)
+        for _ in range(1 + STRIKES_BEFORE_BAN):
+            lim.check(subject, "normal")
+        assert q("SELECT COUNT(*) c FROM bans WHERE subject = ?", (subject,)).fetchone()["c"] == 1
+        clock.advance(BAN_STEPS[0] + BAN_RETENTION + 1)
+        lim.prune()
+        assert q("SELECT COUNT(*) c FROM bans WHERE subject = ?", (subject,)).fetchone()["c"] == 0
+
+    def test_prune_keeps_recent_bans_for_escalation(self, clock):
+        from app.db import q
+        from app.limits import BAN_RETENTION
+
+        lim = RateLimiter(rules={"normal": (1, 60)}, clock=clock, db=q)
+        subject = "recent-subject"
+        lim.clear(subject)
+        for _ in range(1 + STRIKES_BEFORE_BAN):
+            lim.check(subject, "normal")
+        clock.advance(BAN_STEPS[0] + 10)  # lapsed, but well inside retention
+        lim.prune()
+        assert q("SELECT COUNT(*) c FROM bans WHERE subject = ?", (subject,)).fetchone()["c"] == 1
+        lim.clear(subject)

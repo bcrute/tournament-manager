@@ -262,3 +262,45 @@ class TestHistoryNotesLink:
         fresh.post(f"/api/table/rooms/{code}/start", headers=hdr)
         game = next(g for g in fresh.get("/api/account/history").json()["games"] if g["roomCode"] == code)
         assert game["note"] is None  # room is on game 1 now; the game 0 note stays put
+
+
+class TestAccountDeletion:
+    def test_delete_removes_account_notes_and_sessions(self, fresh):
+        signup(fresh, "yuri")
+        code = fresh.post("/api/table/rooms", json={"name": "yuri", "mode": "life"}).json()["code"]
+        fresh.put(f"/api/account/notes/{code}/0", json={"text": "gone soon"})
+        assert fresh.post("/api/account/delete", json={"confirm": "yuri"}).status_code == 200
+        # session is dead and the username is free again
+        assert fresh.get("/api/account/me").json()["account"] is None
+        assert signup(fresh, "yuri").status_code == 200
+        # the fresh account of the same name inherits nothing
+        assert fresh.get(f"/api/account/notes/{code}/0").json()["text"] == ""
+        assert fresh.get("/api/account/history").json()["games"] == []
+
+    def test_confirmation_must_match_the_username(self, fresh):
+        signup(fresh, "zane")
+        assert fresh.post("/api/account/delete", json={"confirm": "wrong"}).status_code == 400
+        assert fresh.post("/api/account/delete", json={"confirm": ""}).status_code == 400
+        assert fresh.get("/api/account/me").json()["account"]["username"] == "zane"
+
+    def test_confirmation_is_case_insensitive(self, fresh):
+        signup(fresh, "amy")
+        assert fresh.post("/api/account/delete", json={"confirm": "AMY"}).status_code == 200
+
+    def test_requires_sign_in(self, fresh):
+        fresh.cookies.clear()
+        assert fresh.post("/api/account/delete", json={"confirm": "anyone"}).status_code == 401
+
+    def test_games_survive_but_are_unlinked(self, fresh):
+        """Other players keep their record of the table; the seat just stops
+        pointing at a person."""
+        from app.db import q
+
+        signup(fresh, "bram")
+        room = fresh.post("/api/table/rooms", json={"name": "bram", "mode": "life"}).json()
+        code = room["code"]
+        fresh.post("/api/account/delete", json={"confirm": "bram"})
+        seat = q("SELECT name, account_id FROM players WHERE room_code = ?", (code,)).fetchone()
+        assert seat["name"] == "bram"       # the table still shows what happened
+        assert seat["account_id"] is None   # but nothing ties it to an account
+        assert q("SELECT COUNT(*) c FROM rooms WHERE code = ?", (code,)).fetchone()["c"] == 1
