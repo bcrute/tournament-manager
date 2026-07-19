@@ -4,8 +4,10 @@ import Icon from "../Icon";
 import {
   ackCall,
   addEntrants,
+  callTime,
   closeRound,
   dropEntrant,
+  endTournament,
   formatClock,
   openRound,
   PodView,
@@ -15,6 +17,7 @@ import {
   secondsLeft,
   timerAction,
   TourneyError,
+  undropEntrant,
 } from "./api";
 import { useTournament } from "./useTournament";
 
@@ -157,15 +160,19 @@ export default function Organize() {
                       release
                     </button>
                   )}
-                  {!s.dropped && (
-                    <button
-                      className="link"
-                      disabled={busy}
-                      onClick={() => void run(() => dropEntrant(code, s.entrantId))}
-                    >
-                      drop
-                    </button>
-                  )}
+                  <button
+                    className="link"
+                    disabled={busy}
+                    onClick={() =>
+                      void run(() =>
+                        s.dropped
+                          ? undropEntrant(code, s.entrantId)
+                          : dropEntrant(code, s.entrantId),
+                      )
+                    }
+                  >
+                    {s.dropped ? "undrop" : "drop"}
+                  </button>
                 </span>
               </li>
             ))}
@@ -194,6 +201,16 @@ export default function Organize() {
                   Re-pair
                 </button>
                 <button
+                  disabled={busy}
+                  title="Decide every unfinished pod by the tournament's time-called policy"
+                  onClick={() => {
+                    if (window.confirm("Call time? Unfinished pods will be decided automatically."))
+                      void run(() => callTime(code));
+                  }}
+                >
+                  Call time
+                </button>
+                <button
                   disabled={busy || !allReported}
                   title={allReported ? "" : "Every pod needs a result first"}
                   onClick={() => void run(() => closeRound(code))}
@@ -201,6 +218,17 @@ export default function Organize() {
                   Close round
                 </button>
               </>
+            )}
+            {tournament.status !== "ended" && round?.status === "closed" && (
+              <button
+                disabled={busy}
+                onClick={() => {
+                  if (window.confirm("End the tournament? Standings are frozen."))
+                    void run(() => endTournament(code));
+                }}
+              >
+                End tournament
+              </button>
             )}
           </div>
           <div className="tq-pods">

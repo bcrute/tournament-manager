@@ -254,6 +254,7 @@ class EntrantsBody(BaseModel):
 
 class ClaimBody(BaseModel):
     entrantId: int
+    wizardsEmail: str | None = None
 
 
 class RoundBody(BaseModel):
@@ -388,8 +389,24 @@ def claim(code: str, body: ClaimBody):
         raise HTTPException(404, "not on this roster")
     if row["token"]:
         raise HTTPException(409, "that name is already claimed — ask the organizer to release it")
+
+    # Only collected when the organizer turns it on, because a sanctioned event
+    # has to report to Wizards. Never collected by default, never shown to other
+    # players, and never used for anything else.
+    cfg = settings_of(t)
+    wiz = (body.wizardsEmail or "").strip() or None
+    if cfg["collectWizardsEmail"] == "off":
+        wiz = None
+    elif cfg["collectWizardsEmail"] == "required" and not wiz:
+        raise HTTPException(
+            422, "this event reports to Wizards, so it needs the email on your Wizards account"
+        )
+
     token = secrets.token_urlsafe(24)
-    q("UPDATE entrants SET token = ? WHERE id = ?", (token, row["id"]))
+    q(
+        "UPDATE entrants SET token = ?, wizards_email = COALESCE(?, wizards_email) WHERE id = ?",
+        (token, wiz, row["id"]),
+    )
     touch(t["code"])
     return {"entrantToken": token, "entrantId": row["id"], "name": row["name"]}
 
@@ -402,6 +419,32 @@ def release_claim(code: str, entrant_id: int, request: Request):
         (entrant_id, t["code"]),
     )
     return {"ok": True}
+
+
+@router.post("/{code}/entrants/{entrant_id}/undrop")
+def undrop_entrant(code: str, entrant_id: int, request: Request):
+    """People come back — a drop entered by mistake shouldn't end someone's day."""
+    t, _ = require_organizer(code, request)
+    q(
+        "UPDATE entrants SET dropped_at = NULL WHERE id = ? AND tournament_code = ?",
+        (entrant_id, t["code"]),
+    )
+    touch(t["code"])
+    return {"ok": True}
+
+
+@router.post("/{code}/end")
+def end_tournament(code: str, request: Request):
+    """Close the event and freeze the final standings."""
+    t, _ = require_organizer(code, request)
+    open_round = q(
+        "SELECT id FROM trounds WHERE tournament_code = ? AND status = 'active'", (t["code"],)
+    ).fetchone()
+    if open_round:
+        raise HTTPException(409, "close the current round before ending the tournament")
+    q("UPDATE tournaments SET status = 'ended' WHERE code = ?", (t["code"],))
+    touch(t["code"])
+    return {"ok": True, "standings": standings_rows(t["code"])}
 
 
 @router.post("/{code}/entrants/{entrant_id}/drop")
@@ -449,6 +492,8 @@ def open_round(code: str, body: RoundBody, request: Request):
     state rather than work done under load."""
     t, _ = require_organizer(code, request)
     cfg = settings_of(t)
+    if t["status"] == "ended":
+        raise HTTPException(409, "this tournament has ended")
 
     active = q(
         "SELECT * FROM trounds WHERE tournament_code = ? AND status = 'active'", (t["code"],)
@@ -609,6 +654,87 @@ def record_room_result(room_code: str, game_no: int, order: list[int], kind: str
     q("UPDATE pods SET game_no = ? WHERE id = ?", (game_no, pod["id"]))
     _write_result(t, pod, kind, places, "auto", None)
     touch(t["code"])
+
+
+def resolve_pod_at_time(t, cfg, pod):
+    """Decide one unfinished pod when time is called.
+
+    MTR 2.4: a match that goes to time is a draw — life totals do *not* rank it,
+    outside single elimination. That is the default. The other policies are
+    house rules that leagues genuinely run, so they are opt-in and named
+    honestly rather than presented as official.
+    """
+    policy = cfg["timeCalledPolicy"]
+    if policy == "organizer_decides":
+        q("UPDATE pods SET status = 'awaiting_result' WHERE id = ?", (pod["id"],))
+        return None
+
+    seats = q(
+        "SELECT entrant_id, room_token FROM pod_seats WHERE pod_id = ? ORDER BY seat",
+        (pod["id"],),
+    ).fetchall()
+    if policy == "draw_all" or not pod["room_code"]:
+        places = [{"entrantId": s["entrant_id"], "place": 1} for s in seats]
+        return _write_result(t, pod, "draw", places, "auto", "time called")
+
+    # the remaining policies need live state from the pod's room
+    rows = q(
+        "SELECT token, life, eliminated, eliminated_at FROM players WHERE room_code = ?",
+        (pod["room_code"],),
+    ).fetchall()
+    by_token = {r["token"]: r for r in rows}
+
+    alive, out = [], []
+    for s in seats:
+        p = by_token.get(s["room_token"])
+        if p and p["eliminated"]:
+            out.append((p["eliminated_at"] or 0, s["entrant_id"]))
+        else:
+            alive.append((p["life"] if p and p["life"] is not None else 0, s["entrant_id"]))
+
+    # everyone eliminated is ranked below survivors, latest death placing higher
+    tail = [eid for _, eid in sorted(out, key=lambda x: -x[0])]
+
+    if policy == "highest_life":
+        alive.sort(key=lambda x: -x[0])
+        ordered = [eid for _, eid in alive]
+        places = [{"entrantId": eid, "place": i} for i, eid in enumerate(ordered, 1)]
+        # a tie on life is a genuine tie, not an arbitrary ordering
+        for i in range(1, len(alive)):
+            if alive[i][0] == alive[i - 1][0]:
+                places[i]["place"] = places[i - 1]["place"]
+        start = (places[-1]["place"] + 1) if places else 1
+        places += [{"entrantId": eid, "place": start + i} for i, eid in enumerate(tail)]
+        return _write_result(t, pod, "placement", places, "auto", "time called — ranked on life")
+
+    # draw_survivors: everyone still alive draws; the dead keep their order below
+    places = [{"entrantId": eid, "place": 1} for _, eid in alive]
+    places += [{"entrantId": eid, "place": 2 + i} for i, eid in enumerate(tail)]
+    return _write_result(t, pod, "draw", places, "auto", "time called — survivors drew")
+
+
+@router.post("/{code}/rounds/time")
+def call_time(code: str, request: Request):
+    """Organizer calls time on the round. Every pod without a result is decided
+    by the tournament's time-called policy; pods already reported are untouched,
+    and an organizer ruling is never overwritten."""
+    t, _ = require_organizer(code, request)
+    cfg = settings_of(t)
+    rnd = q(
+        "SELECT * FROM trounds WHERE tournament_code = ? AND status = 'active'", (t["code"],)
+    ).fetchone()
+    if not rnd:
+        raise HTTPException(409, "no round is open")
+    pods = q(
+        "SELECT * FROM pods WHERE round_id = ? AND status != 'complete'", (rnd["id"],)
+    ).fetchall()
+    decided = 0
+    for pod in pods:
+        if resolve_pod_at_time(t, cfg, pod) is not None:
+            decided += 1
+    q("UPDATE trounds SET ends_at = ? WHERE id = ?", (int(time.time()), rnd["id"]))
+    touch(t["code"])
+    return {"ok": True, "decided": decided, "policy": cfg["timeCalledPolicy"]}
 
 
 # ---- timer ----

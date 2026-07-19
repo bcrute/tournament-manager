@@ -117,10 +117,10 @@ export const getState = (code: string, token?: string | null) =>
 export const getRoster = (code: string) =>
   tapi<{ name: string; status: string; entrants: RosterEntry[] }>(`/${code}/roster`);
 
-export const claimSeat = (code: string, entrantId: number) =>
+export const claimSeat = (code: string, entrantId: number, wizardsEmail?: string) =>
   tapi<{ entrantToken: string; entrantId: number; name: string }>(`/${code}/claim`, {
     method: "POST",
-    body: { entrantId },
+    body: { entrantId, wizardsEmail: wizardsEmail ?? null },
   });
 
 export const addEntrants = (code: string, names: string[]) =>
@@ -140,6 +140,17 @@ export const openRound = (code: string, reroll = false) =>
     method: "POST",
     body: { reroll },
   });
+
+export const callTime = (code: string) =>
+  tapi<{ ok: boolean; decided: number; policy: string }>(`/${code}/rounds/time`, {
+    method: "POST",
+  });
+
+export const undropEntrant = (code: string, id: number) =>
+  tapi<{ ok: boolean }>(`/${code}/entrants/${id}/undrop`, { method: "POST" });
+
+export const endTournament = (code: string) =>
+  tapi<{ ok: boolean; standings: StandingRow[] }>(`/${code}/end`, { method: "POST" });
 
 export const closeRound = (code: string) =>
   tapi<{ ok: boolean }>(`/${code}/rounds/close`, { method: "POST" });

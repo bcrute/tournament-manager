@@ -579,3 +579,163 @@ class TestImportIdempotency:
             "entrants": [{"name": "Ada", "externalRef": "topdeck:5"}],
         }).json()
         assert len(r["added"]) == 2
+
+
+def _finish_pods(client, code):
+    """Report a placement for every pod in the open round."""
+    for pod in client.get(f"/api/tournament/{code}").json()["pods"]:
+        client.post(f"/api/tournament/{code}/pods/{pod['podId']}/result", json={
+            "kind": "placement",
+            "places": [{"entrantId": s["entrantId"], "place": i}
+                       for i, s in enumerate(pod["seats"], 1)],
+        })
+
+
+class TestTimeCalled:
+    def test_default_policy_draws_every_unfinished_pod(self, client):
+        """MTR 2.4: a match going to time is a draw, not a life-total ranking."""
+        organizer(client, "hostAO")
+        code = host(client)
+        add(client, code, ["t1", "t2", "t3", "t4"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        r = client.post(f"/api/tournament/{code}/rounds/time").json()
+        assert r["decided"] == 1 and r["policy"] == "draw_all"
+        pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
+        assert pod["status"] == "complete"
+        assert {s["place"] for s in pod["seats"]} == {1}   # all drew
+
+    def test_highest_life_ranks_survivors_and_ties_stay_tied(self, client):
+        organizer(client, "hostAP")
+        code = host(client, settings={"timeCalledPolicy": "highest_life"})
+        add(client, code, ["t5", "t6", "t7", "t8"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
+        seats = q("SELECT entrant_id, room_token FROM pod_seats WHERE pod_id = ? ORDER BY seat",
+                  (pod["podId"],)).fetchall()
+        lives = [12, 30, 30, 5]
+        for s, life in zip(seats, lives):
+            q("UPDATE players SET life = ? WHERE token = ?", (life, s["room_token"]))
+
+        client.post(f"/api/tournament/{code}/rounds/time")
+        after = client.get(f"/api/tournament/{code}").json()["pods"][0]
+        place = {s["entrantId"]: s["place"] for s in after["seats"]}
+        by_entrant = {s["entrant_id"]: life for s, life in zip(seats, lives)}
+        # the two players on 30 tie for first; 12 then 5 follow
+        top = [e for e, l in by_entrant.items() if l == 30]
+        assert place[top[0]] == place[top[1]] == 1
+        assert place[[e for e, l in by_entrant.items() if l == 12][0]] == 3
+        assert place[[e for e, l in by_entrant.items() if l == 5][0]] == 4
+
+    def test_eliminated_players_rank_below_survivors(self, client):
+        organizer(client, "hostAQ")
+        code = host(client, settings={"timeCalledPolicy": "highest_life"})
+        add(client, code, ["t9", "t10", "t11", "t12"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
+        seats = q("SELECT entrant_id, room_token FROM pod_seats WHERE pod_id = ? ORDER BY seat",
+                  (pod["podId"],)).fetchall()
+        # seat 4 is dead despite a high life total; it must not outrank the living
+        q("UPDATE players SET life = 1 WHERE token = ?", (seats[0]["room_token"],))
+        q("UPDATE players SET life = 99, eliminated = 1, eliminated_at = 500 WHERE token = ?",
+          (seats[3]["room_token"],))
+        client.post(f"/api/tournament/{code}/rounds/time")
+        after = client.get(f"/api/tournament/{code}").json()["pods"][0]
+        place = {s["entrantId"]: s["place"] for s in after["seats"]}
+        assert place[seats[0]["entrant_id"]] < place[seats[3]["entrant_id"]]
+
+    def test_organizer_decides_leaves_pods_awaiting_a_ruling(self, client):
+        organizer(client, "hostAR")
+        code = host(client, settings={"timeCalledPolicy": "organizer_decides"})
+        add(client, code, ["t13", "t14", "t15", "t16"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        r = client.post(f"/api/tournament/{code}/rounds/time").json()
+        assert r["decided"] == 0
+        assert client.get(f"/api/tournament/{code}").json()["pods"][0]["status"] == "awaiting_result"
+
+    def test_calling_time_never_overwrites_a_reported_result(self, client):
+        organizer(client, "hostAS")
+        code = host(client)
+        add(client, code, ["t17", "t18", "t19", "t20"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        _finish_pods(client, code)
+        before = client.get(f"/api/tournament/{code}").json()["pods"][0]["seats"]
+        client.post(f"/api/tournament/{code}/rounds/time")
+        after = client.get(f"/api/tournament/{code}").json()["pods"][0]["seats"]
+        assert {s["entrantId"]: s["place"] for s in before} == {s["entrantId"]: s["place"] for s in after}
+
+    def test_calling_time_with_no_round_open_is_a_conflict(self, client):
+        organizer(client, "hostAT")
+        code = host(client)
+        assert client.post(f"/api/tournament/{code}/rounds/time").status_code == 409
+
+
+class TestEndingAndReturning:
+    def test_ending_freezes_standings_and_blocks_new_rounds(self, client):
+        organizer(client, "hostAU")
+        code = host(client)
+        add(client, code, ["e1", "e2", "e3", "e4"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        _finish_pods(client, code)
+        client.post(f"/api/tournament/{code}/rounds/close")
+        r = client.post(f"/api/tournament/{code}/end")
+        assert r.status_code == 200 and len(r.json()["standings"]) == 4
+        assert client.get(f"/api/tournament/{code}").json()["tournament"]["status"] == "ended"
+        assert client.post(f"/api/tournament/{code}/rounds", json={}).status_code == 409
+
+    def test_cannot_end_while_a_round_is_still_open(self, client):
+        organizer(client, "hostAV")
+        code = host(client)
+        add(client, code, ["e5", "e6", "e7", "e8"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        assert client.post(f"/api/tournament/{code}/end").status_code == 409
+
+    def test_a_dropped_player_can_be_brought_back(self, client):
+        organizer(client, "hostAW")
+        code = host(client)
+        added = add(client, code, ["e9", "e10", "e11", "e12"])
+        eid = added[0]["entrantId"]
+        client.post(f"/api/tournament/{code}/entrants/{eid}/drop")
+        assert next(e for e in client.get(f"/api/tournament/{code}/roster").json()["entrants"]
+                    if e["entrantId"] == eid)["dropped"] is True
+        client.post(f"/api/tournament/{code}/entrants/{eid}/undrop")
+        assert next(e for e in client.get(f"/api/tournament/{code}/roster").json()["entrants"]
+                    if e["entrantId"] == eid)["dropped"] is False
+        # and they are paired again
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        seated = {s["entrantId"] for p in client.get(f"/api/tournament/{code}").json()["pods"]
+                  for s in p["seats"]}
+        assert eid in seated
+
+
+class TestWizardsEmail:
+    def test_not_collected_by_default(self, client):
+        organizer(client, "hostAX")
+        code = host(client)
+        added = add(client, code, ["w1", "w2", "w3", "w4"])
+        client.cookies.clear()
+        client.post(f"/api/tournament/{code}/claim",
+                    json={"entrantId": added[0]["entrantId"], "wizardsEmail": "a@b.com"})
+        stored = q("SELECT wizards_email FROM entrants WHERE id = ?",
+                   (added[0]["entrantId"],)).fetchone()["wizards_email"]
+        assert stored is None   # discarded: the organizer never asked for it
+
+    def test_required_blocks_a_claim_without_one(self, client):
+        organizer(client, "hostAY")
+        code = host(client, settings={"collectWizardsEmail": "required"})
+        added = add(client, code, ["w5", "w6", "w7", "w8"])
+        client.cookies.clear()
+        assert client.post(f"/api/tournament/{code}/claim",
+                           json={"entrantId": added[0]["entrantId"]}).status_code == 422
+        ok = client.post(f"/api/tournament/{code}/claim",
+                         json={"entrantId": added[0]["entrantId"], "wizardsEmail": "a@b.com"})
+        assert ok.status_code == 200
+
+    def test_never_exposed_on_the_public_roster(self, client):
+        organizer(client, "hostAZ")
+        code = host(client, settings={"collectWizardsEmail": "optional"})
+        added = add(client, code, ["w9", "w10", "w11", "w12"])
+        client.cookies.clear()
+        client.post(f"/api/tournament/{code}/claim",
+                    json={"entrantId": added[0]["entrantId"], "wizardsEmail": "secret@b.com"})
+        assert "secret@b.com" not in json.dumps(client.get(f"/api/tournament/{code}/roster").json())
+        assert "secret@b.com" not in json.dumps(client.get(f"/api/tournament/{code}").json())

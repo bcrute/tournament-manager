@@ -118,6 +118,17 @@ Claim a seat. No auth — possession of the tournament code is the only gate.
 By **id, not name**: names legitimately repeat, ids don't. First claim wins;
 a second returns **409**. The organizer can `release` a mis-tap.
 
+`wizardsEmail` is governed by `settings.collectWizardsEmail`:
+
+| Setting | Behaviour |
+|---|---|
+| `off` *(default)* | any submitted address is **discarded**, not stored |
+| `optional` | stored if given |
+| `required` | claim fails with **422** without one |
+
+Only sanctioned events reporting to Wizards need this, so it is off by default.
+The address is never returned by any endpoint, including the public roster.
+
 ### `POST /api/tournament/{code}/entrants`  *(organizer)*
 ```jsonc
 // manual entry
@@ -141,8 +152,19 @@ we rejected in §7.
 Clears the entrant's token so the seat can be claimed again. Idempotent.
 
 ### `POST /api/tournament/{code}/entrants/{id}/drop`  *(organizer)*
-Sets `dropped_at`. Dropped entrants are excluded from future pairings but keep
-their points and history. Idempotent; there is no un-drop endpoint yet (§8).
+### `POST /api/tournament/{code}/entrants/{id}/undrop`  *(organizer)*
+`drop` sets `dropped_at`; dropped entrants are excluded from future pairings but
+keep their points and history. `undrop` clears it and they are paired again —
+people come back, and a mis-keyed drop shouldn't end someone's day. Both
+idempotent.
+
+### `POST /api/tournament/{code}/end`  *(organizer)*
+Ends the event and freezes standings. **409** if a round is still open; after
+this, opening a round is **409**.
+
+```jsonc
+→ { "ok": true, "standings": [ … ] }
+```
 
 ### `POST /api/tournament/{code}/rounds`  *(organizer)*
 Pair, seat, and create one room per pod.
@@ -161,6 +183,30 @@ computed and persisted before the round is announced, so opening a round is a
 broadcast of settled state rather than work done while clients poll.
 
 Pod sizes never fall below 3 — remainders of 1–2 are absorbed into neighbours.
+
+### `POST /api/tournament/{code}/rounds/time`  *(organizer)*
+Call time on the round. Every pod without a result is decided by
+`settings.timeCalledPolicy`; pods already reported are untouched, and an
+organizer ruling is never overwritten.
+
+```jsonc
+→ { "ok": true, "decided": 3, "policy": "draw_all" }
+```
+
+| Policy | Behaviour |
+|---|---|
+| `draw_all` *(default)* | every unfinished pod is a draw |
+| `draw_survivors` | players still alive draw; eliminated rank below in death order |
+| `highest_life` | survivors ranked on life, **equal life is a genuine tie**; eliminated below |
+| `organizer_decides` | pods move to `awaiting_result`; nothing automatic |
+
+`draw_all` is the default because **MTR 2.4 makes a match that goes to time a
+draw** — life totals do not rank it outside single elimination. The other
+policies are house rules that leagues really do run, so they are opt-in and
+named for what they are rather than presented as official.
+
+Eliminated players never outrank survivors, whatever their life total was when
+they died.
 
 ### `POST /api/tournament/{code}/rounds/close`  *(organizer)*
 Refuses with **409** if any pod lacks a result, or any official call is still
@@ -323,7 +369,9 @@ that adding one later doesn't require a migration of live event data.
   has never run in a real game inside a tournament pod. Prove it with a
   throwaway 4-player event before running anything that counts.
 - **No WebSocket.** Timer updates lag by up to one poll (5 s foreground).
-- **No un-drop**, no entrant rename, no top-cut re-podding, no `rounds: auto`.
+- **No top cut / playoff re-podding**, and no `rounds: auto` recommendation.
+  These are the largest remaining gaps for running a full competitive event.
+- **No entrant rename** outside an import.
 - **No import adapter** yet; the data model is ready for one (§8).
 - **`/openapi.json` and `/docs` are publicly served**, enumerating every route
   and schema. Authentication still holds, but it's free reconnaissance on an

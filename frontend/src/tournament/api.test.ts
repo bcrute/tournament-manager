@@ -3,11 +3,13 @@ import {
   ackCall,
   addEntrants,
   callOfficial,
+  callTime,
   claimSeat,
   clearSeat,
   closeRound,
   createTournament,
   dropEntrant,
+  endTournament,
   formatClock,
   getRoster,
   getState,
@@ -21,6 +23,7 @@ import {
   tapi,
   timerAction,
   TourneyError,
+  undropEntrant,
 } from "./api";
 
 /** Records the last fetch and replies with `body`. */
@@ -118,7 +121,33 @@ describe("endpoints", () => {
   it("claims a seat by id, not by name", async () => {
     const fn = mockFetch({ entrantToken: "t", entrantId: 7, name: "Ada" });
     await claimSeat("AB123", 7);
-    expect(lastCall(fn).body).toEqual({ entrantId: 7 });
+    expect(lastCall(fn).body).toEqual({ entrantId: 7, wizardsEmail: null });
+  });
+
+  it("sends a Wizards email only when one was given", async () => {
+    const fn = mockFetch({ entrantToken: "t", entrantId: 7, name: "Ada" });
+    await claimSeat("AB123", 7, "a@b.com");
+    expect(lastCall(fn).body).toEqual({ entrantId: 7, wizardsEmail: "a@b.com" });
+  });
+
+  it("calls time on the round", async () => {
+    const fn = mockFetch({ ok: true, decided: 2, policy: "draw_all" });
+    const r = await callTime("AB123");
+    expect(lastCall(fn).url).toBe("/api/tournament/AB123/rounds/time");
+    expect(r.decided).toBe(2);
+  });
+
+  it("brings a dropped entrant back", async () => {
+    const fn = mockFetch();
+    await undropEntrant("AB123", 4);
+    expect(lastCall(fn).url).toBe("/api/tournament/AB123/entrants/4/undrop");
+  });
+
+  it("ends the tournament and returns frozen standings", async () => {
+    const fn = mockFetch({ ok: true, standings: [] });
+    const r = await endTournament("AB123");
+    expect(lastCall(fn).url).toBe("/api/tournament/AB123/end");
+    expect(r.standings).toEqual([]);
   });
 
   it("adds entrants as a batch", async () => {
