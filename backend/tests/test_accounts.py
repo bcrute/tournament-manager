@@ -1,0 +1,228 @@
+"""Optional accounts: signup, login, recovery without email, history, notes."""
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from app.accounts import hash_password, router as accounts_router, verify_password
+from app.table import router as table_router
+
+
+@pytest.fixture(scope="module")
+def app_client():
+    app = FastAPI()
+    app.include_router(table_router, prefix="/api/table")
+    app.include_router(accounts_router, prefix="/api/account")
+    # https base URL: the session cookie is Secure, so a client on http would
+    # (correctly) refuse to store it
+    with TestClient(app, base_url="https://testserver") as c:
+        yield c
+
+
+@pytest.fixture
+def fresh(app_client):
+    """A signed-out client. TestClient keeps cookies, so clear between tests."""
+    app_client.cookies.clear()
+    return app_client
+
+
+def signup(c, username, password="correct horse battery"):
+    return c.post("/api/account/signup", json={"username": username, "password": password})
+
+
+class TestPasswordHashing:
+    def test_round_trip(self):
+        stored = hash_password("hunter2 hunter2")
+        assert verify_password("hunter2 hunter2", stored)
+        assert not verify_password("something else", stored)
+
+    def test_hash_is_salted(self):
+        assert hash_password("same password") != hash_password("same password")
+
+    def test_plaintext_never_appears(self):
+        assert "hunter2" not in hash_password("hunter2 hunter2")
+
+    def test_garbage_stored_value_fails_closed(self):
+        assert not verify_password("x", "not-a-hash")
+        assert not verify_password("x", "bcrypt$abc$def")
+
+
+class TestSignup:
+    def test_creates_account_and_signs_in(self, fresh):
+        r = signup(fresh, "alice")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["account"]["username"] == "alice"
+        assert body["account"]["hasEmail"] is False
+        assert fresh.get("/api/account/me").json()["account"]["username"] == "alice"
+
+    def test_issues_one_time_recovery_codes(self, fresh):
+        codes = signup(fresh, "bob").json()["recoveryCodes"]
+        assert len(codes) == 8 and len(set(codes)) == 8
+
+    def test_no_email_required(self, fresh):
+        assert signup(fresh, "carol").json()["account"]["hasEmail"] is False
+
+    def test_username_taken(self, fresh):
+        signup(fresh, "dave")
+        fresh.cookies.clear()
+        assert signup(fresh, "dave").status_code == 409
+
+    def test_username_is_case_insensitive_for_uniqueness(self, fresh):
+        signup(fresh, "Erin")
+        fresh.cookies.clear()
+        assert signup(fresh, "erin").status_code == 409
+
+    def test_rejects_bad_usernames(self, fresh):
+        for bad in ("ab", "has space", "emoji🙂", "way-too-long-a-username-here"):
+            assert signup(fresh, bad).status_code in (400, 422)
+
+    def test_rejects_short_passwords(self, fresh):
+        assert signup(fresh, "shorty", "abc").status_code == 422
+
+
+class TestLogin:
+    def test_login_and_logout(self, fresh):
+        signup(fresh, "frank")
+        fresh.cookies.clear()
+        assert fresh.get("/api/account/me").json()["account"] is None
+        r = fresh.post(
+            "/api/account/login", json={"username": "frank", "password": "correct horse battery"}
+        )
+        assert r.status_code == 200
+        assert fresh.get("/api/account/me").json()["account"]["username"] == "frank"
+        fresh.post("/api/account/logout")
+        assert fresh.get("/api/account/me").json()["account"] is None
+
+    def test_wrong_password_rejected(self, fresh):
+        signup(fresh, "grace")
+        fresh.cookies.clear()
+        r = fresh.post("/api/account/login", json={"username": "grace", "password": "wrong pass!!"})
+        assert r.status_code == 401
+
+    def test_unknown_user_gives_the_same_error(self, fresh):
+        """Don't leak which usernames exist."""
+        a = fresh.post("/api/account/login", json={"username": "nobody-here", "password": "whatever!"})
+        signup(fresh, "heidi")
+        fresh.cookies.clear()
+        b = fresh.post("/api/account/login", json={"username": "heidi", "password": "wrongwrong"})
+        assert a.status_code == b.status_code == 401
+        assert a.json()["detail"] == b.json()["detail"]
+
+    def test_session_cookie_is_httponly(self, fresh):
+        r = signup(fresh, "ivan")
+        assert "httponly" in r.headers["set-cookie"].lower()
+
+
+class TestRecovery:
+    def test_recover_with_a_code_no_email_needed(self, fresh):
+        codes = signup(fresh, "judy").json()["recoveryCodes"]
+        fresh.cookies.clear()
+        r = fresh.post(
+            "/api/account/recover",
+            json={"username": "judy", "code": codes[0], "new_password": "brand new secret"},
+        )
+        assert r.status_code == 200
+        fresh.cookies.clear()
+        assert fresh.post(
+            "/api/account/login", json={"username": "judy", "password": "brand new secret"}
+        ).status_code == 200
+
+    def test_a_code_only_works_once(self, fresh):
+        codes = signup(fresh, "karl").json()["recoveryCodes"]
+        fresh.cookies.clear()
+        fresh.post(
+            "/api/account/recover",
+            json={"username": "karl", "code": codes[0], "new_password": "first change ok"},
+        )
+        r = fresh.post(
+            "/api/account/recover",
+            json={"username": "karl", "code": codes[0], "new_password": "second change no"},
+        )
+        assert r.status_code == 401
+
+    def test_bad_code_rejected(self, fresh):
+        signup(fresh, "lena")
+        fresh.cookies.clear()
+        r = fresh.post(
+            "/api/account/recover",
+            json={"username": "lena", "code": "dead-beef-cafe", "new_password": "nope nope nope"},
+        )
+        assert r.status_code == 401
+
+    def test_changing_password_logs_other_devices_out(self, fresh, app_client):
+        signup(fresh, "mike")
+        r = fresh.post(
+            "/api/account/password",
+            json={"current": "correct horse battery", "new": "a different secret"},
+        )
+        assert r.status_code == 200
+        # the cookie held by this client was invalidated with the rest
+        assert fresh.get("/api/account/me").json()["account"] is None
+
+
+class TestEmailOptional:
+    def test_email_can_be_added_and_removed(self, fresh):
+        signup(fresh, "nina")
+        assert fresh.post("/api/account/email", json={"email": "nina@example.com"}).json()["hasEmail"]
+        assert fresh.get("/api/account/me").json()["account"]["hasEmail"] is True
+        assert fresh.post("/api/account/email", json={"email": None}).json()["hasEmail"] is False
+
+    def test_obvious_junk_rejected(self, fresh):
+        signup(fresh, "omar")
+        assert fresh.post("/api/account/email", json={"email": "nope"}).status_code == 400
+
+
+class TestSeatLinking:
+    def test_games_played_signed_in_appear_in_history(self, fresh):
+        signup(fresh, "pia")
+        r = fresh.post("/api/table/rooms", json={"name": "pia", "mode": "life"})
+        code = r.json()["code"]
+        games = fresh.get("/api/account/history").json()["games"]
+        assert any(g["roomCode"] == code and g["playedAs"] == "pia" for g in games)
+
+    def test_anonymous_games_are_not_linked(self, fresh, app_client):
+        signup(fresh, "quinn")
+        before = len(fresh.get("/api/account/history").json()["games"])
+        app_client.cookies.clear()  # play signed out
+        app_client.post("/api/table/rooms", json={"name": "ghost", "mode": "life"})
+        fresh.post("/api/account/login", json={"username": "quinn", "password": "correct horse battery"})
+        assert len(fresh.get("/api/account/history").json()["games"]) == before
+
+    def test_history_requires_sign_in(self, fresh):
+        fresh.cookies.clear()
+        assert fresh.get("/api/account/history").status_code == 401
+
+
+class TestNotes:
+    def test_write_read_update_and_clear(self, fresh):
+        signup(fresh, "rosa")
+        code = fresh.post("/api/table/rooms", json={"name": "rosa", "mode": "life"}).json()["code"]
+        assert fresh.get(f"/api/account/notes/{code}/1").json()["text"] == ""
+        fresh.put(f"/api/account/notes/{code}/1", json={"text": "won on turn 7"})
+        assert fresh.get(f"/api/account/notes/{code}/1").json()["text"] == "won on turn 7"
+        fresh.put(f"/api/account/notes/{code}/1", json={"text": "actually turn 8"})
+        assert fresh.get(f"/api/account/notes/{code}/1").json()["text"] == "actually turn 8"
+        fresh.put(f"/api/account/notes/{code}/1", json={"text": "   "})
+        assert fresh.get(f"/api/account/notes/{code}/1").json()["text"] == ""
+
+    def test_notes_are_private_to_their_author(self, fresh, app_client):
+        signup(fresh, "sven")
+        code = fresh.post("/api/table/rooms", json={"name": "sven", "mode": "life"}).json()["code"]
+        fresh.put(f"/api/account/notes/{code}/1", json={"text": "my secret read"})
+        app_client.cookies.clear()
+        signup(app_client, "tara")
+        assert app_client.get(f"/api/account/notes/{code}/1").json()["text"] == ""
+        assert app_client.get("/api/account/notes").json()["notes"] == []
+
+    def test_notes_require_sign_in(self, fresh):
+        fresh.cookies.clear()
+        assert fresh.get("/api/account/notes").status_code == 401
+        assert fresh.put("/api/account/notes/ABCDE/1", json={"text": "x"}).status_code == 401
+
+    def test_notes_are_listed_for_the_dashboard(self, fresh):
+        signup(fresh, "umar")
+        code = fresh.post("/api/table/rooms", json={"name": "umar", "mode": "life"}).json()["code"]
+        fresh.put(f"/api/account/notes/{code}/2", json={"text": "pod was brutal"})
+        notes = fresh.get("/api/account/notes").json()["notes"]
+        assert any(n["roomCode"] == code and n["gameNo"] == 2 for n in notes)

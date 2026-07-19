@@ -5,8 +5,9 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .accounts import router as accounts_router
+from .db import q
 from .limits import RateLimiter, classify, client_id, client_ip
-from .table import q
 from .table import router as table_router
 
 app = FastAPI(title="mtg")
@@ -16,6 +17,7 @@ limiter = RateLimiter(db=q) if os.environ.get("TABLE_RATELIMIT", "on") != "off" 
 app.state.limiter = limiter  # websocket handler reads it from here
 
 app.include_router(table_router, prefix="/api/table")
+app.include_router(accounts_router, prefix="/api/account")
 
 
 @app.middleware("http")

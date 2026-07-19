@@ -3,16 +3,15 @@ import json
 import os
 import random
 import secrets
-import sqlite3
-import threading
 from pathlib import Path
 
-from fastapi import APIRouter, Header, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
+
+from .db import q
 
 router = APIRouter()
 
-DB_PATH = os.environ.get("TREACHERY_DB", "treachery.db")
 _here = Path(__file__).resolve()
 CARDS_PATH = next(
     p for p in (_here.parents[1] / "data", _here.parents[2] / "data")
@@ -24,92 +23,11 @@ MODES = ["life", "treachery"]
 IDLE_TIMEOUT = int(os.environ.get("TABLE_IDLE_TIMEOUT", 3 * 60 * 60))  # 3h of no activity
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O/1/I/L
 
-_db_lock = threading.Lock()
-_db = sqlite3.connect(DB_PATH, check_same_thread=False)
-_db.row_factory = sqlite3.Row
-# WAL: readers don't block the writer and commits stop rewriting a rollback
-# journal every time. synchronous=NORMAL is the documented safe pairing —
-# durable against process crashes, and a lost game state on host power-loss is
-# not worth an fsync per write here.
-_db.execute("PRAGMA journal_mode=WAL")
-_db.execute("PRAGMA synchronous=NORMAL")
-_db.execute("PRAGMA busy_timeout=5000")
-_db.executescript(
-    """
-    CREATE TABLE IF NOT EXISTS rooms (
-        code TEXT PRIMARY KEY,
-        status TEXT NOT NULL DEFAULT 'lobby',
-        options TEXT NOT NULL DEFAULT '{}',
-        created_at INTEGER NOT NULL DEFAULT (unixepoch())
-    );
-    CREATE TABLE IF NOT EXISTS events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        room_code TEXT NOT NULL,
-        at INTEGER NOT NULL DEFAULT (unixepoch()),
-        text TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS players (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        room_code TEXT NOT NULL REFERENCES rooms(code),
-        token TEXT NOT NULL UNIQUE,
-        name TEXT NOT NULL,
-        is_host INTEGER NOT NULL DEFAULT 0,
-        card_id INTEGER,
-        revealed INTEGER NOT NULL DEFAULT 0,
-        left_game INTEGER NOT NULL DEFAULT 0,
-        joined_at INTEGER NOT NULL DEFAULT (unixepoch())
-    );
-    CREATE TABLE IF NOT EXISTS bans (
-        subject TEXT PRIMARY KEY,   -- salted hash of a client IP, never the IP
-        until INTEGER NOT NULL,
-        strikes INTEGER NOT NULL DEFAULT 0,
-        last_strike INTEGER
-    );
-    CREATE TABLE IF NOT EXISTS cmd_damage (
-        room_code TEXT NOT NULL,
-        defender_id INTEGER NOT NULL,
-        attacker_id INTEGER NOT NULL,
-        amount INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (room_code, defender_id, attacker_id)
-    );
-    """
-)
-
-
-def _ensure_column(table: str, col: str, decl: str):
-    cols = [r[1] for r in _db.execute(f"PRAGMA table_info({table})")]
-    if col not in cols:
-        _db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
-
-
-_ensure_column("rooms", "mode", "TEXT NOT NULL DEFAULT 'treachery'")
-_ensure_column("rooms", "starting_life", "INTEGER NOT NULL DEFAULT 40")
-_ensure_column("rooms", "first_player", "TEXT")  # legacy, superseded by first_pid
-_ensure_column("rooms", "first_pid", "INTEGER")
-_ensure_column("rooms", "game_no", "INTEGER NOT NULL DEFAULT 0")
-_ensure_column("rooms", "last_active", "INTEGER")
-_ensure_column("events", "game_no", "INTEGER")
-_ensure_column("players", "is_display", "INTEGER NOT NULL DEFAULT 0")
-_ensure_column("players", "life", "INTEGER")
-_ensure_column("players", "eliminated", "INTEGER NOT NULL DEFAULT 0")
-_ensure_column("players", "seat_order", "INTEGER")
-_db.commit()
-
 _cards_by_id = {}
 _cards_by_role = {"Leader": [], "Guardian": [], "Assassin": [], "Traitor": []}
 for _c in json.loads(CARDS_PATH.read_text())["cards"]:
     _cards_by_id[_c["id"]] = _c
     _cards_by_role[_c["types"]["subtype"]].append(_c)
-
-
-def q(sql, params=()):
-    with _db_lock:
-        cur = _db.execute(sql, params)
-        # only writes need a commit; committing after every SELECT was pure cost
-        head = sql.lstrip()[:6].upper()
-        if head not in ("SELECT", "PRAGMA"):
-            _db.commit()
-        return cur
 
 
 async def check_last_standing(room):
@@ -226,6 +144,16 @@ def get_player(code: str, token: str | None):
     if not row:
         raise HTTPException(403, "not a player in this room")
     return row
+
+
+def account_id_of(request) -> int | None:
+    """Signed-in account for this request, if any. Accounts are optional, so a
+    missing or invalid session is simply anonymous play. Imported lazily to keep
+    the room module free of an accounts dependency at import time."""
+    from .accounts import current_account
+
+    acct = current_account(request)
+    return acct["id"] if acct else None
 
 
 def norm_status(raw: str) -> str:
@@ -470,7 +398,7 @@ class ReclaimBody(BaseModel):
 
 
 @router.post("/rooms")
-def create_room(body: CreateBody):
+def create_room(body: CreateBody, request: Request):
     if body.mode not in MODES:
         raise HTTPException(400, "unknown mode")
     expire_idle_rooms()  # cheap hygiene sweep, off the hot path
@@ -482,8 +410,8 @@ def create_room(body: CreateBody):
         (code, body.mode, starting),
     )
     q(
-        "INSERT INTO players (room_code, token, name, is_host) VALUES (?, ?, ?, 1)",
-        (code, token, body.name.strip()),
+        "INSERT INTO players (room_code, token, name, is_host, account_id) VALUES (?, ?, ?, 1, ?)",
+        (code, token, body.name.strip(), account_id_of(request)),
     )
     log_event(code, f"{body.name.strip()} created the room ({body.mode} mode)")
     touch(code)
@@ -491,7 +419,7 @@ def create_room(body: CreateBody):
 
 
 @router.post("/rooms/{code}/join")
-async def join_room(code: str, body: JoinBody):
+async def join_room(code: str, body: JoinBody, request: Request):
     room = get_room(code)
     name = body.name.strip()
     if body.display:
@@ -507,8 +435,8 @@ async def join_room(code: str, body: JoinBody):
         raise HTTPException(409, "game already started — ask the host to reopen the lobby")
     token = secrets.token_urlsafe(24)
     q(
-        "INSERT INTO players (room_code, token, name) VALUES (?, ?, ?)",
-        (room["code"], token, name),
+        "INSERT INTO players (room_code, token, name, account_id) VALUES (?, ?, ?, ?)",
+        (room["code"], token, name, account_id_of(request)),
     )
     log_event(room["code"], f"{name} joined")
     touch(room["code"])

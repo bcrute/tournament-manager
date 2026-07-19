@@ -149,7 +149,20 @@ class RateLimiter:
 
 # Route classification. Anything that creates state or claims a seat is
 # "sensitive"; gameplay traffic is "normal".
-SENSITIVE_SUFFIXES = ("/rooms", "/join", "/reclaim", "/display", "/rename", "/start")
+SENSITIVE_SUFFIXES = (
+    "/rooms",
+    "/join",
+    "/reclaim",
+    "/display",
+    "/rename",
+    "/start",
+    # account endpoints: credential stuffing and signup spam land here
+    "/signup",
+    "/login",
+    "/recover",
+    "/password",
+    "/recovery-codes",
+)
 
 
 def classify(path: str, method: str) -> str:
