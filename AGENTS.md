@@ -94,7 +94,7 @@ it lives.
 | Surface | Who | Assumes | Lives in |
 | --- | --- | --- | --- |
 | **Table** | Anyone at a game, no account | Nothing. Mobile-first. A player may be anonymous, may have joined by QR, may lose their token | `backend/app/table.py`, `frontend/src/table/` |
-| **Tournament** | Organizers (account + email) and entrants (token) | An event exists and someone is running it. Desktop-first for the organizer console, mobile for players | `backend/app/tournaments.py`, `frontend/src/tournament/` |
+| **Tournament** | Organizers (account + email) and entrants (token) | An event exists and someone is running it. Mobile-first throughout — the console gains a sidebar on wide screens, it is not designed for one | `backend/app/tournaments.py`, `frontend/src/tournament/` |
 | **Admin** | Operators of this deployment, set by `TABLE_ADMINS` | Full trust. Acts across all events and rooms | `backend/app/admin.py`, `frontend/src/admin/` |
 
 **Choosing:**
