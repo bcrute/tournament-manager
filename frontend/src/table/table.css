@@ -1396,3 +1396,31 @@ button.ghost.danger {
   background: #14101c;
   color: #e8e4f0;
 }
+
+/* artist credit — the identity artwork belongs to its illustrators */
+.art-credit {
+  display: block;
+  font-size: 0.72rem;
+  color: #8a7fa0;
+  font-weight: 400;
+  margin-top: 0.2rem;
+}
+
+/* required attribution */
+.fan-notice {
+  max-width: 640px;
+  margin: 2.5rem auto 1rem;
+  padding: 0 1.2rem;
+  color: #6b6180;
+  font-size: 0.72rem;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.fan-notice p {
+  margin: 0 0 0.5rem;
+}
+
+.fan-notice a {
+  color: #8a7fa0;
+}

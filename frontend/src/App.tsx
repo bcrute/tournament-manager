@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { APPS, AppStatus } from "./apps";
+import FanContentNotice from "./FanContentNotice";
 
 const STATUS_LABEL: Record<AppStatus, string> = {
   live: "Live",
@@ -47,6 +48,8 @@ export default function App() {
       <footer>
         <span className={`dot ${health}`} /> API {health}
       </footer>
+
+      <FanContentNotice />
     </main>
   );
 }

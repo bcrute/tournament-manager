@@ -101,6 +101,7 @@ def card_public(card):
         "rarity": card["rarity"],
         "text": card["text"],
         "uri": card["uri"],
+        "artist": card.get("artist") or "",  # the illustrators own this art — credit it
         "image": f"/cards/trd/{card['id']:03d}.jpg",
     }
 

@@ -157,3 +157,18 @@ class TestTierEligibility:
                 if all(by.get(role, {}).get(r, 0) >= cnt for role, cnt in need.items())
             ]
             assert eligible, f"no single tier can serve a {n}-player table"
+
+
+class TestArtistCredit:
+    def test_cards_carry_their_artist(self, api, treachery_room):
+        """The identity artwork belongs to individual illustrators, so the
+        credit has to reach the client that renders it."""
+        code, tokens = treachery_room
+        card = api.me(code, tokens["host"])["me"]["card"]
+        assert card["artist"]
+
+    def test_every_card_in_the_set_has_an_artist(self):
+        from app.table import _cards_by_id
+
+        missing = [c["name"] for c in _cards_by_id.values() if not c.get("artist")]
+        assert missing == []

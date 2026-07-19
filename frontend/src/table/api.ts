@@ -5,6 +5,7 @@ export interface CardInfo {
   rarity: string;
   text: string;
   uri: string;
+  artist: string;
   image: string;
 }
 

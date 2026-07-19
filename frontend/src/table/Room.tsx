@@ -556,7 +556,10 @@ function RoleScreen({
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div className="carousel-label">{entry?.isMe ? "Your card" : `${entry?.name}'s card`}</div>
+      <div className="carousel-label">
+        {entry?.isMe ? "Your card" : `${entry?.name}'s card`}
+        {showFace && card?.artist && <span className="art-credit">art by {card.artist}</span>}
+      </div>
 
       {showFace && card ? (
         <img className="role-card" src={card.image} alt="" draggable={false} />
@@ -627,6 +630,7 @@ function CardZoom({ p, onClose }: { p: PlayerInfo; onClose: () => void }) {
       <div className="zoom-banner">
         This is <strong>{p.name}</strong>
         {p.isMe ? " (you)" : ""}&rsquo;s role card — {p.card.name} ({p.card.role})
+        {p.card.artist && <span className="art-credit">art by {p.card.artist}</span>}
       </div>
       <img src={p.card.image} alt={p.card.name} draggable={false} />
       <span className="zoom-hint">tap to close</span>

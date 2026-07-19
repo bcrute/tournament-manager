@@ -9,6 +9,7 @@ const card = (id: number): CardInfo => ({
   rarity: "R",
   text: "",
   uri: "",
+  artist: "Test Artist",
   image: `/cards/trd/${id}.jpg`,
 });
 

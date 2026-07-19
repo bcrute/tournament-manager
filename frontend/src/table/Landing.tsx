@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, ApiError, GameMode, SeatInfo, SeatsResponse } from "./api";
 import { clearSession, landingAction, loadSession, saveSession } from "./session";
+import FanContentNotice from "../FanContentNotice";
 
 function randomName() {
   const chars = "abcdefghjkmnpqrstuvwxyz23456789";
@@ -268,6 +269,8 @@ export default function Landing() {
         <span className="dot-sep">·</span>
         <Link to="/">mtg.skadoosh.dev</Link>
       </footer>
+
+      <FanContentNotice />
     </main>
   );
 }

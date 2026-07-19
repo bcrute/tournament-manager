@@ -10,6 +10,7 @@ import {
   logout,
   saveNote,
 } from "./account";
+import FanContentNotice from "../FanContentNotice";
 import SignIn from "./SignIn";
 
 /** Your games and notes. Signed-out visitors get the sign-in panel instead. */
@@ -56,6 +57,7 @@ export default function Dashboard() {
         <footer>
           <Link to="/table">← back to Table</Link>
         </footer>
+        <FanContentNotice />
       </main>
     );
   }
