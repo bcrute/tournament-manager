@@ -1,0 +1,296 @@
+/* Shared layout chrome. Mobile-first throughout: base rules are the phone,
+   media queries add room, never take it away. */
+
+/* ---------- site ---------- */
+
+.site {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.site-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid #2a2f3a;
+}
+
+.site-logo {
+  font-weight: 700;
+  text-decoration: none;
+  color: inherit;
+}
+
+.site-logo span {
+  opacity: 0.55;
+  font-weight: 400;
+}
+
+.site-bar nav {
+  margin-left: auto;
+  display: flex;
+  gap: 0.25rem;
+}
+
+.site-bar nav a {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  text-decoration: none;
+  color: inherit;
+  opacity: 0.75;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.site-bar nav a.active {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.site-body {
+  flex: 1;
+  width: min(100%, 60rem);
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+.site-footer {
+  padding: 1rem;
+  border-top: 1px solid #2a2f3a;
+}
+
+.hero {
+  padding: 1.5rem 0 2rem;
+}
+
+.hero h1 {
+  font-size: clamp(1.7rem, 6vw, 2.6rem);
+  line-height: 1.15;
+  margin: 0 0 0.75rem;
+  max-width: 20ch;
+}
+
+.lede {
+  font-size: 1.05rem;
+  opacity: 0.8;
+  max-width: 52ch;
+  margin: 0 0 1.5rem;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.8rem 1.1rem;
+  border-radius: 0.6rem;
+  text-decoration: none;
+  font-weight: 600;
+  min-height: 48px;
+  background: #5b8def;
+  color: #fff;
+}
+
+.cta.ghost {
+  background: transparent;
+  border: 1px solid #3a4152;
+  color: inherit;
+}
+
+.features {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+  margin-top: 1rem;
+}
+
+@media (min-width: 40rem) {
+  .features {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.features article {
+  background: #161a23;
+  border: 1px solid #2a2f3a;
+  border-radius: 0.6rem;
+  padding: 1rem;
+}
+
+.features h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 1rem;
+  margin: 0 0 0.4rem;
+}
+
+.features p {
+  margin: 0;
+  opacity: 0.8;
+  font-size: 0.93rem;
+}
+
+.site-status {
+  margin-top: 2rem;
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+/* ---------- play ---------- */
+
+.play {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.play-bar {
+  padding: 0.9rem 1rem 0.4rem;
+}
+
+.play-bar h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.play-body {
+  flex: 1;
+  width: min(100%, 34rem);
+  margin: 0 auto;
+  padding: 0.5rem 1rem 1rem;
+}
+
+/* bottom nav: thumb-reachable, and out of the way of the primary action */
+.play-nav {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  background: #12151c;
+  border-top: 1px solid #2a2f3a;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.play-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.5rem;
+  min-height: 52px;
+  text-decoration: none;
+  color: inherit;
+  opacity: 0.6;
+  font-size: 0.72rem;
+}
+
+.play-tab.active {
+  opacity: 1;
+  color: #9db8ff;
+}
+
+/* ---------- console ---------- */
+
+.console {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.console-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid #2a2f3a;
+}
+
+.console-title h1 {
+  margin: 0;
+  font-size: 1.1rem;
+  line-height: 1.2;
+}
+
+.console-sub {
+  margin: 0.1rem 0 0;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.console-status {
+  margin-left: auto;
+  text-align: right;
+}
+
+/* phone: a scrolling tab strip. wide: a sidebar. same markup. */
+.console-nav {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  padding: 0.5rem;
+  border-bottom: 1px solid #2a2f3a;
+  scrollbar-width: none;
+}
+
+.console-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.console-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.8rem;
+  border-radius: 0.5rem;
+  text-decoration: none;
+  color: inherit;
+  opacity: 0.7;
+  white-space: nowrap;
+  min-height: 44px;
+}
+
+.console-tab.active {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.console-body {
+  flex: 1;
+  padding: 1rem;
+}
+
+@media (min-width: 52rem) {
+  .console {
+    display: grid;
+    grid-template-columns: 13rem 1fr;
+    grid-template-areas: "bar bar" "nav body";
+  }
+
+  .console-bar {
+    grid-area: bar;
+  }
+
+  .console-nav {
+    grid-area: nav;
+    flex-direction: column;
+    overflow: visible;
+    border-bottom: none;
+    border-right: 1px solid #2a2f3a;
+    align-content: start;
+  }
+
+  .console-body {
+    grid-area: body;
+    padding: 1.25rem;
+  }
+}

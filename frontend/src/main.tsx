@@ -1,7 +1,9 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
-import App from "./App";
+import Home from "./site/Home";
+import SiteLayout from "./layouts/SiteLayout";
+import PlayLayout from "./layouts/PlayLayout";
 import Landing from "./table/Landing";
 import Dashboard from "./table/Dashboard";
 import Room from "./table/Room";
@@ -13,6 +15,7 @@ import "./index.css";
 import "./table/table.css";
 import "./tournament/tournament.css";
 import "./admin/admin.css";
+import "./layouts/layouts.css";
 
 function LegacyRoomRedirect() {
   const { code = "" } = useParams();
@@ -23,15 +26,17 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<App />} />
-        <Route path="/table" element={<Landing />} />
+        <Route path="/" element={<SiteLayout><Home /></SiteLayout>} />
+        <Route path="/table" element={<PlayLayout><Landing /></PlayLayout>} />
         <Route path="/table/r/:code" element={<Room />} />
-        <Route path="/table/me" element={<Dashboard />} />
+        <Route path="/table/me" element={<PlayLayout><Dashboard /></PlayLayout>} />
         <Route path="/tournament" element={<Host />} />
-        <Route path="/tournament/:code" element={<Play />} />
-        <Route path="/tournament/:code/organize" element={<Organize />} />
+        <Route path="/tournament/:code" element={<PlayLayout><Play /></PlayLayout>} />
+        <Route path="/tournament/:code/organize" element={<Navigate to="pods" replace />} />
+        <Route path="/tournament/:code/organize/:section" element={<Organize />} />
         {/* unlisted: nothing links here. The server enforces access, not the absence of a link. */}
-        <Route path="/admin" element={<Admin />} />
+        <Route path="/admin" element={<Navigate to="/admin/overview" replace />} />
+        <Route path="/admin/:section" element={<Admin />} />
         <Route path="/treachery" element={<Navigate to="/table" replace />} />
         <Route path="/treachery/r/:code" element={<LegacyRoomRedirect />} />
       </Routes>

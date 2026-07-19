@@ -1,0 +1,87 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import Icon from "../Icon";
+
+/**
+ * The public front page.
+ *
+ * One page for now, but structured as a website rather than a launcher: what
+ * this is, what you can do, and two clear ways in. Sections are separate blocks
+ * so adding a page later means moving one out, not unpicking a tile grid.
+ */
+export default function Home() {
+  const [health, setHealth] = useState<"checking" | "ok" | "down">("checking");
+
+  useEffect(() => {
+    fetch("/api/health")
+      .then((r) => (r.ok ? setHealth("ok") : setHealth("down")))
+      .catch(() => setHealth("down"));
+  }, []);
+
+  return (
+    <>
+      <section className="hero">
+        <h1>Everything at the table, on the phones already there.</h1>
+        <p className="lede">
+          Life totals, commander damage, hidden roles and full tournaments — shared
+          across every device at the table. No app to install, and no account needed
+          to play.
+        </p>
+        <div className="hero-actions">
+          <Link className="cta" to="/table">
+            <Icon name="heart" /> Start a game
+          </Link>
+          <Link className="cta ghost" to="/tournament">
+            <Icon name="crown" /> Run a tournament
+          </Link>
+        </div>
+      </section>
+
+      <section className="features">
+        <article>
+          <h2>
+            <Icon name="heart" /> Shared life tracker
+          </h2>
+          <p>
+            Every player adjusts their own total from their own phone, and the table
+            display keeps everyone honest. Commander damage included — including from
+            your own commander.
+          </p>
+        </article>
+        <article>
+          <h2>
+            <Icon name="card" /> Hidden roles
+          </h2>
+          <p>
+            Deal secret identities to the table, peek privately, and unveil when you
+            choose. Your role survives a refresh, a dropped connection, and a dead
+            battery.
+          </p>
+        </article>
+        <article>
+          <h2>
+            <Icon name="crown" /> Tournaments
+          </h2>
+          <p>
+            Swiss pairings over pods, seating, round timers and standings. Players scan
+            one code and their phone follows them from table to table for the rest of
+            the event.
+          </p>
+        </article>
+        <article>
+          <h2>
+            <Icon name="users" /> No sign-up wall
+          </h2>
+          <p>
+            Playing never needs an account. Make one only if you want your game history
+            and private notes kept — hosting a tournament is the one exception.
+          </p>
+        </article>
+      </section>
+
+      <section className="site-status">
+        <span className={`dot ${health}`} /> Service {health}
+      </section>
+    </>
+  );
+}

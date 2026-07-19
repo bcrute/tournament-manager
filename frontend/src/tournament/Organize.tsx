@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import Icon from "../Icon";
+import ConsoleLayout from "../layouts/ConsoleLayout";
+import { CONSOLE_SECTIONS, ConsoleSection, consolePath } from "../nav";
 import {
   ackCall,
   addEntrants,
@@ -27,7 +29,11 @@ import { useTournament } from "./useTournament";
  * left, pods in the middle, standings and the call queue on the right.
  */
 export default function Organize() {
-  const { code = "" } = useParams();
+  const { code = "", section = "pods" } = useParams();
+  const navigate = useNavigate();
+  const active = (CONSOLE_SECTIONS.some((s) => s.id === section)
+    ? section
+    : "pods") as ConsoleSection;
   const { state, error, refresh, clockOffset } = useTournament(code);
   const [names, setNames] = useState("");
   const [busy, setBusy] = useState(false);
@@ -61,9 +67,11 @@ export default function Organize() {
 
   if (!state) {
     return (
-      <main className="tq-console">
-        <p className="hint">{error ?? "Loading…"}</p>
-      </main>
+      <div className="console">
+        <main className="console-body">
+          <p className="hint">{error ?? "Loading…"}</p>
+        </main>
+      </div>
     );
   }
 
@@ -72,18 +80,8 @@ export default function Organize() {
   const roundOpen = round?.status === "active";
   const allReported = pods.length > 0 && pods.every((p) => p.status === "complete");
 
-  return (
-    <main className="tq-console">
-      <header className="tq-bar">
-        <div>
-          <h1>{tournament.name}</h1>
-          <p className="tagline">
-            Join code <strong className="tq-code">{tournament.code}</strong>
-            <span className="dot-sep">·</span>
-            <span className="hint">{joinUrl}</span>
-          </p>
-        </div>
-        <div className="tq-clock">
+  const clock = (
+    <div className="tq-clock">
           {round ? (
             <>
               <span className="tq-round">Round {round.number}</span>
@@ -108,15 +106,32 @@ export default function Organize() {
                 </button>
               </div>
             </>
-          ) : (
-            <span className="hint">No round yet</span>
-          )}
-        </div>
-      </header>
+      ) : (
+        <span className="hint">No round yet</span>
+      )}
+    </div>
+  );
 
+  return (
+    <ConsoleLayout
+      title={tournament.name}
+      subtitle={
+        <>
+          Join code <strong className="tq-code">{tournament.code}</strong>
+          <span className="dot-sep">·</span>
+          <span className="hint">{joinUrl}</span>
+        </>
+      }
+      status={clock}
+      sections={CONSOLE_SECTIONS.map((s) => ({
+        ...s,
+        label: s.id === "calls" && calls.length ? `${s.label} (${calls.length})` : s.label,
+      }))}
+      pathFor={(id) => consolePath(code, id as ConsoleSection)}
+    >
       {actionError && <p className="error">{actionError}</p>}
 
-      <div className="tq-grid">
+      {active === "roster" && (
         <section className="tq-panel">
           <h2>
             <Icon name="users" /> Roster ({standings.length})
@@ -178,7 +193,9 @@ export default function Organize() {
             ))}
           </ul>
         </section>
+      )}
 
+      {active === "pods" && (
         <section className="tq-panel wide">
           <h2>
             <Icon name="seat" /> {round ? `Round ${round.number} pods` : "Pods"}
@@ -243,7 +260,9 @@ export default function Organize() {
             )}
           </div>
         </section>
+      )}
 
+      {active === "calls" && (
         <section className="tq-panel">
           <h2>
             <Icon name="hand" /> Calls
@@ -289,7 +308,11 @@ export default function Organize() {
               </li>
             ))}
           </ul>
+        </section>
+      )}
 
+      {active === "standings" && (
+        <section className="tq-panel">
           <h2>
             <Icon name="crown" /> Standings
           </h2>
@@ -305,8 +328,8 @@ export default function Organize() {
             ))}
           </ol>
         </section>
-      </div>
-    </main>
+      )}
+    </ConsoleLayout>
   );
 }
 

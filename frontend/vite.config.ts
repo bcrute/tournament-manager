@@ -22,6 +22,7 @@ export default defineConfig({
         "src/admin/api.ts",
         "src/username.ts",
         "src/goBack.ts",
+        "src/nav.ts",
       ],
       thresholds: {
         statements: 90,

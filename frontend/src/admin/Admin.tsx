@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import SignIn from "../table/SignIn";
 import { goBack } from "../goBack";
+import ConsoleLayout from "../layouts/ConsoleLayout";
+import { ADMIN_SECTIONS } from "../nav";
 import {
   ago,
   AdminError,
@@ -31,6 +33,8 @@ import {
  */
 export default function Admin() {
   const navigate = useNavigate();
+  const { section = "overview" } = useParams();
+  const active = ADMIN_SECTIONS.some((s) => s.id === section) ? section : "overview";
   const [overview, setOverview] = useState<Overview | null>(null);
   const [denied, setDenied] = useState(false);
   const [rooms, setRooms] = useState<AdminRoom[]>([]);
@@ -105,17 +109,20 @@ export default function Admin() {
   }
 
   return (
-    <main className="adm">
-      <header className="adm-bar">
-        <h1>Admin</h1>
-        <span className="hint">signed in as {overview.admin}</span>
+    <ConsoleLayout
+      title="Admin"
+      subtitle={`signed in as ${overview.admin}`}
+      status={
         <button disabled={busy} onClick={() => void load()}>
           Refresh
         </button>
-      </header>
-
+      }
+      sections={ADMIN_SECTIONS}
+      pathFor={(id) => `/admin/${id}`}
+    >
       {error && <p className="error">{error}</p>}
 
+      {active === "overview" && (
       <section className="adm-stats">
         {[
           ["Rooms", `${overview.rooms.active} playing / ${overview.rooms.total}`],
@@ -130,7 +137,9 @@ export default function Admin() {
           </div>
         ))}
       </section>
+      )}
 
+      {active === "tournaments" && (
       <section className="adm-panel">
         <h2>Tournaments</h2>
         <table>
@@ -167,7 +176,9 @@ export default function Admin() {
           </tbody>
         </table>
       </section>
+      )}
 
+      {active === "rooms" && (
       <section className="adm-panel">
         <h2>Rooms</h2>
         <table>
@@ -204,7 +215,9 @@ export default function Admin() {
           </tbody>
         </table>
       </section>
+      )}
 
+      {active === "bans" && (
       <section className="adm-panel">
         <h2>Bans</h2>
         <p className="hint">
@@ -241,7 +254,10 @@ export default function Admin() {
           </tbody>
         </table>
       </section>
+      )}
 
+      {active === "logs" && (
+      <>
       <section className="adm-panel">
         <h2>Security events</h2>
         <p className="hint">
@@ -295,6 +311,8 @@ export default function Admin() {
           </tbody>
         </table>
       </section>
-    </main>
+      </>
+      )}
+    </ConsoleLayout>
   );
 }

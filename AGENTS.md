@@ -123,12 +123,38 @@ it lives.
   what's in them, and never a player's notes. Operating the instance does not
   require reading anyone's game.
 
+## Front-end structure
+
+Three layouts, in `frontend/src/layouts/`. A page picks one; it never invents
+its own chrome. Navigation is data in `frontend/src/nav.ts`, so adding a
+section is a line in a list.
+
+| Layout | Used by | Shape |
+| --- | --- | --- |
+| `SiteLayout` | `/` | The public website. One page today, nav ready for more |
+| `PlayLayout` | table lobby, dashboard, tournament player | Mobile-first single column, bottom nav. `bare` for full-viewport pages like the room |
+| `ConsoleLayout` | tournament organizer, admin | Sections as a tab strip on a phone, a sidebar past 52rem. A persistent status slot for the round clock |
+
+**Why three and not one:** a player screen is one task, thumb-first. A console
+is several sections someone moves between while an event runs, with state that
+must stay visible throughout. Forcing the console into the player shell is what
+made the organizer view one enormous scrolling page.
+
+**Console sections are routes, not tabs in state** (`/organize/pods`,
+`/admin/rooms`). An organizer can bookmark the standings, reload without losing
+their place, and the browser Back button does what it should.
+
+**Mobile-first is not negotiable, including the console.** Base rules are the
+phone; media queries add room and never take it away. An organizer is usually
+holding a phone and walking between tables.
+
 ## Layout
 
 - `backend/app/` — FastAPI. `db.py` owns the schema and migrations; `table.py`
   rooms and games; `tournaments.py` events; `admin.py` the operator surface;
   `accounts.py` optional accounts; `limits.py` rate limiting and bans;
   `games.py` game profiles.
-- `frontend/src/` — Vite + React + TS. `table/`, `tournament/`, `admin/`.
+- `frontend/src/` — Vite + React + TS. `site/` the public page, `table/`,
+  `tournament/`, `admin/`, with `layouts/` and `nav.ts` shared between them.
 - `docs/` — design, the API contract, security decisions, and an ideas parking
   lot that is explicitly not a roadmap.
