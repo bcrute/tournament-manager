@@ -75,6 +75,9 @@ export interface OfficialCall {
   category: string | null;
   note: string | null;
   createdAt: number;
+  /** How long the table has been waiting, and the time that buys them back. */
+  openSeconds: number;
+  suggestedMinutes: number;
 }
 
 export interface TournamentState {
@@ -201,10 +204,21 @@ export const callOfficial = (code: string, podId: number, token: string, note?: 
 export const ackCall = (code: string, id: number) =>
   tapi<{ ok: boolean }>(`/${code}/calls/${id}/ack`, { method: "POST" });
 
-export const resolveCall = (code: string, id: number, note?: string) =>
-  tapi<{ ok: boolean }>(`/${code}/calls/${id}/resolve`, {
+/**
+ * Resolve a call. Omitting `extendMinutes` lets the server give the table back
+ * the time it measured; pass a number (including 0) to override the judge's
+ * way.
+ */
+export const resolveCall = (code: string, id: number, extendMinutes?: number, note?: string) =>
+  tapi<{
+    ok: boolean;
+    openSeconds: number;
+    suggestedMinutes: number;
+    grantedMinutes: number;
+    grantedBy: "measured" | "judge" | "off";
+  }>(`/${code}/calls/${id}/resolve`, {
     method: "POST",
-    body: { note: note ?? null },
+    body: { note: note ?? null, extendMinutes: extendMinutes ?? null },
   });
 
 /** Player-side persistence: which tournament seat this device holds. */

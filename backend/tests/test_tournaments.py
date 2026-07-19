@@ -1045,18 +1045,91 @@ class TestJudgeExtensions:
         assert suggested_extension(150) == 3
         assert suggested_extension(600) == 10
 
-    def test_resolving_grants_nothing_unless_the_judge_says_so(self, client):
+    def _call(self, client, code):
+        pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
+        call = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call", json={}).json()
+        return pod, call
+
+    def test_the_table_gets_its_lost_time_back_automatically(self, client):
+        """The round clock never stops for a judge call — the table does. The
+        measured disruption is given back to that table without anyone typing
+        a number."""
         organizer(client, "hostBS")
         code = host(client)
         add(client, code, ["z1", "z2", "z3", "z4"])
         client.post(f"/api/tournament/{code}/rounds", json={})
-        pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
-        call = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call", json={}).json()
+        pod, call = self._call(client, code)
+        # backdate the call so it reads as a four-minute disruption
+        q("UPDATE official_calls SET created_at = unixepoch() - 250 WHERE id = ?", (call["callId"],))
         r = client.post(f"/api/tournament/{code}/calls/{call['callId']}/resolve",
                         json={"note": "ruled"}).json()
+        assert r["grantedBy"] == "measured" and r["grantedMinutes"] == 5
+        assert q("SELECT extension_seconds e FROM pods WHERE id = ?",
+                 (pod["podId"],)).fetchone()["e"] == 300
+
+    def test_a_call_under_a_minute_extends_nothing(self, client):
+        """MTR 2.6 sets the bar at more than a minute; below it, no noise."""
+        organizer(client, "hostBS2")
+        code = host(client)
+        add(client, code, ["z1b", "z2b", "z3b", "z4b"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        pod, call = self._call(client, code)
+        r = client.post(f"/api/tournament/{code}/calls/{call['callId']}/resolve",
+                        json={"note": "quick answer"}).json()
         assert r["grantedMinutes"] == 0
         assert q("SELECT extension_seconds e FROM pods WHERE id = ?",
                  (pod["podId"],)).fetchone()["e"] == 0
+
+    def test_a_judge_can_override_the_measurement_including_down_to_zero(self, client):
+        organizer(client, "hostBS3")
+        code = host(client)
+        add(client, code, ["z1c", "z2c", "z3c", "z4c"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        pod, call = self._call(client, code)
+        q("UPDATE official_calls SET created_at = unixepoch() - 600 WHERE id = ?", (call["callId"],))
+        r = client.post(f"/api/tournament/{code}/calls/{call['callId']}/resolve",
+                        json={"extendMinutes": 0}).json()
+        assert r["grantedBy"] == "judge" and r["grantedMinutes"] == 0
+        assert q("SELECT extension_seconds e FROM pods WHERE id = ?",
+                 (pod["podId"],)).fetchone()["e"] == 0
+
+    def test_a_deck_check_formula_is_the_judges_to_apply(self, client):
+        """Duration plus three minutes — only the judge knows it applies."""
+        organizer(client, "hostBS4")
+        code = host(client)
+        add(client, code, ["z1d", "z2d", "z3d", "z4d"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        pod, call = self._call(client, code)
+        r = client.post(f"/api/tournament/{code}/calls/{call['callId']}/resolve",
+                        json={"note": "deck check", "extendMinutes": 11}).json()
+        assert r["grantedMinutes"] == 11
+
+    def test_auto_extension_can_be_turned_off_entirely(self, client):
+        organizer(client, "hostBS5")
+        code = host(client, settings={"autoExtendOnCall": False})
+        add(client, code, ["z1e", "z2e", "z3e", "z4e"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        pod, call = self._call(client, code)
+        q("UPDATE official_calls SET created_at = unixepoch() - 600 WHERE id = ?", (call["callId"],))
+        r = client.post(f"/api/tournament/{code}/calls/{call['callId']}/resolve", json={}).json()
+        assert r["grantedBy"] == "off" and r["grantedMinutes"] == 0
+
+    def test_the_extension_reaches_the_players_clock(self, client):
+        organizer(client, "hostBS6")
+        code = host(client)
+        add(client, code, ["z1f", "z2f", "z3f", "z4f"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        client.post(f"/api/tournament/{code}/timer", json={"action": "start", "minutes": 50})
+        pod, call = self._call(client, code)
+        seat = q("SELECT room_token FROM pod_seats WHERE pod_id = ? LIMIT 1",
+                 (pod["podId"],)).fetchone()
+        before = client.get(f"/api/table/rooms/{pod['roomCode']}/me",
+                            headers={"X-Player-Token": seat["room_token"]}).json()["tournament"]["endsAt"]
+        q("UPDATE official_calls SET created_at = unixepoch() - 250 WHERE id = ?", (call["callId"],))
+        client.post(f"/api/tournament/{code}/calls/{call['callId']}/resolve", json={})
+        after = client.get(f"/api/table/rooms/{pod['roomCode']}/me",
+                           headers={"X-Player-Token": seat["room_token"]}).json()["tournament"]["endsAt"]
+        assert after - before == 300
 
     def test_a_judge_can_grant_time_while_resolving(self, client):
         organizer(client, "hostBT")

@@ -296,12 +296,28 @@ with a problem should be able to raise a hand even if a phone lost its token.
 
 ### `POST /api/tournament/{code}/calls/{id}/ack`  *(organizer)*
 ### `POST /api/tournament/{code}/calls/{id}/resolve`  *(organizer)*
-Resolving reports `openSeconds` and a `suggestedMinutes` extension, and accepts
-`extendMinutes` to grant time to that table. **The app suggests; the judge
-grants.** MTR 2.6: a pause of *more than one minute* should be extended
-"appropriately" — a judgment call, and a deck check has its own formula
-(duration plus three minutes) that only the judge knows applies. Nothing is
-added automatically.
+**A judge call never stops the round clock — it stops the table.** Everyone
+else keeps playing, so that table has lost time the others haven't, and the
+extension exists to give it back. (`timer` `pause` is the separate, rarer case
+of stopping the round for the whole room.)
+
+Resolving therefore measures the disruption — hand up to ruling done — and
+gives that table the time back automatically:
+
+```jsonc
+{ "note": "ruled" }                    // omit extendMinutes: give back what was measured
+→ { "openSeconds": 250, "suggestedMinutes": 5,
+    "grantedMinutes": 5, "grantedBy": "measured" }
+
+{ "extendMinutes": 0 }                 // judge overrides, including down to nothing
+{ "extendMinutes": 11 }                // deck check: duration plus three minutes
+```
+
+`grantedBy` is `measured`, `judge`, or `off`. Under a minute grants nothing —
+MTR 2.6 sets the bar at *more than one minute*. A judge can always override,
+because "appropriately" is their call and only they know a deck check's
+duration-plus-three formula applies. Setting `autoExtendOnCall: false` reverts
+to granting nothing unless asked.
 
 `ack` = "on my way" (only affects `open` calls). `resolve` closes it and stores
 `note` as the resolution. Both idempotent and both return `{"ok": true}` even

@@ -44,6 +44,9 @@ GENERIC_SETTINGS = {
     "seatAssignment": "random",       # random | by_standings | manual
     "allowOfficialCalls": True,
     "collectWizardsEmail": "off",     # off | optional | required (publisher account)
+    # measure the disruption a judge call caused and give that table the time
+    # back automatically. The judge can still override or decline per call.
+    "autoExtendOnCall": True,
     "structure": None,                # a game profile's structure key; None = first
 }
 
@@ -980,6 +983,7 @@ def suggested_extension(open_seconds: int) -> int:
 @router.post("/{code}/calls/{call_id}/resolve")
 async def resolve_call(code: str, call_id: int, body: CallBody, request: Request):
     t, _ = require_organizer(code, request)
+    cfg = settings_of(t)
     call = q(
         "SELECT * FROM official_calls WHERE id = ? AND tournament_code = ?",
         (call_id, t["code"]),
@@ -993,10 +997,22 @@ async def resolve_call(code: str, call_id: int, body: CallBody, request: Request
         (body.note, call_id, t["code"]),
     )
 
+    # The disruption is the whole time the table sat waiting — from the hand
+    # going up to the ruling being done, not just the judge's time at the table.
     open_for = max(0, int(time.time()) - call["created_at"])
-    granted = 0
-    if body.extendMinutes and call["pod_id"]:
-        granted = max(0, body.extendMinutes)
+    suggested = suggested_extension(open_for)
+
+    if body.extendMinutes is not None:
+        granted = max(0, body.extendMinutes)      # the judge decided, including 0
+        source = "judge"
+    elif cfg["autoExtendOnCall"]:
+        granted = suggested                        # measured, and given back
+        source = "measured"
+    else:
+        granted = 0
+        source = "off"
+
+    if granted and call["pod_id"]:
         q(
             "UPDATE pods SET extension_seconds = extension_seconds + ? WHERE id = ?",
             (granted * 60, call["pod_id"]),
@@ -1008,6 +1024,7 @@ async def resolve_call(code: str, call_id: int, body: CallBody, request: Request
     return {
         "ok": True,
         "openSeconds": open_for,
-        "suggestedMinutes": suggested_extension(open_for),
+        "suggestedMinutes": suggested,
         "grantedMinutes": granted,
+        "grantedBy": source,
     }

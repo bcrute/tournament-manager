@@ -280,3 +280,14 @@ button.link {
   gap: 0.5rem;
   margin: 1rem 0;
 }
+
+.tq-waited {
+  font-size: 0.75rem;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+.tq-waited em {
+  font-style: normal;
+  color: #9fe0b0;
+}

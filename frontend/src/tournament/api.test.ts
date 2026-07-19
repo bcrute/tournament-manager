@@ -228,11 +228,21 @@ describe("endpoints", () => {
     const fn = mockFetch();
     await ackCall("AB123", 2);
     expect(lastCall(fn).url).toBe("/api/tournament/AB123/calls/2/ack");
-    await resolveCall("AB123", 2, "warning issued");
+    await resolveCall("AB123", 2, 5, "warning issued");
     expect(lastCall(fn).url).toBe("/api/tournament/AB123/calls/2/resolve");
-    expect(lastCall(fn).body).toEqual({ note: "warning issued" });
+    expect(lastCall(fn).body).toEqual({ note: "warning issued", extendMinutes: 5 });
+  });
+
+  it("omits the extension so the server gives back what it measured", async () => {
+    const fn = mockFetch({ ok: true });
     await resolveCall("AB123", 2);
-    expect(lastCall(fn).body).toEqual({ note: null });
+    expect(lastCall(fn).body).toEqual({ note: null, extendMinutes: null });
+  });
+
+  it("sends an explicit zero when the judge grants no time", async () => {
+    const fn = mockFetch({ ok: true });
+    await resolveCall("AB123", 2, 0);
+    expect(lastCall(fn).body).toEqual({ note: null, extendMinutes: 0 });
   });
 });
 

@@ -253,6 +253,12 @@ export default function Organize() {
             {calls.map((c) => (
               <li key={c.id} className={c.status}>
                 <strong>Table {pods.find((p) => p.podId === c.podId)?.table ?? "?"}</strong>
+                <span className="tq-waited">
+                  waiting {Math.floor(c.openSeconds / 60)}m{c.openSeconds % 60}s
+                  {c.suggestedMinutes > 0 && (
+                    <em> · +{c.suggestedMinutes}m back</em>
+                  )}
+                </span>
                 {c.note && <span className="tq-note">{c.note}</span>}
                 <span className="tq-row-actions">
                   {c.status === "open" && (
@@ -260,8 +266,24 @@ export default function Organize() {
                       On my way
                     </button>
                   )}
-                  <button disabled={busy} onClick={() => void run(() => resolveCall(code, c.id))}>
-                    Resolved
+                  <button
+                    className="primary"
+                    disabled={busy}
+                    title={
+                      c.suggestedMinutes > 0
+                        ? `Resolve and give table ${c.suggestedMinutes} more minute(s)`
+                        : "Resolve — under a minute, so no time is added"
+                    }
+                    onClick={() => void run(() => resolveCall(code, c.id))}
+                  >
+                    Resolved{c.suggestedMinutes > 0 ? ` +${c.suggestedMinutes}m` : ""}
+                  </button>
+                  <button
+                    disabled={busy}
+                    title="Resolve without giving any time back"
+                    onClick={() => void run(() => resolveCall(code, c.id, 0))}
+                  >
+                    No time
                   </button>
                 </span>
               </li>
