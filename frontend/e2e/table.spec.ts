@@ -21,11 +21,16 @@ test.describe("a game at the table", () => {
   test("the menu offers the options a player actually has", async ({ page }) => {
     await createRoom(page, "ada");
     await page.getByRole("button", { name: /menu/i }).click();
-    await expect(page.getByRole("button", { name: /rename/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /show table view here/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /use as table display/i })).toBeVisible();
+    // scope to the menu: the lobby has its own Rename control, which now has a
+    // real accessible name since it stopped being a bare glyph
+    const menu = page.locator(".bar-menu");
+    await expect(menu.getByRole("button", { name: /rename/i })).toBeVisible();
+    await expect(menu.getByRole("button", { name: /show table view here/i })).toBeVisible();
+    await expect(menu.getByRole("button", { name: /use as table display/i })).toBeVisible();
     // no tournament entry in an ordinary room — it only belongs in a pod
-    await expect(page.getByRole("button", { name: /tournament standings/i })).toHaveCount(0);
+    await expect(menu.getByRole("button", { name: /tournament standings/i })).toHaveCount(0);
+    // and no "your games" while signed out, where it would lead to a wall
+    await expect(menu.getByRole("button", { name: /your games/i })).toHaveCount(0);
   });
 
   test("a second player can join by code and both are seated", async ({ browser, page }) => {

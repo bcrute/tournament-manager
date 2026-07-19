@@ -12,6 +12,7 @@ export default function RoomBar({
   onNotes,
   onRules,
   onTournament,
+  onMyGames,
   onLeave,
   leaveLabel,
 }: {
@@ -26,33 +27,49 @@ export default function RoomBar({
   onRules?: () => void;
   /** Standings, when this room is a tournament pod. */
   onTournament?: () => void;
+  /** "Your games & notes" — omitted when signed out, where it leads nowhere. */
+  onMyGames?: () => void;
   onLeave: () => void;
   leaveLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
       if (!wrap.current?.contains(e.target as Node)) setOpen(false);
     };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      trigger.current?.focus();   // don't strand focus where the menu was
+    };
     document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [open]);
 
   return (
     <div className="room-bar" ref={wrap} onPointerDown={(e) => e.stopPropagation()}>
-      <span className="bar-code">{code}</span>
-      <span className="bar-name">{name}</span>
+      {/* leading hamburger: this menu carries navigation, not just overflow,
+          so it sits where a nav menu is expected rather than as a kebab */}
       <button
+        ref={trigger}
         className="bar-menu-btn"
         aria-label={t("menu.open")}
         aria-expanded={open}
+        aria-haspopup="true"
         onClick={() => setOpen(!open)}
       >
         <Icon name="menu" label={t("menu.open")} />
       </button>
+      <span className="bar-code">{code}</span>
+      <span className="bar-name">{name}</span>
       {open && (
         <div className="bar-menu">
           {onRename && (
@@ -113,6 +130,16 @@ export default function RoomBar({
               }}
             >
               <Icon name="monitor" /> {displayLabel ?? t("menu.display")}
+            </button>
+          )}
+          {onMyGames && (
+            <button
+              onClick={() => {
+                setOpen(false);
+                onMyGames();
+              }}
+            >
+              <Icon name="note" /> {t("menu.myGames")}
             </button>
           )}
           <button

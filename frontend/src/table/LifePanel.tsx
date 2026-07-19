@@ -67,10 +67,19 @@ export default function LifePanel({
         </>
       )}
 
-      {lethal && <p className="error">⚠ {t("life.lethalWarning")}</p>}
+      {lethal && (
+        <p className="error">
+          <Icon name="warn" /> {t("life.lethalWarning")}
+        </p>
+      )}
 
-      <button className="ghost cmd-toggle" onClick={() => setCmdOpen(!cmdOpen)}>
-        {cmdOpen ? "▾ " : "▸ "}<Icon name="sword" /> {t("life.commanderDamage")}
+      <button
+        className="ghost cmd-toggle"
+        aria-expanded={cmdOpen}
+        onClick={() => setCmdOpen(!cmdOpen)}
+      >
+        <Icon name="chevron" className={cmdOpen ? "" : "collapsed"} />
+        <Icon name="sword" /> {t("life.commanderDamage")}
       </button>
       {cmdOpen && (
         <div className="cmd-list">

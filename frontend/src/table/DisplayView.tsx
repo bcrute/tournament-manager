@@ -166,7 +166,7 @@ export default function DisplayView({
             {state.players.map((p) => (
               <li key={p.pid}>
                 {p.name}
-                {p.isHost ? " ♛" : ""}
+                {p.isHost && <Icon name="crown" size={13} label="Host" />}
               </li>
             ))}
           </ul>

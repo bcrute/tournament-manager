@@ -31,6 +31,7 @@ export default function ConsoleLayout({
 }) {
   return (
     <div className="console">
+      <a className="skip-link" href="#main">Skip to content</a>
       <header className="console-bar">
         <div className="console-title">
           <h1>{title}</h1>
@@ -52,7 +53,7 @@ export default function ConsoleLayout({
         ))}
       </nav>
 
-      <main className="console-body">{children}</main>
+      <main className="console-body" id="main">{children}</main>
     </div>
   );
 }

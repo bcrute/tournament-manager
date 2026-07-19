@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AccountError, getNote, saveNote } from "./account";
+import Icon from "../Icon";
 
 /**
  * Private notes for one game. Reachable mid-game from the ⋮ menu and later from
@@ -64,7 +65,7 @@ export default function NotesSheet({
         />
         {error && <p className="error">{error}</p>}
         <button className="primary" disabled={saving || !loaded} onClick={() => void persist()}>
-          {saving ? "Saving…" : saved ? "Saved ✓" : "Save"}
+          {saving ? "Saving…" : saved ? <><Icon name="check" /> Saved</> : "Save"}
         </button>
         <button
           className="ghost"

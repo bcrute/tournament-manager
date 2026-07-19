@@ -25,6 +25,8 @@ export const en: Catalog = {
   "cmd.minus": "Remove commander damage from {name}",
   "cmd.plus": "Add commander damage from {name}",
   "common.close": "Close",
+  "status.eliminated": "eliminated",
+  "menu.myGames": "Your games & notes",
   "menu.tournament": "Tournament standings",
   "menu.track": "Show table view here",
   "menu.display": "Use as table display",

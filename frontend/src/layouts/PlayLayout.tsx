@@ -19,17 +19,20 @@ export default function PlayLayout({
   children: ReactNode;
   bare?: boolean;
 }) {
+  const listed = PLAY_NAV.filter((n) => n.listed);
   if (bare) return <>{children}</>;
   return (
     <div className="play">
+      <a className="skip-link" href="#main">Skip to content</a>
       {title && (
         <header className="play-bar">
           <h1>{title}</h1>
         </header>
       )}
-      <main className="play-body">{children}</main>
+      <main className="play-body" id="main">{children}</main>
+      {listed.length > 1 && (
       <nav className="play-nav" aria-label="Main">
-        {PLAY_NAV.filter((n) => n.listed).map((n) => (
+        {listed.map((n) => (
           <NavLink
             key={n.to}
             to={n.to}
@@ -41,6 +44,7 @@ export default function PlayLayout({
           </NavLink>
         ))}
       </nav>
+      )}
     </div>
   );
 }

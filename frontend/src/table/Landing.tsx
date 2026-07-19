@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, ApiError, GameMode, SeatInfo, SeatsResponse } from "./api";
 import { clearSession, landingAction, loadSession, saveSession } from "./session";
 import FanContentNotice from "../FanContentNotice";
+import Icon from "../Icon";
 
 function randomName() {
   const chars = "abcdefghjkmnpqrstuvwxyz23456789";
@@ -171,7 +172,7 @@ export default function Landing() {
                 onClick={() => void takeSeat(s)}
               >
                 {s.name}
-                {s.eliminated && " ☠"}
+                {s.eliminated && <Icon name="skull" label="eliminated" />}
                 <span className="seat-state">{s.vacant ? "left — tap to return" : "in use"}</span>
               </button>
             </li>
@@ -210,13 +211,13 @@ export default function Landing() {
               className={gameMode === "life" ? "active" : ""}
               onClick={() => setGameMode("life")}
             >
-              ♥ Life counter
+              <Icon name="heart" /> Life counter
             </button>
             <button
               className={gameMode === "treachery" ? "active" : ""}
               onClick={() => setGameMode("treachery")}
             >
-              ⚔ Treachery
+              <Icon name="sword" /> Treachery
             </button>
           </div>
         )}

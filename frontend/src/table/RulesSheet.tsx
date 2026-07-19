@@ -1,3 +1,4 @@
+import Icon from "../Icon";
 /**
  * Rules reference. Official documents are linked, never mirrored: partly
  * because they aren't ours to redistribute, but mostly because the
@@ -20,15 +21,15 @@ export default function RulesSheet({
 
         <div className="rule-links">
           <a href="https://magic.wizards.com/en/rules" target="_blank" rel="noreferrer">
-            📘 Magic Comprehensive Rules
+            <Icon name="book" /> Magic Comprehensive Rules
             <span>official, always current — wizards.com</span>
           </a>
           <a href="https://mtgtreachery.net/rules/" target="_blank" rel="noreferrer">
-            ⚔ Treachery rules (v6.0)
+            <Icon name="sword" /> Treachery rules (v6.0)
             <span>the full variant document — mtgtreachery.net</span>
           </a>
           <a href="https://mtgtreachery.net/rules/oracle/" target="_blank" rel="noreferrer">
-            🎭 Identity card oracle
+            <Icon name="card" /> Identity card oracle
             <span>every card with its rulings</span>
           </a>
         </div>

@@ -27,10 +27,15 @@ export const SITE_NAV: NavItem[] = [
   { label: "Tournaments", to: "/tournament", icon: "crown", listed: true },
 ];
 
-/** Where a player goes. Deliberately short — a player has two destinations. */
+/**
+ * The player's bottom navigation.
+ *
+ * "Your games" used to sit here and led to a sign-in wall for the many players
+ * who never make an account. It now lives in the menu, and only appears when
+ * there is an account behind it.
+ */
 export const PLAY_NAV: NavItem[] = [
   { label: "Table", to: "/table", icon: "heart", listed: true },
-  { label: "Your games", to: "/table/me", icon: "note", listed: true },
 ];
 
 export type ConsoleSection = "pods" | "roster" | "standings" | "calls" | "settings";

@@ -34,16 +34,12 @@ export type IconName =
   | "plus"
   | "minus"
   | "check"
-  | "close";
+  | "close"
+  | "warn"
+  | "chevron";
 
 const paths: Record<IconName, React.ReactElement> = {
-  menu: (
-    <>
-      <circle cx="12" cy="5" r="1.4" />
-      <circle cx="12" cy="12" r="1.4" />
-      <circle cx="12" cy="19" r="1.4" />
-    </>
-  ),
+  menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   edit: (
     <>
       <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3z" />
@@ -137,10 +133,18 @@ const paths: Record<IconName, React.ReactElement> = {
     </>
   ),
   back: <path d="M15 5l-7 7 7 7" />,
+  chevron: <path d="M6 9l6 6 6-6" />,
   plus: <path d="M12 6v12M6 12h12" />,
   minus: <path d="M6 12h12" />,
   check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
+  warn: (
+    <>
+      <path d="M12 4.5L21 19.5H3z" />
+      <path d="M12 10v4.2" />
+      <circle cx="12" cy="17" r="0.9" />
+    </>
+  ),
 };
 
 export default function Icon({

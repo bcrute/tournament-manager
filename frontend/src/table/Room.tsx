@@ -12,6 +12,7 @@ import LifePanel from "./LifePanel";
 import NotesSheet from "./NotesSheet";
 import RoomBar from "./RoomBar";
 import RoundClock from "./RoundClock";
+import { getAccount } from "./account";
 import TournamentSheet from "./TournamentSheet";
 import RulesSheet from "./RulesSheet";
 import SlideToUnveil from "./SlideToUnveil";
@@ -75,6 +76,11 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   const [notesOpen, setNotesOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [tourneyOpen, setTourneyOpen] = useState(false);
+  // "Your games & notes" only means something with an account behind it
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => {
+    void getAccount().then((r) => setSignedIn(!!r.account)).catch(() => setSignedIn(false));
+  }, []);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const prev = useRef<{ status: string; pids: Set<number>; first: number | null } | null>(null);
   const toastId = useRef(0);
@@ -142,7 +148,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
     const p = prev.current;
     if (p && p.status === "playing" && state.room.status === "playing") {
       for (const rp of revealed) {
-        if (!p.pids.has(rp.pid)) pushToast(`⚔ ${t("status.revealed", { name: rp.name })}`, rp.pid);
+        if (!p.pids.has(rp.pid)) pushToast(t("status.revealed", { name: rp.name }), rp.pid);
       }
     }
     if (p && p.status === "lobby" && state.room.status === "playing") {
@@ -155,8 +161,8 @@ function RoomInner({ code, token }: { code: string; token: string }) {
       const isLeader = state.room.mode === "treachery";
       pushToast(
         state.room.firstPid === state.me.pid
-          ? `🎲 ${t("status.youGoFirst")}`
-          : `🎲 ${t("status.goesFirst", { name: `${who}${isLeader ? " (Leader)" : ""}` })}`,
+          ? t("status.youGoFirst")
+          : t("status.goesFirst", { name: `${who}${isLeader ? " (Leader)" : ""}` }),
       );
     }
     prev.current = { status: state.room.status, pids, first: state.room.firstPid };
@@ -225,7 +231,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
           state.me.isDisplay
             ? "Go back again to disconnect this display"
             : midTreachery
-              ? "⚠ Go back again to leave — your identity will be revealed"
+              ? "Go back again to leave — your identity will be revealed"
               : "Go back again to leave the game",
         ),
       rearm: () => history.pushState({ tableRoom: code }, ""),
@@ -384,7 +390,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
             <p className="tagline">
               {state.me.name}{" "}
               <button className="ghost rename-btn" onClick={() => void renameSelf()}>
-                ✎
+                <Icon name="edit" size={14} label={t("menu.rename")} />
               </button>
             </p>
             <p className="tagline">
@@ -454,7 +460,10 @@ function Lobby({
   return (
     <main className="tr-lobby">
       <header>
-        <p className="tagline">{treachery ? "⚔ Treachery" : "♥ Life counter"} · room code</p>
+        <p className="tagline">
+          <Icon name={treachery ? "sword" : "heart"} />{" "}
+          {treachery ? "Treachery" : "Life counter"} · room code
+        </p>
         <h1 className="room-code">{code}</h1>
       </header>
       <div className="qr">
@@ -467,12 +476,12 @@ function Lobby({
           {state.players.map((p) => (
             <li key={p.pid}>
               {p.name}
-              {p.isHost ? " ♛" : ""}
+              {p.isHost && <Icon name="crown" size={13} label="Host" />}
               {p.isMe && (
                 <>
                   {" (you) "}
                   <button className="ghost rename-btn" onClick={onRename}>
-                    ✎
+                    <Icon name="edit" size={14} label={t("menu.rename")} />
                   </button>
                 </>
               )}
@@ -481,7 +490,8 @@ function Lobby({
         </ul>
         {state.room.displays > 0 && (
           <p className="tagline">
-            📺 {state.room.displays} table display{state.room.displays > 1 ? "s" : ""} connected
+            <Icon name="monitor" /> {state.room.displays} table display
+            {state.room.displays > 1 ? "s" : ""} connected
           </p>
         )}
         {treachery && (
@@ -497,13 +507,13 @@ function Lobby({
               className={!treachery ? "active" : ""}
               onClick={() => void setOptions({ mode: "life" })}
             >
-              ♥ Life counter
+              <Icon name="heart" /> Life counter
             </button>
             <button
               className={treachery ? "active" : ""}
               onClick={() => void setOptions({ mode: "treachery" })}
             >
-              ⚔ Treachery
+              <Icon name="sword" /> Treachery
             </button>
           </div>
 
@@ -665,7 +675,7 @@ function RoleScreen({
                   {faceUp ? (
                     <img src={e2.card!.image} alt="" draggable={false} />
                   ) : (
-                    <span className="thumb-back">🎭</span>
+                    <span className="thumb-back"><Icon name="card" label="face down" /></span>
                   )}
                   <span className="thumb-name">{e2.isMe ? "You" : e2.name}</span>
                 </button>
@@ -788,7 +798,13 @@ function TableView({
                 {p.name}
                 {p.isMe ? " (you)" : ""}
               </span>
-              <strong>{p.eliminated ? "☠" : (p.life ?? "—")}</strong>
+              <strong>
+                      {p.eliminated ? (
+                        <Icon name="skull" label={t("status.eliminated")} />
+                      ) : (
+                        (p.life ?? "—")
+                      )}
+                    </strong>
             </li>
           ))}
         </ul>

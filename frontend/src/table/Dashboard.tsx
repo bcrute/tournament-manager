@@ -13,6 +13,7 @@ import {
 import FanContentNotice from "../FanContentNotice";
 import SignIn from "./SignIn";
 import { goBack } from "../goBack";
+import Icon from "../Icon";
 
 /** Your games and notes. Signed-out visitors get the sign-in panel instead. */
 export default function Dashboard() {
@@ -94,7 +95,12 @@ export default function Dashboard() {
           <li key={`${g.roomCode}-${g.gameNo}-${g.at}`}>
             <div className="history-head">
               <span className="history-room">{g.roomCode}</span>
-              <span className="history-mode">{g.mode === "treachery" ? "⚔" : "♥"}</span>
+              <span className="history-mode">
+                <Icon
+                  name={g.mode === "treachery" ? "sword" : "heart"}
+                  label={g.mode === "treachery" ? "Hidden roles game" : "Life counter game"}
+                />
+              </span>
               <span className="history-when">{new Date(g.at * 1000).toLocaleDateString()}</span>
             </div>
             <div className="history-detail">

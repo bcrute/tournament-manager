@@ -111,7 +111,7 @@ export default function SeatTile({
             {p.card ? ` · ${p.card.role}` : ""}
           </span>
           <span className="seat-life" style={{ fontSize: font.life }}>
-            {p.eliminated ? "☠" : (p.life ?? "—")}
+            {p.eliminated ? <Icon name="skull" label={t("status.eliminated")} /> : (p.life ?? "—")}
           </span>
         </div>
 

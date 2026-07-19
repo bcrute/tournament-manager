@@ -144,6 +144,22 @@ made the organizer view one enormous scrolling page.
 `/admin/rooms`). An organizer can bookmark the standings, reload without losing
 their place, and the browser Back button does what it should.
 
+**Icons, never emoji.** Every glyph comes from `Icon.tsx` — a single-colour
+outline set that inherits `currentColor`, so it themes and renders identically
+everywhere. Emoji can't be recoloured, look different on every platform, and
+several carry skin-tone or gender variants we'd be choosing on someone's
+behalf. An icon standing alone takes a `label`; beside text it stays
+`aria-hidden`.
+
+**Accessibility is part of done, and wrong ARIA is worse than none.** This
+project briefly shipped `role="menu"`/`role="menuitem"` without arrow-key
+handling — announcing a menu to a screen reader that doesn't behave like one,
+and breaking every `getByRole("button")` query at the same time. Prefer native
+semantics; add ARIA only when implementing the whole pattern. Icon-only
+controls need an accessible name, focus must never be stranded (Escape closes
+and returns it), and `e2e/a11y.spec.ts` pins the skip link, focus return,
+accessible names, `lang`, and landmarks.
+
 **Mobile-first is not negotiable, including the console.** Base rules are the
 phone; media queries add room and never take it away. An organizer is usually
 holding a phone and walking between tables.

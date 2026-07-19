@@ -8,6 +8,7 @@ import { SITE_NAV } from "../nav";
 export default function SiteLayout({ children }: { children: ReactNode }) {
   return (
     <div className="site">
+      <a className="skip-link" href="#main">Skip to content</a>
       <header className="site-bar">
         <Link to="/" className="site-logo">
           mtg<span>.skadoosh.dev</span>
@@ -24,7 +25,7 @@ export default function SiteLayout({ children }: { children: ReactNode }) {
           ))}
         </nav>
       </header>
-      <main className="site-body">{children}</main>
+      <main className="site-body" id="main">{children}</main>
       <footer className="site-footer">
         <FanContentNotice />
       </footer>

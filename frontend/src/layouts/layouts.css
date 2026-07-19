@@ -345,3 +345,79 @@
     width: auto;
   }
 }
+
+/* ---------- accessibility ---------- */
+
+/* Keyboard users shouldn't tab through a whole header to reach the page. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  background: #5b8def;
+  color: #fff;
+  border-radius: 0 0 0.5rem 0;
+}
+
+.skip-link:focus {
+  left: 0;
+}
+
+/* One visible focus ring for everything, rather than each control inventing
+   one or relying on the browser default that several resets removed. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid #7aa2ff;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Respect a stated preference for less movement — the toasts, flashes and
+   card transitions are decoration, and for some people they are a symptom
+   trigger rather than a flourish. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------- the play surfaces on a large screen ----------
+   Mobile-first stays the rule: these only widen what a phone already shows.
+   Without them the app reads as a phone screen stretched across a laptop. */
+
+@media (min-width: 60rem) {
+  .play-body {
+    max-width: 46rem;
+    padding: 1.5rem 2rem 2rem;
+  }
+
+  .play-bar {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 1.25rem 2rem 0.5rem;
+  }
+
+  .play-bar h1 {
+    font-size: 1.6rem;
+  }
+
+  /* the bottom bar is a phone idiom; on a pointer device it floats oddly at
+     the base of a tall window */
+  .play-nav {
+    position: static;
+    max-width: 46rem;
+    margin: 1rem auto 0;
+    border-top: 1px solid #2a2f3a;
+    border-radius: 0.5rem;
+  }
+}

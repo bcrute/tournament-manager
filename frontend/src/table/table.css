@@ -1890,3 +1890,58 @@ button.ghost.danger {
 .ts-record {
   opacity: 0.85;
 }
+
+/* ---------- the room on a large screen ----------
+   The room is built for a phone held at a table and that stays the priority;
+   this stops it reading as a stretched phone when an organizer opens it on a
+   laptop. Wider column, larger controls, and the seat list beside the life
+   panel rather than stacked a screen apart. */
+
+@media (min-width: 60rem) {
+  .tr-landing,
+  .tr-form {
+    max-width: 34rem;
+    margin-inline: auto;
+  }
+
+  .room-bar {
+    max-width: 60rem;
+    margin-inline: auto;
+  }
+
+  .life-panel {
+    max-width: 34rem;
+    margin-inline: auto;
+  }
+
+  /* the roster and the lobby player list read as a long thin column on a
+     wide screen; give them the width they have */
+  .life-roster,
+  .tr-players {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+    gap: 0.5rem;
+    max-width: 60rem;
+    margin-inline: auto;
+  }
+
+  .life-buttons {
+    max-width: 34rem;
+    margin-inline: auto;
+  }
+}
+
+/* Never smaller than a comfortable target, whatever the viewport maths says. */
+.bar-menu-btn,
+.play-tab,
+.console-tab {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+
+/* the disclosure chevron points down when open, right when closed — one glyph
+   rotated rather than two characters that don't inherit theme colour */
+.icon.collapsed {
+  transform: rotate(-90deg);
+}
