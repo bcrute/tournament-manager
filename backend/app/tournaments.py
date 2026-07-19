@@ -248,6 +248,8 @@ class CreateBody(BaseModel):
 
 class EntrantsBody(BaseModel):
     names: list[str] = Field(default_factory=list)
+    # imports send [{name, externalRef}] instead; externalRef is "source:id"
+    entrants: list[dict] = Field(default_factory=list)
 
 
 class ClaimBody(BaseModel):
@@ -320,17 +322,37 @@ def get_state(code: str, request: Request, token: str | None = None):
 @router.post("/{code}/entrants")
 def add_entrants(code: str, body: EntrantsBody, request: Request):
     t, _ = require_organizer(code, request)
-    added = []
-    for name in body.names:
-        name = name.strip()
+    incoming = [{"name": n, "externalRef": None} for n in body.names]
+    incoming += [
+        {"name": str(e.get("name", "")), "externalRef": e.get("externalRef")}
+        for e in body.entrants
+    ]
+
+    added, matched = [], []
+    for item in incoming:
+        name = item["name"].strip()
+        ref = (item["externalRef"] or None) and str(item["externalRef"]).strip()
         if not name:
             continue
+        if ref:
+            # re-running an import must find the same person, not clone them.
+            # Matching on name would make display names identity.
+            existing = q(
+                "SELECT id, name FROM entrants WHERE tournament_code = ? AND external_ref = ?",
+                (t["code"], ref),
+            ).fetchone()
+            if existing:
+                if existing["name"] != name:  # they renamed upstream; follow it
+                    q("UPDATE entrants SET name = ? WHERE id = ?", (name, existing["id"]))
+                matched.append({"entrantId": existing["id"], "name": name, "externalRef": ref})
+                continue
         cur = q(
-            "INSERT INTO entrants (tournament_code, name) VALUES (?, ?)", (t["code"], name)
+            "INSERT INTO entrants (tournament_code, name, external_ref) VALUES (?, ?, ?)",
+            (t["code"], name, ref),
         )
-        added.append({"entrantId": cur.lastrowid, "name": name})
+        added.append({"entrantId": cur.lastrowid, "name": name, "externalRef": ref})
     touch(t["code"])
-    return {"added": added}
+    return {"added": added, "matched": matched}
 
 
 @router.get("/{code}/roster")

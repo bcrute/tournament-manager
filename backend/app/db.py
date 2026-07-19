@@ -201,8 +201,16 @@ _ensure_column("players", "eliminated", "INTEGER NOT NULL DEFAULT 0")
 _ensure_column("players", "seat_order", "INTEGER")
 _ensure_column("players", "account_id", "INTEGER")  # optional link to an account
 _ensure_column("pod_seats", "room_token", "TEXT")   # this entrant's token in the pod's room
+# "source:id" (e.g. "topdeck:9f3c") so a re-run of an import matches the same
+# person instead of duplicating them. Matching on display name would make names
+# identity — the exact flaw we rejected in TopDeck's shape.
+_ensure_column("entrants", "external_ref", "TEXT")
 _ensure_column("players", "eliminated_at", "INTEGER")  # ordering for tournament placement
 # indexes on migrated columns must come after the columns exist
+_db.execute(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_entrants_external ON entrants(tournament_code, external_ref) "
+    "WHERE external_ref IS NOT NULL"
+)
 _db.execute(
     "CREATE INDEX IF NOT EXISTS idx_players_account ON players(account_id) "
     "WHERE account_id IS NOT NULL"

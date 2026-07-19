@@ -526,3 +526,56 @@ class TestPlayerView:
         state = client.get(f"/api/tournament/{code}").json()
         assert state["myPod"] is None
         assert "roomToken" not in json.dumps(state)
+
+
+class TestImportIdempotency:
+    """An import adapter must be re-runnable. Design item #34."""
+
+    def test_re_running_an_import_matches_instead_of_duplicating(self, client):
+        organizer(client, "hostAJ")
+        code = host(client)
+        body = {"entrants": [{"name": "Ada", "externalRef": "topdeck:9f3c"},
+                             {"name": "Grace", "externalRef": "topdeck:1a2b"}]}
+        first = client.post(f"/api/tournament/{code}/entrants", json=body).json()
+        assert len(first["added"]) == 2 and first["matched"] == []
+
+        second = client.post(f"/api/tournament/{code}/entrants", json=body).json()
+        assert second["added"] == []
+        assert len(second["matched"]) == 2
+        assert [e["entrantId"] for e in second["matched"]] == [e["entrantId"] for e in first["added"]]
+        assert len(client.get(f"/api/tournament/{code}/roster").json()["entrants"]) == 2
+
+    def test_an_upstream_rename_follows_rather_than_forking_the_person(self, client):
+        organizer(client, "hostAK")
+        code = host(client)
+        client.post(f"/api/tournament/{code}/entrants",
+                    json={"entrants": [{"name": "Ada", "externalRef": "topdeck:77"}]})
+        client.post(f"/api/tournament/{code}/entrants",
+                    json={"entrants": [{"name": "Ada L.", "externalRef": "topdeck:77"}]})
+        roster = client.get(f"/api/tournament/{code}/roster").json()["entrants"]
+        assert len(roster) == 1 and roster[0]["name"] == "Ada L."
+
+    def test_identical_names_without_a_ref_stay_separate_people(self, client):
+        """Names are display, not identity — two people really can share one."""
+        organizer(client, "hostAL")
+        code = host(client)
+        r = client.post(f"/api/tournament/{code}/entrants", json={"names": ["Ada", "Ada"]}).json()
+        assert len(r["added"]) == 2
+        assert r["added"][0]["entrantId"] != r["added"][1]["entrantId"]
+
+    def test_the_same_ref_can_be_reused_across_different_tournaments(self, client):
+        organizer(client, "hostAM")
+        a, b = host(client, name="Event A"), host(client, name="Event B")
+        for c in (a, b):
+            r = client.post(f"/api/tournament/{c}/entrants",
+                            json={"entrants": [{"name": "Ada", "externalRef": "topdeck:9f3c"}]}).json()
+            assert len(r["added"]) == 1
+
+    def test_manual_and_imported_entrants_coexist_in_one_call(self, client):
+        organizer(client, "hostAN")
+        code = host(client)
+        r = client.post(f"/api/tournament/{code}/entrants", json={
+            "names": ["Walk-in"],
+            "entrants": [{"name": "Ada", "externalRef": "topdeck:5"}],
+        }).json()
+        assert len(r["added"]) == 2

@@ -120,10 +120,22 @@ a second returns **409**. The organizer can `release` a mis-tap.
 
 ### `POST /api/tournament/{code}/entrants`  *(organizer)*
 ```jsonc
+// manual entry
 { "names": ["Ada", "Grace", ""] }      // blanks skipped
-→ { "added": [ {"entrantId", "name"} ] }
+// import (idempotent)
+{ "entrants": [ {"name": "Ada", "externalRef": "topdeck:9f3c"} ] }
+→ { "added":   [ {"entrantId", "name", "externalRef"} ],
+    "matched": [ /* already present, name refreshed from upstream */ ] }
 ```
-Duplicates are allowed — two people really can be named Ada.
+
+Both forms may be mixed in one call. Duplicates *without* a ref are allowed —
+two people really can be named Ada.
+
+`externalRef` is `"source:id"` and unique per tournament. Re-running an import
+matches on it and returns the entrant under `matched` instead of creating a
+second row; an upstream rename updates the existing name rather than forking the
+person. Never match on display name — that would make names identity, the flaw
+we rejected in §7.
 
 ### `POST /api/tournament/{code}/entrants/{id}/release`  *(organizer)*
 Clears the entrant's token so the seat can be claimed again. Idempotent.
@@ -271,14 +283,48 @@ warning, not a block.
 
 ---
 
-## 8. Known gaps
+## 8. Interoperability
+
+The resource hierarchy intentionally mirrors
+[TopDeck Tournaments V2](https://topdeck.gg/docs/tournaments-v2) so an import
+adapter is a field rename rather than a translation layer:
+
+| Theirs | Ours | Note |
+|---|---|---|
+| `tournament` | `tournament` | ours adds `mode`, `settings`, bound rooms |
+| `rounds[]` | `trounds` | `number` is always an integer (see below) |
+| `tables[]` | `pods` | rename only; a pod is a table with N players |
+| `players[]` | `pod_seats` | ours adds `seat` = turn order |
+| `winner_id` | `pod_results.places[]` | typed, ordered, multi-place |
+| — | `entrants.external_ref` | `"source:id"`, makes imports re-runnable |
+
+**Where we deliberately differ**, and what an adapter must therefore do:
+
+| Their shape | Adapter must | Why ours differs |
+|---|---|---|
+| `winner_id: "Draw"` | map to `kind: "draw"` | a magic string in an id field forces every client to special-case it |
+| `winner` name beside `winner_id` | discard the name | results denormalized onto display names, which change |
+| `round: "Top 8"` | map to an integer + a cut flag | union-typed fields via magic values |
+| `table: "Byes"` | map to `kind: "bye"` | same |
+| single `winner` per pod | expand to `places[]` | can't express placement, survival points, or a time-called draw |
+
+**Imports are one-way.** TopDeck's API cannot accept results, so pairings can
+flow in but our results stay local. Any UI that offers an import has to say this
+plainly, or organizers will assume a sync that does not exist.
+
+No adapter ships yet — `external_ref` and this mapping are the groundwork so
+that adding one later doesn't require a migration of live event data.
+
+---
+
+## 9. Known gaps
 
 - **Auto-result is test-covered, not event-proven.** The room → placement path
   has never run in a real game inside a tournament pod. Prove it with a
   throwaway 4-player event before running anything that counts.
 - **No WebSocket.** Timer updates lag by up to one poll (5 s foreground).
 - **No un-drop**, no entrant rename, no top-cut re-podding, no `rounds: auto`.
-- **No import adapter** (TopDeck et al.) — §"Adapters" in the design doc.
+- **No import adapter** yet; the data model is ready for one (§8).
 - **`/openapi.json` and `/docs` are publicly served**, enumerating every route
   and schema. Authentication still holds, but it's free reconnaissance on an
   otherwise hardened box. Disable with
