@@ -19,6 +19,12 @@ export const en: Catalog = {
   "menu.rules": "Rules",
   // two different things: `track` keeps your seat and shows the table view on
   // your own phone; `display` hands the device over as a dedicated screen
+  "cmd.editFor": "Commander damage for {name}",
+  "cmd.tapHint": "Left to remove, right to add",
+  "cmd.own": "(own)",
+  "cmd.minus": "Remove commander damage from {name}",
+  "cmd.plus": "Add commander damage from {name}",
+  "common.close": "Close",
   "menu.track": "Show table view here",
   "menu.display": "Use as table display",
   "menu.takeSeat": "Take a seat",

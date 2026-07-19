@@ -4,6 +4,7 @@ import { api, PlayerInfo, RoomState } from "./api";
 import Icon from "../Icon";
 import SeatTile, { halfDelta } from "./SeatTile";
 import { assignSeats, seatGrid, swapSeats, turnPositions } from "./seats";
+import CmdDamageSheet from "./CmdDamageSheet";
 
 export default function DisplayView({
   state,
@@ -22,6 +23,7 @@ export default function DisplayView({
   const ended = state.room.status === "ended";
   const joinUrl = `${location.origin}/table?join=${code}`;
   const nameOf = new Map(state.players.map((p) => [String(p.pid), p.name]));
+  const [cmdFor, setCmdFor] = useState<number | null>(null);
 
   // drag to rearrange seats: local order while dragging, committed on release
   const [localOrder, setLocalOrder] = useState<number[] | null>(null);
@@ -115,6 +117,26 @@ export default function DisplayView({
   const seated = assignSeats(ordered);
   // turn order follows the seating: rearranging the tiles rearranges play order
   const turns = turnPositions(ordered, state.room.firstPid);
+  // the grid and the sheet both read positionally, so they must agree on order
+  const seatOrder = ordered.map((p, i) => ({
+    pid: p.pid,
+    seat: turns.get(p.pid) ?? i + 1,
+    name: p.name,
+  }));
+
+  async function changeCmd(defenderPid: number, attackerPid: number, delta: number) {
+    try {
+      await api(`/rooms/${code}/cmddmg`, {
+        method: "POST",
+        token,
+        body: { attackerPid, delta, defenderPid },
+      });
+    } catch {
+      /* the next state push corrects anything that didn't take */
+    }
+  }
+
+  const cmdTarget = cmdFor === null ? null : ordered.find((p) => p.pid === cmdFor) ?? null;
 
   return (
     <main className="display-view">
@@ -165,6 +187,8 @@ export default function DisplayView({
               first={state.room.firstPid === player.pid}
               turn={state.room.firstPid !== null ? turns.get(player.pid) : undefined}
               nameOf={nameOf}
+              seatOrder={seatOrder}
+              onCmdOpen={state.room.status === "playing" ? setCmdFor : undefined}
               dragging={dragPid === player.pid}
               dropTarget={overPid === player.pid}
               flash={flash?.pid === player.pid ? flash.delta : undefined}
@@ -183,6 +207,15 @@ export default function DisplayView({
           </div>
         ))}
       </div>
+
+      {cmdTarget && (
+        <CmdDamageSheet
+          defender={cmdTarget}
+          sources={seatOrder}
+          onChange={(attackerPid, delta) => void changeCmd(cmdTarget.pid, attackerPid, delta)}
+          onClose={() => setCmdFor(null)}
+        />
+      )}
     </main>
   );
 }

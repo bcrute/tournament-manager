@@ -101,3 +101,91 @@ class TestTrackerMode:
             assert client.post(f"/api/table/rooms/{code}/tracker",
                                headers={"X-Player-Token": toks[who]},
                                json={"tracking": True}).status_code == 200
+
+
+class TestDisplayCommanderDamage:
+    """The table display records commander damage for the seats it shows —
+    which it could not do at all before, since the defender was hardcoded to
+    the caller and displays were refused outright."""
+
+    def _setup(self, client):
+        r = client.post("/api/table/rooms", json={"name": "alice", "mode": "life"}).json()
+        code, host = r["code"], r["playerToken"]
+        bob = client.post(f"/api/table/rooms/{code}/join",
+                          json={"name": "bob", "display": False}).json()["playerToken"]
+        disp = client.post(f"/api/table/rooms/{code}/join",
+                           json={"name": "screen", "display": True}).json()["playerToken"]
+        client.post(f"/api/table/rooms/{code}/start", headers={"X-Player-Token": host})
+        state = client.get(f"/api/table/rooms/{code}/me",
+                           headers={"X-Player-Token": host}).json()
+        pids = {p["name"]: p["pid"] for p in state["players"]}
+        return code, host, bob, disp, pids
+
+    def test_the_display_can_record_damage_for_a_player(self, client):
+        code, host, _bob, disp, pids = self._setup(client)
+        r = client.post(f"/api/table/rooms/{code}/cmddmg",
+                        headers={"X-Player-Token": disp},
+                        json={"attackerPid": pids["bob"], "delta": 5,
+                              "defenderPid": pids["alice"]})
+        assert r.status_code == 200
+        me = client.get(f"/api/table/rooms/{code}/me",
+                        headers={"X-Player-Token": host}).json()["me"]
+        assert me["cmdDamage"][str(pids["bob"])] == 5
+
+    def test_commander_damage_still_costs_life(self, client):
+        code, host, _bob, disp, pids = self._setup(client)
+        before = client.get(f"/api/table/rooms/{code}/me",
+                            headers={"X-Player-Token": host}).json()["me"]["life"]
+        client.post(f"/api/table/rooms/{code}/cmddmg",
+                    headers={"X-Player-Token": disp},
+                    json={"attackerPid": pids["bob"], "delta": 4, "defenderPid": pids["alice"]})
+        after = client.get(f"/api/table/rooms/{code}/me",
+                           headers={"X-Player-Token": host}).json()["me"]["life"]
+        assert after == before - 4
+
+    def test_a_players_own_commander_can_be_recorded_from_the_display(self, client):
+        code, host, _bob, disp, pids = self._setup(client)
+        r = client.post(f"/api/table/rooms/{code}/cmddmg",
+                        headers={"X-Player-Token": disp},
+                        json={"attackerPid": pids["alice"], "delta": 3,
+                              "defenderPid": pids["alice"]})
+        assert r.status_code == 200
+
+    def test_an_ordinary_player_still_cannot_record_for_someone_else(self, client):
+        code, _host, bob, _disp, pids = self._setup(client)
+        r = client.post(f"/api/table/rooms/{code}/cmddmg",
+                        headers={"X-Player-Token": bob},
+                        json={"attackerPid": pids["bob"], "delta": 5,
+                              "defenderPid": pids["alice"]})
+        assert r.status_code == 403
+
+    def test_a_player_keeping_score_can(self, client):
+        code, host, bob, _disp, pids = self._setup(client)
+        client.post(f"/api/table/rooms/{code}/tracker",
+                    headers={"X-Player-Token": bob}, json={"tracking": True})
+        r = client.post(f"/api/table/rooms/{code}/cmddmg",
+                        headers={"X-Player-Token": bob},
+                        json={"attackerPid": pids["bob"], "delta": 5,
+                              "defenderPid": pids["alice"]})
+        assert r.status_code == 200
+        log = " ".join(e["text"] for e in client.get(
+            f"/api/table/rooms/{code}/me", headers={"X-Player-Token": host}).json()["log"])
+        assert "by bob" in log
+
+    def test_a_display_naming_no_defender_is_told_why(self, client):
+        code, _host, _bob, disp, pids = self._setup(client)
+        r = client.post(f"/api/table/rooms/{code}/cmddmg",
+                        headers={"X-Player-Token": disp},
+                        json={"attackerPid": pids["bob"], "delta": 5})
+        assert r.status_code == 409 and "name a defender" in r.json()["detail"]
+
+    def test_damage_cannot_be_undone_below_zero(self, client):
+        code, _host, _bob, disp, pids = self._setup(client)
+        client.post(f"/api/table/rooms/{code}/cmddmg", headers={"X-Player-Token": disp},
+                    json={"attackerPid": pids["bob"], "delta": 2, "defenderPid": pids["alice"]})
+        client.post(f"/api/table/rooms/{code}/cmddmg", headers={"X-Player-Token": disp},
+                    json={"attackerPid": pids["bob"], "delta": -9, "defenderPid": pids["alice"]})
+        me = client.get(f"/api/table/rooms/{code}/me",
+                        headers={"X-Player-Token": disp}).json()
+        row = next(p for p in me["players"] if p["pid"] == pids["alice"])
+        assert row["cmdDamage"].get(str(pids["bob"]), 0) == 0

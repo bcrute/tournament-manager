@@ -17,6 +17,8 @@ export default function SeatTile({
   first,
   turn,
   nameOf,
+  seatOrder,
+  onCmdOpen,
   dragging,
   dropTarget,
   flash,
@@ -29,6 +31,10 @@ export default function SeatTile({
   first: boolean;
   turn?: number;
   nameOf: Map<string, string>;
+  /** Every seat in turn order, so the damage grid reads positionally. */
+  seatOrder: { pid: number; seat: number }[];
+  /** Opens the editor for this seat. Omitted on devices that may not edit. */
+  onCmdOpen?: (pid: number) => void;
   dragging: boolean;
   dropTarget?: boolean;
   flash?: number;
@@ -54,7 +60,14 @@ export default function SeatTile({
   const turned = slot.rotate !== 0;
   const inner = turned ? { width: size.h, height: size.w } : { width: size.w, height: size.h };
   const font = seatFonts(inner.width, inner.height);
-  const cmd = Object.entries(p.cmdDamage);
+  // A diagram, not a list: one cell per opponent in seat order, so a total is
+  // found by position rather than by reading names in a rotated card.
+  const cells = seatOrder.map((src) => ({
+    pid: src.pid,
+    seat: src.seat,
+    amount: p.cmdDamage[String(src.pid)] ?? 0,
+    own: src.pid === p.pid,
+  }));
 
   return (
     <div
@@ -102,22 +115,27 @@ export default function SeatTile({
           </span>
         </div>
 
-        <div
-          className="seat-cmd"
+        <button
+          className="seat-cmd-grid"
           style={{ fontSize: font.cmd, maxHeight: font.cmdBar }}
           onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onCmdOpen?.(p.pid);
+          }}
+          aria-label={t("cmd.editFor", { name: p.name })}
+          disabled={!onCmdOpen}
         >
-          {cmd.length === 0 ? (
-            <span className="cmd-none">no commander damage</span>
-          ) : (
-            cmd.map(([fromPid, amt]) => (
-              <span key={fromPid} className={`cmd-chip${amt >= 21 ? " lethal" : ""}`}>
-                <b>{amt}</b> {nameOf.get(fromPid) ?? "?"}
-                {String(p.pid) === fromPid ? " (own)" : ""}
-              </span>
-            ))
-          )}
-        </div>
+          {cells.map((c) => (
+            <span
+              key={c.pid}
+              className={`cmd-cell${c.amount >= 21 ? " lethal" : ""}${c.amount === 0 ? " zero" : ""}${c.own ? " own" : ""}`}
+            >
+              <b className="cmd-src">{c.seat}</b>
+              <b className="cmd-amt">{c.amount || "·"}</b>
+            </span>
+          ))}
+        </button>
       </div>
     </div>
   );

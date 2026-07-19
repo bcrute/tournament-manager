@@ -460,6 +460,9 @@ class LifeBody(BaseModel):
 class CmdDamageBody(BaseModel):
     attackerPid: int
     delta: int = Field(ge=-99, le=99)
+    #: whose total to change. Omitted means the caller. Only the table display,
+    #: or a player keeping score, may name someone else.
+    defenderPid: int | None = None
 
 
 class EliminateBody(BaseModel):
@@ -734,8 +737,27 @@ async def commander_damage(code: str, body: CmdDamageBody, x_player_token: str |
     player = get_player(code, x_player_token)
     if norm_status(room["status"]) != "playing":
         raise HTTPException(409, "no game in progress")
-    if player["is_display"]:
-        raise HTTPException(409, "displays don't take damage")
+    # Who is taking the damage. A display holds no life of its own, so it can
+    # only ever act on someone else — which is the whole point of the table
+    # view being able to record commander damage at all.
+    if body.defenderPid is not None and body.defenderPid != player["id"]:
+        if not (player["is_display"] or player["is_tracker"]):
+            raise HTTPException(
+                403, "only the table display, or a player keeping score, "
+                     "can record damage for another player"
+            )
+        defender = q(
+            "SELECT * FROM players WHERE room_code = ? AND id = ? AND is_display = 0 "
+            "AND left_game = 0",
+            (room["code"], body.defenderPid),
+        ).fetchone()
+        if not defender:
+            raise HTTPException(404, "player not found")
+    else:
+        if player["is_display"]:
+            raise HTTPException(409, "displays don't take damage — name a defender")
+        defender = player
+
     attacker = q(
         "SELECT * FROM players WHERE room_code = ? AND id = ? AND is_display = 0",
         (room["code"], body.attackerPid),
@@ -745,7 +767,7 @@ async def commander_damage(code: str, body: CmdDamageBody, x_player_token: str |
         raise HTTPException(400, "invalid attacker")
     row = q(
         "SELECT amount FROM cmd_damage WHERE room_code = ? AND defender_id = ? AND attacker_id = ?",
-        (room["code"], player["id"], attacker["id"]),
+        (room["code"], defender["id"], attacker["id"]),
     ).fetchone()
     old_amt = row["amount"] if row else 0
     delta = max(body.delta, -old_amt)  # can't undo below 0
@@ -755,18 +777,21 @@ async def commander_damage(code: str, body: CmdDamageBody, x_player_token: str |
     q(
         "INSERT INTO cmd_damage (room_code, defender_id, attacker_id, amount) VALUES (?, ?, ?, ?) "
         "ON CONFLICT(room_code, defender_id, attacker_id) DO UPDATE SET amount = ?",
-        (room["code"], player["id"], attacker["id"], new_amt, new_amt),
+        (room["code"], defender["id"], attacker["id"], new_amt, new_amt),
     )
-    old_life = player["life"] if player["life"] is not None else room["starting_life"]
+    old_life = defender["life"] if defender["life"] is not None else room["starting_life"]
     new_life = old_life - delta  # commander damage is also real damage
-    q("UPDATE players SET life = ? WHERE id = ?", (new_life, player["id"]))
+    q("UPDATE players SET life = ? WHERE id = ?", (new_life, defender["id"]))
+    by = "" if defender["id"] == player["id"] else (
+        " (by the table display)" if player["is_display"] else f" (by {player['name']})"
+    )
     log_event(
         room["code"],
-        f"{player['name']} took {delta} commander damage from {attacker['name']} "
-        f"(total {new_amt}, life {old_life} → {new_life})"
+        f"{defender['name']} took {delta} commander damage from {attacker['name']} "
+        f"(total {new_amt}, life {old_life} → {new_life}){by}"
         if delta > 0
-        else f"{player['name']} undid {-delta} commander damage from {attacker['name']} "
-        f"(total {new_amt}, life {old_life} → {new_life})",
+        else f"{defender['name']} undid {-delta} commander damage from {attacker['name']} "
+        f"(total {new_amt}, life {old_life} → {new_life}){by}",
     )
     lethal = new_amt >= 21
     await broadcast(room["code"])

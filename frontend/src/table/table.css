@@ -748,17 +748,8 @@
   overflow: hidden;
 }
 
-.cmd-chip b {
-  color: #e8e4f0;
-}
 
-.cmd-chip.lethal b {
-  color: #e06c75;
-}
 
-.cmd-none {
-  opacity: 0.5;
-}
 
 .display-tile {
   touch-action: none; /* drag to rearrange seats */
@@ -1654,4 +1645,185 @@ button.ghost.danger {
 .tracker-bar button {
   margin-left: auto;
   min-height: 40px;
+}
+
+/* Commander damage as a diagram, not a list.
+   One cell per seat in turn order, so a total is found by position — names
+   don't fit in a rotated card and can't be scanned across a table anyway. */
+.seat-cmd-grid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: none;
+  border: none;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.seat-cmd-grid:disabled {
+  cursor: default;
+}
+
+.cmd-cell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.05;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.07);
+  padding: 1px 0;
+}
+
+.cmd-cell .cmd-src {
+  font-size: 0.7em;
+  opacity: 0.55;
+}
+
+.cmd-cell .cmd-amt {
+  font-variant-numeric: tabular-nums;
+}
+
+.cmd-cell.zero .cmd-amt {
+  opacity: 0.35;
+}
+
+/* your own commander counts toward the 21, so it must be visibly different
+   rather than hidden */
+.cmd-cell.own {
+  outline: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.cmd-cell.lethal {
+  background: #6d2233;
+  color: #ffd9df;
+}
+
+/* ---- the editor ---- */
+
+.cmd-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 6, 12, 0.82);
+}
+
+/* Lands wherever the display's top-right happens to be. It is a real button,
+   but it sits on the backdrop — so it would close the sheet regardless. The
+   affordance is the point: "tap outside" isn't discoverable across a table. */
+.cmd-close {
+  position: absolute;
+  top: max(0.75rem, env(safe-area-inset-top));
+  right: max(0.75rem, env(safe-area-inset-right));
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  cursor: pointer;
+}
+
+.cmd-panel {
+  width: 70vw;
+  height: 70vh;
+  max-width: 70rem;
+  display: flex;
+  flex-direction: column;
+  background: #171320;
+  border: 1px solid #322747;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.cmd-panel header {
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid #322747;
+}
+
+.cmd-panel h2 {
+  margin: 0;
+  font-size: clamp(1.1rem, 2.4vw, 1.6rem);
+}
+
+.cmd-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.cmd-row {
+  position: relative;
+  flex: 1;
+  min-height: 3.2rem;
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid #241c33;
+}
+
+.cmd-row.lethal {
+  background: #3a1420;
+}
+
+.cmd-row.own {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* same gesture as the seat cards behind: left removes, right adds */
+.cmd-half {
+  flex: 1;
+  border: none;
+  background: none;
+  color: inherit;
+  opacity: 0.5;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.cmd-half:active {
+  background: rgba(255, 255, 255, 0.09);
+  opacity: 1;
+}
+
+.cmd-row-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 3.2rem;
+  pointer-events: none;
+}
+
+.cmd-row-src b {
+  display: inline-block;
+  min-width: 1.4em;
+  opacity: 0.6;
+}
+
+.cmd-row-src em {
+  font-style: normal;
+  opacity: 0.55;
+  font-size: 0.85em;
+}
+
+.cmd-row-amt {
+  font-size: clamp(1.3rem, 3.5vw, 2.2rem);
+  font-variant-numeric: tabular-nums;
 }
