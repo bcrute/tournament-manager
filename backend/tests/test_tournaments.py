@@ -1464,3 +1464,76 @@ class TestOrganizerEventList:
         row = next(t for t in client.get("/api/tournament/mine").json()["tournaments"]
                    if t["code"] == code)
         assert row["openCalls"] == 1
+
+
+class TestRecords:
+    """Standings carry a win/draw/loss record, which players read in the room."""
+
+    def _played(self, client, user, kind="placement"):
+        organizer(client, user)
+        code = host(client)
+        add(client, code, ["r1", "r2", "r3", "r4"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
+        body = {"kind": kind}
+        if kind == "placement":
+            body["places"] = [{"entrantId": s["entrantId"], "place": i}
+                              for i, s in enumerate(pod["seats"], 1)]
+        client.post(f"/api/tournament/{code}/pods/{pod['podId']}/result", json=body)
+        return code, pod
+
+    def test_a_placement_gives_one_win_and_the_rest_losses(self, client):
+        code, pod = self._played(client, "recA")
+        rows = {s["entrantId"]: s for s in client.get(f"/api/tournament/{code}").json()["standings"]}
+        first = pod["seats"][0]["entrantId"]
+        assert rows[first]["wins"] == 1 and rows[first]["losses"] == 0
+        for s in pod["seats"][1:]:
+            assert rows[s["entrantId"]]["wins"] == 0
+            assert rows[s["entrantId"]]["losses"] == 1
+
+    def test_a_draw_is_not_counted_as_a_win_for_everyone(self, client):
+        """A draw awards every seat place 1, so counting place==1 alone would
+        report four winners."""
+        code, pod = self._played(client, "recB", kind="draw")
+        rows = {s["entrantId"]: s for s in client.get(f"/api/tournament/{code}").json()["standings"]}
+        for s in pod["seats"]:
+            assert rows[s["entrantId"]]["draws"] == 1
+            assert rows[s["entrantId"]]["wins"] == 0
+            assert rows[s["entrantId"]]["losses"] == 0
+
+    def test_an_override_replaces_the_record_rather_than_adding_to_it(self, client):
+        code, pod = self._played(client, "recC", kind="draw")
+        client.post(f"/api/tournament/{code}/pods/{pod['podId']}/result", json={
+            "kind": "placement",
+            "places": [{"entrantId": s["entrantId"], "place": i}
+                       for i, s in enumerate(pod["seats"], 1)]})
+        rows = {s["entrantId"]: s for s in client.get(f"/api/tournament/{code}").json()["standings"]}
+        first = pod["seats"][0]["entrantId"]
+        assert rows[first]["wins"] == 1 and rows[first]["draws"] == 0
+        assert rows[first]["wins"] + rows[first]["draws"] + rows[first]["losses"] == 1
+
+    def test_an_unplayed_entrant_has_an_empty_record(self, client):
+        organizer(client, "recD")
+        code = host(client)
+        add(client, code, ["u1", "u2", "u3", "u4"])
+        for row in client.get(f"/api/tournament/{code}").json()["standings"]:
+            assert (row["wins"], row["draws"], row["losses"], row["podsPlayed"]) == (0, 0, 0, 0)
+
+    def test_the_record_always_sums_to_pods_played(self, client):
+        code, _ = self._played(client, "recE")
+        for row in client.get(f"/api/tournament/{code}").json()["standings"]:
+            assert row["wins"] + row["draws"] + row["losses"] == row["podsPlayed"]
+
+    def test_a_draw_with_no_places_still_awards_draw_points(self, client):
+        """Regression: the organizer's Draw button sends no ordering, and every
+        seat was left with no points at all — the pod read as played and worth
+        nothing."""
+        organizer(client, "recF")
+        code = host(client, settings={"drawPoints": 1})
+        add(client, code, ["d1", "d2", "d3", "d4"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
+        client.post(f"/api/tournament/{code}/pods/{pod['podId']}/result", json={"kind": "draw"})
+        for row in client.get(f"/api/tournament/{code}").json()["standings"]:
+            assert row["points"] == 1, row["name"]
+            assert row["draws"] == 1 and row["podsPlayed"] == 1

@@ -172,15 +172,37 @@ def standings_rows(code: str):
         "WHERE r.tournament_code = ?",
         (code,),
     ).fetchall()
+    # A draw awards every seat place 1, so "place == 1" alone would report a
+    # drawn pod as a win for everyone. The pod's result kind is what separates
+    # them; take the latest version, since an override appends rather than
+    # mutates.
+    kinds = {
+        r["pod_id"]: r["kind"]
+        for r in q(
+            "SELECT pr.pod_id, pr.kind FROM pod_results pr "
+            "JOIN pods p ON p.id = pr.pod_id JOIN trounds r ON r.id = p.round_id "
+            "WHERE r.tournament_code = ? "
+            "AND pr.version = (SELECT MAX(v2.version) FROM pod_results v2 "
+            "                  WHERE v2.pod_id = pr.pod_id)",
+            (code,),
+        ).fetchall()
+    }
 
     points: dict[int, int] = {e["id"]: 0 for e in entrants}
     played: dict[int, int] = {e["id"]: 0 for e in entrants}
+    wins: dict[int, int] = {e["id"]: 0 for e in entrants}
+    draws: dict[int, int] = {e["id"]: 0 for e in entrants}
     pod_members: dict[int, list[int]] = {}
     for s in seats:
         pod_members.setdefault(s["pod_id"], []).append(s["entrant_id"])
         if s["points"] is not None:
             points[s["entrant_id"]] = points.get(s["entrant_id"], 0) + s["points"]
             played[s["entrant_id"]] = played.get(s["entrant_id"], 0) + 1
+            kind = kinds.get(s["pod_id"])
+            if kind == "draw":
+                draws[s["entrant_id"]] = draws.get(s["entrant_id"], 0) + 1
+            elif s["place"] == 1:
+                wins[s["entrant_id"]] = wins.get(s["entrant_id"], 0) + 1
 
     # opponents' points: the standard Swiss tiebreaker, computed from the same rows
     opponents: dict[int, set[int]] = {e["id"]: set() for e in entrants}
@@ -199,6 +221,13 @@ def standings_rows(code: str):
                 "points": points.get(e["id"], 0),
                 "opponentPoints": opp,
                 "podsPlayed": played.get(e["id"], 0),
+                "wins": wins.get(e["id"], 0),
+                "draws": draws.get(e["id"], 0),
+                # everything decided that wasn't a win or a draw
+                "losses": max(
+                    0,
+                    played.get(e["id"], 0) - wins.get(e["id"], 0) - draws.get(e["id"], 0),
+                ),
                 "claimed": e["token"] is not None,
                 "dropped": e["dropped_at"] is not None,
             }
@@ -778,7 +807,17 @@ def _write_result(t, pod, kind: str, places: list[dict], source: str, note: str 
         "INSERT INTO pod_results (pod_id, version, kind, source, note) VALUES (?, ?, ?, ?, ?)",
         (pod["id"], version, kind, source, note),
     )
-    size = q("SELECT COUNT(*) c FROM pod_seats WHERE pod_id = ?", (pod["id"],)).fetchone()["c"]
+    seat_rows = q(
+        "SELECT entrant_id FROM pod_seats WHERE pod_id = ? ORDER BY seat", (pod["id"],)
+    ).fetchall()
+    size = len(seat_rows)
+
+    # A draw or a bye has no ordering to send, so callers reasonably post none —
+    # the organizer's "Draw" button did exactly that, and every seat was left
+    # with no points at all. Fill it in: everyone shares first.
+    if not places and kind in ("draw", "bye"):
+        places = [{"entrantId": r["entrant_id"], "place": 1} for r in seat_rows]
+
     for entry in places:
         place = entry.get("place")
         q(

@@ -64,6 +64,9 @@ export interface StandingRow {
   points: number;
   opponentPoints: number;
   podsPlayed: number;
+  wins: number;
+  draws: number;
+  losses: number;
   claimed: boolean;
   dropped: boolean;
   rank: number;

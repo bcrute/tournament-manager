@@ -12,6 +12,7 @@ import LifePanel from "./LifePanel";
 import NotesSheet from "./NotesSheet";
 import RoomBar from "./RoomBar";
 import RoundClock from "./RoundClock";
+import TournamentSheet from "./TournamentSheet";
 import RulesSheet from "./RulesSheet";
 import SlideToUnveil from "./SlideToUnveil";
 import { useAutoHide } from "./useAutoHide";
@@ -73,6 +74,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   const [zoomPid, setZoomPid] = useState<number | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [tourneyOpen, setTourneyOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const prev = useRef<{ status: string; pids: Set<number>; first: number | null } | null>(null);
   const toastId = useRef(0);
@@ -278,14 +280,19 @@ function RoomInner({ code, token }: { code: string; token: string }) {
           name={state.me.name}
           onRename={() => void renameSelf()}
           onRules={() => setRulesOpen(true)}
+          onTournament={state.tournament ? () => setTourneyOpen(true) : undefined}
           onDisplay={() => void toggleDisplay(true)}
-        onTrack={() => void toggleTracking(true)}
+          onTrack={() => void toggleTracking(true)}
           onLeave={() => void leave("Leave this room?")}
           leaveLabel="Leave room"
         />
         {rulesOpen && (
         <RulesSheet treachery={state.room.mode === "treachery"} onClose={() => setRulesOpen(false)} />
       )}
+      {tourneyOpen && state.tournament && (
+        <TournamentSheet code={state.tournament.code} onClose={() => setTourneyOpen(false)} />
+      )}
+
         <Lobby state={state} code={code} token={token} onRename={() => void renameSelf()} />
       </>
     );
@@ -318,12 +325,16 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         onRename={() => void renameSelf()}
         onNotes={() => setNotesOpen(true)}
         onRules={() => setRulesOpen(true)}
+        onTournament={state.tournament ? () => setTourneyOpen(true) : undefined}
         onDisplay={() => void toggleDisplay(true)}
         onTrack={() => void toggleTracking(true)}
         onLeave={() => void leave(leaveMsg())}
       />
       {rulesOpen && (
         <RulesSheet treachery={state.room.mode === "treachery"} onClose={() => setRulesOpen(false)} />
+      )}
+      {tourneyOpen && state.tournament && (
+        <TournamentSheet code={state.tournament.code} onClose={() => setTourneyOpen(false)} />
       )}
       {notesOpen && (
         <NotesSheet

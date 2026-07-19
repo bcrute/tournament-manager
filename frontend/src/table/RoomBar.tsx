@@ -11,6 +11,7 @@ export default function RoomBar({
   onTrack,
   onNotes,
   onRules,
+  onTournament,
   onLeave,
   leaveLabel,
 }: {
@@ -23,6 +24,8 @@ export default function RoomBar({
   onTrack?: () => void;
   onNotes?: () => void;
   onRules?: () => void;
+  /** Standings, when this room is a tournament pod. */
+  onTournament?: () => void;
   onLeave: () => void;
   leaveLabel?: string;
 }) {
@@ -80,6 +83,16 @@ export default function RoomBar({
               }}
             >
               <Icon name="book" /> {t("menu.rules")}
+            </button>
+          )}
+          {onTournament && (
+            <button
+              onClick={() => {
+                setOpen(false);
+                onTournament();
+              }}
+            >
+              <Icon name="crown" /> {t("menu.tournament")}
             </button>
           )}
           {onTrack && (

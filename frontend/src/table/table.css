@@ -1827,3 +1827,58 @@ button.ghost.danger {
   font-size: clamp(1.3rem, 3.5vw, 2.2rem);
   font-variant-numeric: tabular-nums;
 }
+
+/* Standings read from inside the room: rank, record, points. */
+.ts-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+.ts-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.25rem;
+  border-bottom: 1px solid #241c33;
+}
+
+.ts-row.me {
+  background: rgba(120, 160, 255, 0.12);
+  border-radius: 6px;
+}
+
+.ts-row.dropped {
+  opacity: 0.45;
+}
+
+.ts-rank {
+  min-width: 1.6rem;
+  text-align: right;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+
+.ts-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ts-name em {
+  font-style: normal;
+  opacity: 0.6;
+}
+
+.ts-record,
+.ts-points {
+  font-variant-numeric: tabular-nums;
+}
+
+.ts-record {
+  opacity: 0.85;
+}
