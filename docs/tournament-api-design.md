@@ -252,10 +252,18 @@ officiating jerseys read as "referee" mainly in North American and European
 sports, whereas raising your hand is literally what a player does at a Magic
 table to call a judge. The icon mirrors the physical action.
 
-Icons ship as SVGs we control rather than emoji — emoji render differently per
-platform, and several carry skin-tone or gender variants we'd be choosing on a
-user's behalf. Every icon-only control still carries a translated `aria-label`;
-a screen reader can't infer a picture.
+Icons are **single-colour outline SVGs stroked in `currentColor`**, never emoji.
+Emoji can't be recoloured, so a theme would have no effect on them; they also
+render differently per platform and several carry skin-tone or gender variants
+we'd be choosing on a user's behalf.
+
+Every icon resolves through one `<Icon>` component on a 24×24 grid, so adopting
+a polished set later (Lucide, MIT; Material Symbols, Apache-2.0) touches that
+file and nothing else. Colours come from CSS custom properties in `:root`, which
+is what a selectable theme will swap.
+
+Every icon-only control still carries a translated `aria-label`; a screen reader
+can't infer a picture.
 
 Translations come from people who speak the language. A machine-translated UI is
 its own kind of barrier, and a wrong string under time pressure at a tournament

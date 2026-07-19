@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, RoomState } from "./api";
 import { t } from "../i18n";
+import Icon from "../Icon";
 import { useDebouncedDelta } from "./useDebouncedDelta";
 
 export default function LifePanel({
@@ -41,7 +42,7 @@ export default function LifePanel({
     <div className="life-panel">
       {me.eliminated ? (
         <div className="dead-banner">
-          ☠ {t("life.eliminated")}
+          <Icon name="skull" size={28} /> {t("life.eliminated")}
           <button className="ghost" onClick={() => void eliminate(true)}>
             {t("life.undo")}
           </button>
@@ -69,7 +70,7 @@ export default function LifePanel({
       {lethal && <p className="error">⚠ {t("life.lethalWarning")}</p>}
 
       <button className="ghost cmd-toggle" onClick={() => setCmdOpen(!cmdOpen)}>
-        {cmdOpen ? "▾ " : "▸ "}⚔ {t("life.commanderDamage")}
+        {cmdOpen ? "▾ " : "▸ "}<Icon name="sword" /> {t("life.commanderDamage")}
       </button>
       {cmdOpen && (
         <div className="cmd-list">
@@ -96,7 +97,7 @@ export default function LifePanel({
 
       {!me.eliminated && (
         <button className="ghost die-btn" onClick={() => void eliminate(false)}>
-          ☠ {t("life.imDead")}
+          <Icon name="skull" /> {t("life.imDead")}
         </button>
       )}
     </div>

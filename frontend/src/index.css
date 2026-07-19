@@ -1,4 +1,26 @@
 :root {
+  /* Theme tokens. Icons stroke in currentColor, so recolouring text recolours
+     them too — a theme is these values plus nothing else. */
+  --bg: #14101c;
+  --surface: #1d1628;
+  --surface-2: #1a1424;
+  --border: #322747;
+  --border-soft: #241c33;
+  --text: #e8e4f0;
+  --text-dim: #b8b0c8;
+  --text-faint: #8a7fa0;
+  --accent: #c9a84c;
+  --danger: #e06c75;
+  --good: #6fd08c;
+  --icon-stroke: 1.75;
+}
+
+.icon {
+  flex: 0 0 auto;
+  vertical-align: -0.15em;
+}
+
+:root {
   color-scheme: dark;
   font-family: system-ui, -apple-system, sans-serif;
 }

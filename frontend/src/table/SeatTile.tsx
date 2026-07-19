@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { PlayerInfo } from "./api";
 import { t } from "../i18n";
+import Icon from "../Icon";
 import { SeatSlot, seatFonts } from "./seats";
 
 /**
@@ -92,7 +93,7 @@ export default function SeatTile({
 
         <div className="seat-face" style={{ bottom: font.cmdBar }}>
           <span className="seat-name" style={{ fontSize: font.name }}>
-            {first && "👑 "}
+            {first && <Icon name="crown" size={13} />}
             {p.name}
             {p.card ? ` · ${p.card.role}` : ""}
           </span>

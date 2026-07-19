@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { api, PlayerInfo, RoomState } from "./api";
+import Icon from "../Icon";
 import SeatTile, { halfDelta } from "./SeatTile";
 import { assignSeats, seatGrid, swapSeats, turnPositions } from "./seats";
 
@@ -120,7 +121,7 @@ export default function DisplayView({
       <header className="display-head">
         <span className="display-code">{code}</span>
         <span className="display-mode">
-          {state.room.mode === "treachery" ? "⚔ Treachery" : "♥ Life"}
+          <>{state.room.mode === "treachery" ? <Icon name="sword" /> : <Icon name="heart" />}{" "}{state.room.mode === "treachery" ? "Treachery" : "Life"}</>
           {ended && " — game over"}
         </span>
         {onTakeSeat && (

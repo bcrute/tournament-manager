@@ -3,6 +3,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api, ApiError, GameMode, PlayerInfo, RoomState } from "./api";
 import { t } from "../i18n";
+import Icon from "../Icon";
 import { createBackGuard } from "./backGuard";
 import { CarouselEntry, carouselEntries, clampIndex, indexOfPid, step } from "./carousel";
 import { clearSession, loadSession } from "./session";
@@ -322,7 +323,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
               </button>
             </p>
             <p className="tagline">
-              {state.room.firstPlayer && `👑 ${state.room.firstPlayer} went first · `}room {code}
+              {state.room.firstPlayer && `${state.room.firstPlayer} went first · `}room {code}
             </p>
           </header>
           <LifePanel state={state} code={code} token={token} />
@@ -350,14 +351,14 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         <nav className="bottom-nav" onPointerDown={(e) => e.stopPropagation()}>
           {treachery && (
             <button className={activeTab === "card" ? "active" : ""} onClick={() => setTab("card")}>
-              🎭 {t("nav.card")}
+              <Icon name="card" /> {t("nav.card")}
             </button>
           )}
           <button className={activeTab === "life" ? "active" : ""} onClick={() => setTab("life")}>
-            ♥ {t("nav.life")}
+            <Icon name="heart" /> {t("nav.life")}
           </button>
           <button className={activeTab === "table" ? "active" : ""} onClick={() => setTab("table")}>
-            👥 {t("nav.table")}
+            <Icon name="users" /> {t("nav.table")}
           </button>
         </nav>
       )}
@@ -660,10 +661,10 @@ function CardZoom({ p, onClose }: { p: PlayerInfo; onClose: () => void }) {
 }
 
 function TableTile({ p, first, onZoom }: { p: PlayerInfo; first: boolean; onZoom: (p: PlayerInfo) => void }) {
-  const life = p.eliminated ? "☠" : (p.life ?? "—");
+  const life = p.eliminated ? "\u2020" : (p.life ?? "—");
   const label = (
     <span className="tile-label">
-      {first && "👑 "}
+      {first && <Icon name="crown" size={14} />}
       {p.name}
       {p.isMe ? " (you)" : ""}
       {p.left ? " (left)" : ""} · <strong>{life}</strong>
@@ -718,7 +719,7 @@ function TableView({
           {state.players.map((p) => (
             <li key={p.pid} className={p.eliminated ? "dead" : ""}>
               <span>
-                {state.room.firstPid === p.pid && "👑 "}
+                {state.room.firstPid === p.pid && <Icon name="crown" size={14} />}
                 {p.name}
                 {p.isMe ? " (you)" : ""}
               </span>

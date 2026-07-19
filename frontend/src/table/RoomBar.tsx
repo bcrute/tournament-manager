@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { t } from "../i18n";
+import Icon from "../Icon";
 
 export default function RoomBar({
   code,
@@ -44,7 +45,7 @@ export default function RoomBar({
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        ⋮
+        <Icon name="menu" label={t("menu.open")} />
       </button>
       {open && (
         <div className="bar-menu">
@@ -55,7 +56,7 @@ export default function RoomBar({
                 onRename();
               }}
             >
-              ✎ {t("menu.rename")}
+              <Icon name="edit" /> {t("menu.rename")}
             </button>
           )}
           {onNotes && (
@@ -65,7 +66,7 @@ export default function RoomBar({
                 onNotes();
               }}
             >
-              ✎ {t("menu.notes")}
+              <Icon name="note" /> {t("menu.notes")}
             </button>
           )}
           {onRules && (
@@ -75,7 +76,7 @@ export default function RoomBar({
                 onRules();
               }}
             >
-              📘 {t("menu.rules")}
+              <Icon name="book" /> {t("menu.rules")}
             </button>
           )}
           {onDisplay && (
@@ -85,7 +86,7 @@ export default function RoomBar({
                 onDisplay();
               }}
             >
-              📺 {displayLabel ?? t("menu.display")}
+              <Icon name="monitor" /> {displayLabel ?? t("menu.display")}
             </button>
           )}
           <button
@@ -95,7 +96,7 @@ export default function RoomBar({
               onLeave();
             }}
           >
-            {leaveLabel ?? t("menu.leaveGame")}
+            <Icon name="exit" /> {leaveLabel ?? t("menu.leaveGame")}
           </button>
         </div>
       )}
