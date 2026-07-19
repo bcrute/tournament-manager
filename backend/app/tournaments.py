@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 
 from .accounts import require_account
 from .db import q
-from .games import known_games, profile_for
+from .games import known_games, profile_for, structure_for
 from .pairing import Entrant as PairEntrant
 from .pairing import pair_round, seat_pods
 
@@ -44,6 +44,7 @@ GENERIC_SETTINGS = {
     "seatAssignment": "random",       # random | by_standings | manual
     "allowOfficialCalls": True,
     "collectWizardsEmail": "off",     # off | optional | required (publisher account)
+    "structure": None,                # a game profile's structure key; None = first
 }
 
 
@@ -339,6 +340,37 @@ def create_tournament(body: CreateBody, request: Request):
         (code, body.name.strip(), acct["id"], body.game, body.mode, json.dumps(cfg)),
     )
     return {"code": code, "game": body.game}
+
+
+@router.get("/{code}/plan")
+def plan(code: str, request: Request, players: int | None = None):
+    """What this structure says to run for the current field.
+
+    Advisory only: it recommends rounds and a cut, it does not schedule them.
+    `official` says whether a published rules document backs the numbers — a
+    house convention must never be shown as if Wizards wrote it.
+    """
+    t = get_tournament(code)
+    cfg = settings_of(t)
+    game = t["game"] if "game" in t.keys() else None
+    struct = structure_for(game, cfg.get("structure"))
+    if not struct:
+        raise HTTPException(409, "this game has no event structures")
+    if players is None:
+        players = q(
+            "SELECT COUNT(*) c FROM entrants WHERE tournament_code = ? AND dropped_at IS NULL",
+            (t["code"],),
+        ).fetchone()["c"]
+    played = q(
+        "SELECT COUNT(*) c FROM trounds WHERE tournament_code = ? AND status = 'closed'",
+        (t["code"],),
+    ).fetchone()["c"]
+    out = struct.plan(players)
+    out["name"] = struct.name
+    out["notes"] = struct.notes
+    out["roundsPlayed"] = played
+    out["roundsRemaining"] = max(0, out["swissRounds"] - played)
+    return out
 
 
 @router.get("/{code}")

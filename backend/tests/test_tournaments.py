@@ -807,3 +807,87 @@ class TestGameSurface:
         from app.games import profile_for
         assert profile_for("some-future-game").key == "mtg"
         assert profile_for(None).key == "mtg"
+
+
+class TestEventStructures:
+    """Presets an organizer picks from. Official tables must match the source
+    document exactly; house conventions must never claim to be official."""
+
+    def test_mtr_appendix_e_table_matches_the_published_document(self, client):
+        from app.games import MTR_PREMIER
+        # MTR Appendix E, "All Other Formats" column, effective 2026-02-27
+        expected = {
+            4: (0, 4), 8: (0, 8), 9: (5, 4), 16: (5, 4), 17: (5, 8), 32: (5, 8),
+            33: (6, 8), 64: (6, 8), 65: (7, 8), 128: (7, 8), 129: (8, 8),
+            226: (8, 8), 227: (9, 8), 409: (9, 8), 410: (10, 8), 5000: (10, 8),
+        }
+        for players, (swiss, cut) in expected.items():
+            p = MTR_PREMIER.plan(players)
+            assert (p["swissRounds"], p["cutTo"]) == (swiss, cut), players
+
+    def test_small_fields_run_single_elimination_with_no_swiss(self, client):
+        from app.games import MTR_PREMIER
+        assert MTR_PREMIER.plan(4)["elimRounds"] == 2
+        assert MTR_PREMIER.plan(8)["elimRounds"] == 3
+        assert MTR_PREMIER.plan(8)["swissRounds"] == 0
+
+    def test_limited_with_a_draft_playoff_differs_only_where_the_document_says(self, client):
+        from app.games import MTR_PREMIER, MTR_PREMIER_LIMITED
+        # the documented difference is the 9-16 band: 4 rounds to Top 8
+        assert MTR_PREMIER_LIMITED.plan(16)["swissRounds"] == 4
+        assert MTR_PREMIER_LIMITED.plan(16)["cutTo"] == 8
+        for n in (17, 33, 65, 129, 227, 410):
+            assert MTR_PREMIER_LIMITED.plan(n) == MTR_PREMIER.plan(n) | {
+                "structure": "mtr_premier_limited"}
+
+    def test_house_structures_are_never_marked_official(self, client):
+        from app.games import MTG
+        for s in MTG.structures:
+            if s.key.endswith("_house"):
+                assert s.official is False
+                assert "convention" in s.source.lower()
+
+    def test_a_field_below_the_minimum_is_flagged_not_guessed(self, client):
+        from app.games import MTR_PREMIER
+        p = MTR_PREMIER.plan(2)
+        assert p["belowMinimum"] is True and p["swissRounds"] == 0
+
+    def test_plan_uses_the_live_roster_and_counts_rounds_played(self, client):
+        organizer(client, "hostBG")
+        code = host(client, settings={"structure": "commander_pods_house"})
+        add(client, code, [f"p{i}" for i in range(12)])
+        p = client.get(f"/api/tournament/{code}/plan").json()
+        assert p["players"] == 12 and p["swissRounds"] == 3 and p["cutTo"] == 4
+        assert p["official"] is False
+        assert p["roundsPlayed"] == 0 and p["roundsRemaining"] == 3
+
+    def test_plan_accepts_a_hypothetical_attendance(self, client):
+        organizer(client, "hostBH")
+        code = host(client, settings={"structure": "mtr_premier"})
+        p = client.get(f"/api/tournament/{code}/plan", params={"players": 40}).json()
+        assert p["swissRounds"] == 6 and p["cutTo"] == 8 and p["official"] is True
+        assert "Appendix E" in p["source"]
+
+    def test_dropped_players_do_not_inflate_the_recommendation(self, client):
+        organizer(client, "hostBI")
+        code = host(client, settings={"structure": "mtr_premier"})
+        added = add(client, code, [f"d{i}" for i in range(20)])
+        assert client.get(f"/api/tournament/{code}/plan").json()["players"] == 20
+        for e in added[:5]:
+            client.post(f"/api/tournament/{code}/entrants/{e['entrantId']}/drop")
+        assert client.get(f"/api/tournament/{code}/plan").json()["players"] == 15
+
+    def test_an_unknown_structure_key_falls_back_to_the_first(self, client):
+        organizer(client, "hostBJ")
+        code = host(client, settings={"structure": "does-not-exist"})
+        assert client.get(f"/api/tournament/{code}/plan").json()["structure"] == "mtr_premier"
+
+    def test_structures_are_advertised_with_their_provenance(self, client):
+        mtg = client.get("/api/tournament/games").json()["games"][0]
+        keys = {s["key"] for s in mtg["structures"]}
+        assert "mtr_premier" in keys and "commander_pods_house" in keys
+        official = {s["key"]: s["official"] for s in mtg["structures"]}
+        assert official["mtr_premier"] is True
+        assert official["commander_pods_house"] is False
+        # the multiplayer caveat must reach the UI, not just the source
+        assert "no multiplayer" in mtg["notes"]["multiplayer"].lower()
