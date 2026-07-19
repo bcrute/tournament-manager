@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import Icon from "../Icon";
 import { PLAY_NAV } from "../nav";
 
@@ -24,6 +24,13 @@ export default function PlayLayout({
   return (
     <div className="play">
       <a className="skip-link" href="#main">Skip to content</a>
+      {/* the same masthead the site uses: arriving here from the front page
+          shouldn't feel like leaving the site */}
+      <header className="play-masthead">
+        <Link to="/" className="site-logo">
+          mtg<span>.skadoosh.dev</span>
+        </Link>
+      </header>
       {title && (
         <header className="play-bar">
           <h1>{title}</h1>

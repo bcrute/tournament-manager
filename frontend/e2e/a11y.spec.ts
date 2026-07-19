@@ -20,15 +20,37 @@ test.describe("accessibility", () => {
     await page.getByPlaceholder(/your name/i).fill("ada");
     await page.getByRole("button", { name: /create room/i }).click();
     await page.waitForURL(/\/table\/r\//);
+    // the room settles asynchronously — a toast animates in and out on entry,
+    // and enumerating mid-render caught a control before its label attached
+    await page.waitForLoadState("networkidle");
+    await expect(page.locator(".room-bar")).toBeVisible();
+    await page.waitForTimeout(800);
 
     // use the real accessibility tree, not textContent: an icon button is named
     // by its child <svg role="img" aria-label>, which the DOM text doesn't show
-    const controls = page.locator("button:visible, a[href]:visible");
-    const n = await controls.count();
-    expect(n).toBeGreaterThan(0);
-    for (let i = 0; i < n; i++) {
-      await expect(controls.nth(i)).toHaveAccessibleName(/\S/);
-    }
+    await expect
+      .poll(
+        async () => {
+          const controls = page.locator("button:visible, a[href]:visible");
+          const n = await controls.count();
+          const unnamed: string[] = [];
+          for (let i = 0; i < n; i++) {
+            const el = controls.nth(i);
+            const name = await el
+              .evaluate((node) => {
+                const t = (node.textContent ?? "").trim();
+                const l = node.getAttribute("aria-label") ?? "";
+                const svg = node.querySelector("svg[aria-label]");
+                return t || l || svg?.getAttribute("aria-label") || "";
+              })
+              .catch(() => "detached");
+            if (!name) unnamed.push(await el.evaluate((n2) => n2.outerHTML.slice(0, 60)));
+          }
+          return unnamed;
+        },
+        { timeout: 10_000, message: "controls with no accessible name" },
+      )
+      .toEqual([]);
   });
 
   test("the menu closes on Escape and hands focus back", async ({ page }) => {

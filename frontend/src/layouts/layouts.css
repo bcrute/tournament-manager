@@ -396,13 +396,17 @@ textarea:focus-visible,
    Without them the app reads as a phone screen stretched across a laptop. */
 
 @media (min-width: 60rem) {
+  /* Wide enough for a two-column page. Individual surfaces still constrain
+     themselves — the life panel and roster have their own max-widths — so this
+     only lets pages that want the room have it, rather than stretching
+     everything. */
   .play-body {
-    max-width: 46rem;
+    max-width: 64rem;
     padding: 1.5rem 2rem 2rem;
   }
 
   .play-bar {
-    max-width: 46rem;
+    max-width: 64rem;
     margin: 0 auto;
     padding: 1.25rem 2rem 0.5rem;
   }
@@ -415,9 +419,24 @@ textarea:focus-visible,
      the base of a tall window */
   .play-nav {
     position: static;
-    max-width: 46rem;
+    max-width: 64rem;
     margin: 1rem auto 0;
     border-top: 1px solid #2a2f3a;
     border-radius: 0.5rem;
+  }
+}
+
+/* The play area carries the site's masthead: arriving from the front page
+   shouldn't feel like leaving the site for a bare app screen. */
+.play-masthead {
+  display: flex;
+  align-items: center;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid #2a2f3a;
+}
+
+@media (min-width: 60rem) {
+  .play-masthead {
+    padding: 0.9rem 2rem;
   }
 }

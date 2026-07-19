@@ -195,6 +195,29 @@ export default function Landing() {
         <p className="tagline">Life totals &amp; hidden roles for game night</p>
       </header>
 
+      <div className="tr-columns">
+        <aside className="tr-explainer">
+          <h2>How it works</h2>
+          <ol>
+            <li>
+              <strong>Start a game</strong> and a five-character room code appears, with a
+              QR code beside it.
+            </li>
+            <li>
+              <strong>Everyone else scans or types it.</strong> No app to install, and no
+              account needed to play.
+            </li>
+            <li>
+              <strong>Each player keeps their own total</strong> on their own phone, and
+              the whole table stays in sync.
+            </li>
+          </ol>
+          <p className="hint">
+            No spare tablet? Any player can show the shared table view on their own phone
+            from the menu, without giving up their seat.
+          </p>
+        </aside>
+
       <div className="tr-form">
         <div className="tr-mode">
           <button className={mode === "create" ? "active" : ""} onClick={() => setMode("create")}>
@@ -224,6 +247,8 @@ export default function Landing() {
 
         {mode === "join" && (
           <>
+            <label className="field">
+              <span>Room code</span>
             <input
               type="text"
               className="code-input"
@@ -234,6 +259,7 @@ export default function Landing() {
               value={joinCode}
               onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
             />
+            </label>
             <label className="display-toggle">
               <input
                 type="checkbox"
@@ -246,13 +272,19 @@ export default function Landing() {
         )}
 
         {!asDisplay && (
-          <input
-            type="text"
-            placeholder="Your name"
-            maxLength={24}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
+          <label className="field">
+            <span>Your name at the table</span>
+            <input
+              type="text"
+              placeholder="Your name"
+              maxLength={24}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <span className="hint">
+              Shown to the other players. We generated one — change it if you like.
+            </span>
+          </label>
         )}
 
         {error && <p className="error">{error}</p>}
@@ -264,10 +296,9 @@ export default function Landing() {
           {busy ? "…" : mode === "create" ? "Create room" : asDisplay ? "Connect display" : "Join room"}
         </button>
       </div>
+      </div>
 
       <footer>
-        <Link to="/table/me">Your games &amp; notes</Link>
-        <span className="dot-sep">·</span>
         <Link to="/">mtg.skadoosh.dev</Link>
       </footer>
 
