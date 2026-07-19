@@ -27,6 +27,13 @@ CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O/1/I/L
 _db_lock = threading.Lock()
 _db = sqlite3.connect(DB_PATH, check_same_thread=False)
 _db.row_factory = sqlite3.Row
+# WAL: readers don't block the writer and commits stop rewriting a rollback
+# journal every time. synchronous=NORMAL is the documented safe pairing —
+# durable against process crashes, and a lost game state on host power-loss is
+# not worth an fsync per write here.
+_db.execute("PRAGMA journal_mode=WAL")
+_db.execute("PRAGMA synchronous=NORMAL")
+_db.execute("PRAGMA busy_timeout=5000")
 _db.executescript(
     """
     CREATE TABLE IF NOT EXISTS rooms (
@@ -92,7 +99,10 @@ for _c in json.loads(CARDS_PATH.read_text())["cards"]:
 def q(sql, params=()):
     with _db_lock:
         cur = _db.execute(sql, params)
-        _db.commit()
+        # only writes need a commit; committing after every SELECT was pure cost
+        head = sql.lstrip()[:6].upper()
+        if head not in ("SELECT", "PRAGMA"):
+            _db.commit()
         return cur
 
 
@@ -233,21 +243,50 @@ def cmd_matrix(code: str):
     return out
 
 
-def room_state(code: str, token: str):
+def room_snapshot(code: str):
+    """Everything a room's state depends on, fetched once. Personalizing it per
+    client is then pure CPU with no further queries — which is what makes
+    pushing state over the WebSocket cheaper than N clients each refetching."""
     room = get_room(code)
-    me = get_player(code, token)
-    status = norm_status(room["status"])
-    treachery = room["mode"] == "treachery"
     # seats keep the order the table arranged them in; unplaced players sit at the end
     players = q(
         "SELECT * FROM players WHERE room_code = ? "
         "ORDER BY is_display, COALESCE(seat_order, 1000000), joined_at, id",
         (room["code"],),
     ).fetchall()
+    events = q(
+        "SELECT at, text FROM events WHERE room_code = ? ORDER BY id DESC LIMIT 60",
+        (room["code"],),
+    ).fetchall()
+    return {
+        "room": room,
+        "players": players,
+        "cmd": cmd_matrix(room["code"]),
+        "events": events,
+        "by_token": {p["token"]: p for p in players},
+    }
+
+
+def room_state(code: str, token: str | None):
+    snap = room_snapshot(code)
+    if not token:
+        raise HTTPException(401, "missing player token")
+    me = snap["by_token"].get(token)
+    if me is None:
+        raise HTTPException(403, "not a player in this room")
+    return personalize(snap, me)
+
+
+def personalize(snap, me):
+    """Build one client's view of a snapshot. No database access."""
+    room = snap["room"]
+    players = snap["players"]
+    status = norm_status(room["status"])
+    treachery = room["mode"] == "treachery"
     ended = status == "ended"
     n_active = len([p for p in players if not p["left_game"] and not p["is_display"]])
     ldr, trt, ass, gdn = distribution(n_active) if treachery else (0, 0, 0, 0)
-    cmd = cmd_matrix(room["code"])
+    cmd = snap["cmd"]
     out_players = []
     for p in players:
         if p["is_display"]:
@@ -269,14 +308,10 @@ def room_state(code: str, token: str):
                 else None,
             }
         )
-    events = q(
-        "SELECT at, text FROM events WHERE room_code = ? ORDER BY id DESC LIMIT 60",
-        (room["code"],),
-    ).fetchall()
     first_pid = room["first_pid"]
     first_name = next((p["name"] for p in players if p["id"] == first_pid), None)
     return {
-        "log": [{"at": e["at"], "text": e["text"]} for e in events],
+        "log": [{"at": e["at"], "text": e["text"]} for e in snap["events"]],
         "room": {
             "code": room["code"],
             "status": status,
@@ -305,16 +340,32 @@ def room_state(code: str, token: str):
 
 # ---- websocket fanout ----
 
-_ws_rooms: dict[str, set] = {}
+# socket -> player token (None until the client authenticates). Tokens arrive in
+# a message rather than the URL so they never reach access logs.
+_ws_rooms: dict[str, dict] = {}
 _ws_lock = asyncio.Lock()
 
 
 async def broadcast(code: str):
+    """Push the new state to every client, personalized, from a single snapshot.
+    Clients that haven't sent a token (older bundles) get a nudge to refetch."""
+    code = code.upper()
     async with _ws_lock:
-        sockets = list(_ws_rooms.get(code.upper(), ()))
-    for ws in sockets:
+        sockets = list(_ws_rooms.get(code, {}).items())
+    if not sockets:
+        return
+    try:
+        snap = room_snapshot(code)
+    except HTTPException:
+        snap = None
+    for ws, token in sockets:
         try:
-            await ws.send_json({"type": "update"})
+            me = snap["by_token"].get(token) if (snap and token) else None
+            if me is not None:
+                await ws.send_json({"type": "state", "state": personalize(snap, me)})
+            else:
+                # unauthenticated socket, or a token that no longer holds a seat
+                await ws.send_json({"type": "update"})
         except Exception:
             pass
 
@@ -324,15 +375,33 @@ async def ws_room(ws: WebSocket, code: str):
     code = code.upper()
     await ws.accept()
     async with _ws_lock:
-        _ws_rooms.setdefault(code, set()).add(ws)
+        _ws_rooms.setdefault(code, {})[ws] = None
     try:
         while True:
-            await ws.receive_text()
+            raw = await ws.receive_text()
+            # {"token": "..."} authenticates this socket for pushed state;
+            # anything else (keepalive pings) is ignored
+            try:
+                msg = json.loads(raw)
+            except ValueError:
+                continue
+            token = msg.get("token") if isinstance(msg, dict) else None
+            if not token:
+                continue
+            async with _ws_lock:
+                if ws in _ws_rooms.get(code, {}):
+                    _ws_rooms[code][ws] = token
+            try:
+                await ws.send_json({"type": "state", "state": room_state(code, token)})
+            except HTTPException:
+                await ws.send_json({"type": "update"})
     except WebSocketDisconnect:
         pass
     finally:
         async with _ws_lock:
-            _ws_rooms.get(code, set()).discard(ws)
+            _ws_rooms.get(code, {}).pop(ws, None)
+            if not _ws_rooms.get(code):
+                _ws_rooms.pop(code, None)
 
 
 # ---- endpoints ----

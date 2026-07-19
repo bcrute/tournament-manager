@@ -56,9 +56,24 @@ export function useRoom(code: string, token: string) {
     const connect = () => {
       const proto = location.protocol === "https:" ? "wss" : "ws";
       ws = new WebSocket(`${proto}://${location.host}/api/table/ws/${code}`);
-      // a fresh socket means we may have missed updates (e.g. across a deploy)
-      ws.onopen = () => void refetch();
-      ws.onmessage = () => void refetch();
+      // authenticate so the server can push state instead of us refetching;
+      // sent as a message, never in the URL, so it stays out of access logs
+      ws.onopen = () => ws?.send(JSON.stringify({ token }));
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data as string);
+          if (msg?.type === "state" && msg.state) {
+            hasState.current = true;
+            setState(msg.state as RoomState);
+            setError(null);
+            setStale(false);
+            return;
+          }
+        } catch {
+          // fall through to a refetch
+        }
+        void refetch();
+      };
       ws.onclose = () => {
         if (!closed) timer = window.setTimeout(connect, 2000);
       };
@@ -76,7 +91,7 @@ export function useRoom(code: string, token: string) {
       if (timer !== undefined) window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [code, refetch]);
+  }, [code, token, refetch]);
 
   return { state, gone, error, stale, refetch };
 }
