@@ -104,3 +104,37 @@ class TestSchemaExposure:
         os.environ["TABLE_DEV_DOCS"] = "off"
         from app import main as main_mod
         importlib.reload(main_mod)
+
+
+class TestStaticCaching:
+    """A deploy that the browser never fetches is not a deploy."""
+
+    def _client(self, tmp_path):
+        import os
+        from fastapi.testclient import TestClient
+        from app.main import SPAStaticFiles
+        from fastapi import FastAPI
+        d = tmp_path / "static"
+        (d / "assets").mkdir(parents=True)
+        (d / "index.html").write_text("<!doctype html><html></html>")
+        (d / "assets" / "index-abc123.js").write_text("console.log(1)")
+        app = FastAPI()
+        app.mount("/", SPAStaticFiles(directory=str(d), html=True), name="static")
+        os.chdir(tmp_path)
+        return TestClient(app)
+
+    def test_index_is_never_cached(self, tmp_path):
+        c = self._client(tmp_path)
+        assert c.get("/").headers["cache-control"] == "no-cache"
+
+    def test_the_spa_fallback_is_never_cached_either(self, tmp_path):
+        """An unknown route returns index.html; caching that would pin a stale
+        bundle for every deep link too."""
+        c = self._client(tmp_path)
+        r = c.get("/table/r/ABCDE")
+        assert r.headers["cache-control"] == "no-cache"
+
+    def test_hashed_assets_are_cached_hard(self, tmp_path):
+        c = self._client(tmp_path)
+        cc = c.get("/assets/index-abc123.js").headers["cache-control"]
+        assert "immutable" in cc and "max-age=31536000" in cc

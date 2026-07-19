@@ -21,6 +21,7 @@ export default defineConfig({
         "src/tournament/api.ts",
         "src/admin/api.ts",
         "src/username.ts",
+        "src/goBack.ts",
       ],
       thresholds: {
         statements: 90,

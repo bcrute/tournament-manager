@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "../Icon";
+import { goBack } from "../goBack";
 import { Account, account, AccountError, getAccount } from "../table/account";
 import SignIn from "../table/SignIn";
 import { createTournament, TourneyError } from "./api";
@@ -71,7 +72,7 @@ export default function Host() {
           purpose="required"
           cancelLabel="Back"
           onDone={(a) => setAcct(a)}
-          onCancel={() => navigate("/table")}
+          onCancel={() => goBack(navigate, "/table")}
         />
       </main>
     );
@@ -84,7 +85,7 @@ export default function Host() {
           <h1>One thing first</h1>
         </header>
         <div className="sheet">
-          <button className="sheet-back" onClick={() => navigate("/table")} aria-label="Back">
+          <button className="sheet-back" onClick={() => goBack(navigate, "/table")} aria-label="Back">
             <Icon name="back" /> Back
           </button>
           <p className="notice">

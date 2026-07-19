@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import SignIn from "../table/SignIn";
+import { goBack } from "../goBack";
 import {
   ago,
   AdminError,
@@ -28,6 +30,7 @@ import {
  * deliberately doesn't try. It offers a sign-in and says nothing more.
  */
 export default function Admin() {
+  const navigate = useNavigate();
   const [overview, setOverview] = useState<Overview | null>(null);
   const [denied, setDenied] = useState(false);
   const [rooms, setRooms] = useState<AdminRoom[]>([]);
@@ -94,7 +97,7 @@ export default function Admin() {
             purpose="required"
             cancelLabel="Back"
             onDone={() => void load()}
-            onCancel={() => (location.href = "/")}
+            onCancel={() => goBack(navigate, "/")}
           />
         )}
       </main>

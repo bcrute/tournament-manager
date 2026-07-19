@@ -76,10 +76,29 @@ class SPAStaticFiles(StaticFiles):
             response = await super().get_response(path, scope)
         except StarletteHTTPException as exc:
             if exc.status_code == 404:
-                return await super().get_response("index.html", scope)
+                # deep link into client routing — still index.html, so it must
+                # carry the same no-cache header the entry point does
+                return self._cache(path, await super().get_response("index.html", scope))
             raise
         if response.status_code == 404:
-            return await super().get_response("index.html", scope)
+            response = await super().get_response("index.html", scope)
+        return self._cache(path, response)
+
+    @staticmethod
+    def _cache(path: str, response):
+        """Cache the fingerprinted assets hard, and never the entry point.
+
+        Vite hashes every file under /assets, so those are safe to cache
+        forever — the name changes when the content does. index.html must NOT
+        be cached: it is the only thing that knows which hashed bundle is
+        current, and without an explicit header browsers apply heuristic
+        caching and keep loading a stale one. A deploy then lands on the server
+        and never reaches the user, which is exactly what happened.
+        """
+        if path.startswith("assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
         return response
 
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Account,
   AccountError,
@@ -12,9 +12,11 @@ import {
 } from "./account";
 import FanContentNotice from "../FanContentNotice";
 import SignIn from "./SignIn";
+import { goBack } from "../goBack";
 
 /** Your games and notes. Signed-out visitors get the sign-in panel instead. */
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [acct, setAcct] = useState<Account | null | undefined>(undefined);
   const [games, setGames] = useState<HistoryGame[]>([]);
   const [editing, setEditing] = useState<HistoryGame | null>(null);
@@ -53,7 +55,7 @@ export default function Dashboard() {
             Optional — sign in to keep a history and private notes. No email needed.
           </p>
         </header>
-        <SignIn onDone={setAcct} onCancel={() => history.back()} />
+        <SignIn onDone={setAcct} onCancel={() => goBack(navigate, "/table")} />
         <footer>
           <Link to="/table">← back to Table</Link>
         </footer>
