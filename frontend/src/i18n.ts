@@ -17,6 +17,9 @@ export const en: Catalog = {
   "menu.rename": "Rename",
   "menu.notes": "Notes",
   "menu.rules": "Rules",
+  // two different things: `track` keeps your seat and shows the table view on
+  // your own phone; `display` hands the device over as a dedicated screen
+  "menu.track": "Show table view here",
   "menu.display": "Use as table display",
   "menu.takeSeat": "Take a seat",
   "menu.leaveGame": "Leave game",

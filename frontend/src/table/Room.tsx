@@ -180,6 +180,15 @@ function RoomInner({ code, token }: { code: string; token: string }) {
     await leaveNow();
   }
 
+  async function toggleTracking(tracking: boolean) {
+    if (!state) return;
+    try {
+      await api(`/rooms/${code}/tracker`, { method: "POST", token, body: { tracking } });
+    } catch (e) {
+      window.alert(e instanceof ApiError ? e.message : "Could not switch view");
+    }
+  }
+
   async function toggleDisplay(display: boolean) {
     if (!state) return;
     const msg = display
@@ -233,6 +242,28 @@ function RoomInner({ code, token }: { code: string; token: string }) {
     );
   }
 
+  // A player keeping score sees the same table view a dedicated display shows,
+  // but they still hold their seat — so the way out is "back to my view", not
+  // "take a seat", and leaving still means leaving the game.
+  if (state.me.isTracker && !state.me.isDisplay) {
+    return (
+      <>
+        <DisplayView
+          state={state}
+          code={code}
+          token={token}
+          onLeave={() => void leave("Leave this game?")}
+        />
+        <div className="tracker-bar">
+          <span>
+            <Icon name="monitor" /> Keeping score for the table
+          </span>
+          <button onClick={() => void toggleTracking(false)}>Back to my view</button>
+        </div>
+      </>
+    );
+  }
+
   const leaveMsg = () =>
     state.room.mode === "treachery" && state.room.status === "playing"
       ? "Leave mid-game? Your identity will be revealed to the table."
@@ -248,6 +279,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
           onRename={() => void renameSelf()}
           onRules={() => setRulesOpen(true)}
           onDisplay={() => void toggleDisplay(true)}
+        onTrack={() => void toggleTracking(true)}
           onLeave={() => void leave("Leave this room?")}
           leaveLabel="Leave room"
         />
@@ -287,6 +319,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         onNotes={() => setNotesOpen(true)}
         onRules={() => setRulesOpen(true)}
         onDisplay={() => void toggleDisplay(true)}
+        onTrack={() => void toggleTracking(true)}
         onLeave={() => void leave(leaveMsg())}
       />
       {rulesOpen && (

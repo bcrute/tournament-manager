@@ -67,6 +67,8 @@ export interface RoomState {
     name: string;
     isHost: boolean;
     isDisplay: boolean;
+    /** Showing the table view on their own phone, while keeping their seat. */
+    isTracker: boolean;
     revealed: boolean;
     eliminated: boolean;
     life: number | null;

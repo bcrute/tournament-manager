@@ -8,6 +8,7 @@ export default function RoomBar({
   onRename,
   onDisplay,
   displayLabel,
+  onTrack,
   onNotes,
   onRules,
   onLeave,
@@ -18,6 +19,8 @@ export default function RoomBar({
   onRename?: () => void;
   onDisplay?: () => void;
   displayLabel?: string;
+  /** Show the table view on this phone without giving up the seat. */
+  onTrack?: () => void;
   onNotes?: () => void;
   onRules?: () => void;
   onLeave: () => void;
@@ -77,6 +80,16 @@ export default function RoomBar({
               }}
             >
               <Icon name="book" /> {t("menu.rules")}
+            </button>
+          )}
+          {onTrack && (
+            <button
+              onClick={() => {
+                setOpen(false);
+                onTrack();
+              }}
+            >
+              <Icon name="monitor" /> {t("menu.track")}
             </button>
           )}
           {onDisplay && (

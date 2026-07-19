@@ -255,7 +255,11 @@ _db.execute(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_entrants_public ON entrants(public_id) "
     "WHERE public_id IS NOT NULL"
 )
-_ensure_column("players", "eliminated_at", "INTEGER")  # ordering for tournament placement
+_ensure_column("players", "eliminated_at", "INTEGER")
+# A seated player showing the table view on their own phone. Unlike is_display
+# this changes no game state: they keep their seat, life, card and host role.
+# It only grants the one capability the display has — adjusting other players.
+_ensure_column("players", "is_tracker", "INTEGER NOT NULL DEFAULT 0")  # ordering for tournament placement
 # indexes on migrated columns must come after the columns exist
 _db.execute(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_entrants_external ON entrants(tournament_code, external_ref) "

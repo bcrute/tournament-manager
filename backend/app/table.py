@@ -348,6 +348,7 @@ def personalize(snap, me):
             "name": me["name"],
             "isHost": bool(me["is_host"]),
             "isDisplay": bool(me["is_display"]),
+            "isTracker": bool(me["is_tracker"]),
             "revealed": bool(me["revealed"]),
             "eliminated": bool(me["eliminated"]),
             "life": me["life"],
@@ -700,15 +701,18 @@ async def adjust_life(code: str, body: LifeBody, x_player_token: str | None = He
     if body.delta == 0:
         return {"ok": True}
     if body.playerPid is not None and body.playerPid != player["id"]:
-        if not player["is_display"]:
-            raise HTTPException(403, "only the table display can adjust other players")
+        if not (player["is_display"] or player["is_tracker"]):
+            raise HTTPException(
+                403, "only the table display, or a player tracking for the table, "
+                     "can adjust other players"
+            )
         target = q(
             "SELECT * FROM players WHERE room_code = ? AND id = ? AND is_display = 0 AND left_game = 0",
             (room["code"], body.playerPid),
         ).fetchone()
         if not target:
             raise HTTPException(404, "player not found")
-        who = "table display"
+        who = "table display" if player["is_display"] else player["name"]
     else:
         if player["is_display"]:
             raise HTTPException(409, "the display has no life total — pass a player")
@@ -718,7 +722,7 @@ async def adjust_life(code: str, body: LifeBody, x_player_token: str | None = He
     new = old + body.delta
     q("UPDATE players SET life = ? WHERE id = ?", (new, target["id"]))
     sign = "+" if body.delta > 0 else ""
-    suffix = f" (by {who})" if who == "table display" else ""
+    suffix = f" (by {who})" if who != target["name"] else ""
     log_event(room["code"], f"{target['name']}: {sign}{body.delta} life, {old} → {new}{suffix}")
     await broadcast(room["code"])
     return {"ok": True, "life": new}
@@ -815,6 +819,39 @@ async def rename(code: str, body: RenameBody, x_player_token: str | None = Heade
         log_event(room["code"], f"{player['name']} is now known as {new}")
     await broadcast(room["code"])
     return {"ok": True}
+
+
+class TrackerBody(BaseModel):
+    tracking: bool
+
+
+@router.post("/rooms/{code}/tracker")
+async def set_tracker(code: str, body: TrackerBody, x_player_token: str | None = Header(default=None)):
+    """Show the table view on a player's own phone, without giving up the seat.
+
+    Distinct from `/display`, which turns a device into a dedicated display and
+    discards its game state. A group with no spare tablet needs one player to
+    keep the totals *while still playing*, and to be able to hand that job back
+    mid-game — neither of which the display flag allows.
+
+    Logged, because the table should know whose phone is keeping score.
+    """
+    room = get_room(code)
+    player = get_player(code, x_player_token)
+    if player["left_game"]:
+        raise HTTPException(403, "you have left this room")
+    if player["is_display"]:
+        raise HTTPException(409, "this device is already the table display")
+    if bool(player["is_tracker"]) == body.tracking:
+        return {"ok": True}
+    q("UPDATE players SET is_tracker = ? WHERE id = ?", (1 if body.tracking else 0, player["id"]))
+    log_event(
+        room["code"],
+        f"{player['name']} is {'now keeping score for the table' if body.tracking else 'no longer keeping score'}",
+    )
+    touch(room["code"])
+    await broadcast(room["code"])
+    return {"ok": True, "tracking": body.tracking}
 
 
 @router.post("/rooms/{code}/display")

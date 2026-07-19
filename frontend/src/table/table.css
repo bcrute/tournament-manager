@@ -1628,3 +1628,30 @@ button.ghost.danger {
     opacity: 1;
   }
 }
+
+/* A player keeping score sees the table view with their seat intact, so they
+   need a way back that a dedicated display doesn't. */
+.tracker-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  padding-bottom: calc(0.6rem + env(safe-area-inset-bottom));
+  background: #1b2130;
+  border-top: 1px solid #2a2f3a;
+  font-size: 0.85rem;
+}
+
+.tracker-bar span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  opacity: 0.85;
+}
+
+.tracker-bar button {
+  margin-left: auto;
+  min-height: 40px;
+}
