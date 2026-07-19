@@ -291,3 +291,70 @@ button.link {
   font-style: normal;
   color: #9fe0b0;
 }
+
+/* The organizer's own events, so a closed tab doesn't lose the tournament. */
+.tq-mine {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.tq-mine-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.8rem;
+  border: 1px solid var(--line, #2a2f3a);
+  border-radius: 0.6rem;
+  text-decoration: none;
+  color: inherit;
+  background: var(--panel, #161a23);
+}
+
+.tq-mine-card.running {
+  border-color: #3d6b4a;
+}
+
+.tq-mine-card.ended {
+  opacity: 0.6;
+}
+
+.tq-mine-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.tq-mine-meta {
+  font-size: 0.82rem;
+  opacity: 0.75;
+}
+
+.tq-mine-calls {
+  color: #ffb4a2;
+}
+
+/* The structure's recommendation, next to the button it informs. Officially
+   sourced numbers are marked; house conventions say so. */
+.tq-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.75rem;
+  border-left: 3px solid #5a6172;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 0 0.4rem 0.4rem 0;
+}
+
+.tq-plan.official {
+  border-left-color: #4a7ddb;
+}
+
+.tq-plan-line em {
+  font-style: normal;
+  opacity: 0.8;
+}

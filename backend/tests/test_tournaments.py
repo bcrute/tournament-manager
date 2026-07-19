@@ -1410,3 +1410,57 @@ class TestRoomCodesAreNotPublished:
         client.post(f"/api/tournament/{code}/rounds", json={})
         state = client.get(f"/api/tournament/{code}").json()
         assert all(p["roomCode"] for p in state["pods"])
+
+
+class TestOrganizerEventList:
+    """An organizer who closes the tab must be able to find their event again."""
+
+    def test_lists_only_this_organizers_events(self, client):
+        organizer(client, "listerA")
+        mine = host(client, name="Mine")
+        client.cookies.clear()
+        organizer(client, "listerB")
+        theirs = host(client, name="Theirs")
+        codes = [t["code"] for t in client.get("/api/tournament/mine").json()["tournaments"]]
+        assert theirs in codes and mine not in codes
+
+    def test_requires_an_account(self, client):
+        client.cookies.clear()
+        assert client.get("/api/tournament/mine").status_code == 401
+
+    def test_mine_is_not_read_as_a_tournament_code(self, client):
+        """Route order matters: /{code} would otherwise swallow it."""
+        organizer(client, "listerC")
+        assert client.get("/api/tournament/mine").status_code == 200
+
+    def test_carries_what_an_organizer_needs_to_choose(self, client):
+        organizer(client, "listerD")
+        code = host(client, name="Friday")
+        add(client, code, ["m1", "m2", "m3", "m4"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        row = next(t for t in client.get("/api/tournament/mine").json()["tournaments"]
+                   if t["code"] == code)
+        assert row["name"] == "Friday" and row["entrants"] == 4
+        assert row["rounds"] == 1 and row["status"] == "running"
+        assert "openCalls" in row
+
+    def test_dropped_entrants_do_not_inflate_the_count(self, client):
+        organizer(client, "listerE")
+        code = host(client)
+        added = add(client, code, ["n1", "n2", "n3", "n4"])
+        client.post(f"/api/tournament/{code}/entrants/{added[0]['entrantId']}/drop")
+        row = next(t for t in client.get("/api/tournament/mine").json()["tournaments"]
+                   if t["code"] == code)
+        assert row["entrants"] == 3
+
+    def test_open_calls_surface_so_a_neglected_event_is_visible(self, client):
+        organizer(client, "listerF")
+        code = host(client)
+        add(client, code, ["o1", "o2", "o3", "o4"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
+        client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call",
+                    params={"token": seat_token(client, code, pod)}, json={})
+        row = next(t for t in client.get("/api/tournament/mine").json()["tournaments"]
+                   if t["code"] == code)
+        assert row["openCalls"] == 1

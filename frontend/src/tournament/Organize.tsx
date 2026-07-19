@@ -8,6 +8,8 @@ import {
   addEntrants,
   callTime,
   closeRound,
+  EventPlan,
+  getPlan,
   dropEntrant,
   endTournament,
   formatClock,
@@ -42,6 +44,12 @@ export default function Organize() {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  const [plan, setPlan] = useState<EventPlan | null>(null);
+
+  // the structure's recommendation, refreshed with the roster it depends on
+  useEffect(() => {
+    void getPlan(code).then(setPlan).catch(() => setPlan(null));
+  }, [code, state?.standings.length, state?.tournament.roundCount]);
 
   // one interval for the whole page rather than one per pod
   useEffect(() => {
@@ -203,6 +211,36 @@ export default function Organize() {
           <h2>
             <Icon name="seat" /> {round ? `Round ${round.number} pods` : "Pods"}
           </h2>
+          {plan && !plan.belowMinimum && (
+            <div className={`tq-plan${plan.official ? " official" : ""}`}>
+              <span className="tq-plan-line">
+                <strong>{plan.players}</strong> players ·{" "}
+                <strong>{plan.swissRounds}</strong> Swiss{" "}
+                {plan.swissRounds === 1 ? "round" : "rounds"}
+                {plan.cutTo > 0 && (
+                  <>
+                    {" "}
+                    · cut to <strong>top {plan.cutTo}</strong>
+                  </>
+                )}
+                {plan.roundsRemaining > 0 && (
+                  <em> — {plan.roundsRemaining} to go</em>
+                )}
+              </span>
+              <span className="hint">
+                {plan.official ? "Per " : "House convention — "}
+                {plan.source}
+                {plan.cutTo > 0 && ". Running the cut is not automated yet."}
+              </span>
+            </div>
+          )}
+          {plan?.belowMinimum && (
+            <p className="hint">
+              {plan.players} players is below what {plan.name} covers — pair manually and
+              use your judgement.
+            </p>
+          )}
+
           <div className="tq-round-actions">
             <button
               className="primary"

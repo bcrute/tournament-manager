@@ -383,6 +383,29 @@ class CallBody(BaseModel):
 # ---- lifecycle ----
 
 
+@router.get("/mine")
+def my_tournaments(request: Request):
+    """Every event this account is running.
+
+    Without this an organizer who closes the tab has no way back to their own
+    tournament except the URL — the code is on the projector, not in their
+    history. Registered before `/{code}` so it isn't read as a tournament code.
+    """
+    acct = require_account(request)
+    rows = q(
+        "SELECT t.code, t.name, t.status, t.game, t.mode, t.created_at, t.last_active, "
+        "(SELECT COUNT(*) FROM entrants e WHERE e.tournament_code = t.code "
+        " AND e.dropped_at IS NULL) AS entrants, "
+        "(SELECT COUNT(*) FROM trounds r WHERE r.tournament_code = t.code) AS rounds, "
+        "(SELECT COUNT(*) FROM official_calls c WHERE c.tournament_code = t.code "
+        " AND c.status != 'resolved') AS openCalls "
+        "FROM tournaments t WHERE t.organizer_account_id = ? "
+        "ORDER BY COALESCE(t.last_active, t.created_at) DESC LIMIT 100",
+        (acct["id"],),
+    ).fetchall()
+    return {"tournaments": [dict(r) for r in rows]}
+
+
 @router.get("/games")
 def list_games():
     """What this server can run. One profile today; the registry is the point."""

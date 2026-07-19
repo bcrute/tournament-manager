@@ -123,9 +123,45 @@ export interface GameProfile {
   resource: string;
   timeCalledPolicies: string[];
   sanctioningAccount: string | null;
+  structures: { key: string; name: string; official: boolean; source: string; podSize: number; notes: string }[];
+  notes: Record<string, string>;
 }
 
 export const listGames = () => tapi<{ games: GameProfile[] }>("/games");
+
+export interface MyTournament {
+  code: string;
+  name: string;
+  status: "setup" | "running" | "ended";
+  game: string;
+  mode: string;
+  created_at: number;
+  last_active: number | null;
+  entrants: number;
+  rounds: number;
+  openCalls: number;
+}
+
+export const listMine = () => tapi<{ tournaments: MyTournament[] }>("/mine");
+
+export interface EventPlan {
+  players: number;
+  swissRounds: number;
+  cutTo: number;
+  elimRounds: number;
+  belowMinimum: boolean;
+  structure: string;
+  official: boolean;
+  source: string;
+  name: string;
+  notes: string;
+  roundsPlayed: number;
+  roundsRemaining: number;
+}
+
+/** Advisory: it recommends rounds and a cut, it does not schedule them. */
+export const getPlan = (code: string, players?: number) =>
+  tapi<EventPlan>(`/${code}/plan${players ? `?players=${players}` : ""}`);
 
 export const createTournament = (
   name: string,

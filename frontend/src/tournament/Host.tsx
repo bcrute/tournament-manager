@@ -1,10 +1,18 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import Icon from "../Icon";
 import { goBack } from "../goBack";
 import { Account, account, AccountError, getAccount } from "../table/account";
 import SignIn from "../table/SignIn";
-import { createTournament, TourneyError } from "./api";
+import { ago } from "../admin/api";
+import {
+  createTournament,
+  GameProfile,
+  listGames,
+  listMine,
+  MyTournament,
+  TourneyError,
+} from "./api";
 
 /**
  * The organizer's front door: sign in, then create a tournament.
@@ -18,9 +26,14 @@ export default function Host() {
   const [acct, setAcct] = useState<Account | null | undefined>(undefined);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
-  const [mode, setMode] = useState<"life" | "treachery">("life");
+  const [mode, setMode] = useState("life");
   const [podSize, setPodSize] = useState(4);
   const [roundMinutes, setRoundMinutes] = useState(60);
+  const [games, setGames] = useState<GameProfile[]>([]);
+  const [game, setGame] = useState("mtg");
+  const [structure, setStructure] = useState<string>("");
+  const [mine, setMine] = useState<MyTournament[] | null>(null);
+  const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,7 +41,16 @@ export default function Host() {
     void getAccount()
       .then((r) => setAcct(r.account))
       .catch(() => setAcct(null));
+    void listGames().then((r) => setGames(r.games)).catch(() => {});
   }, []);
+
+  // an organizer's own events, so closing the tab doesn't lose the tournament
+  useEffect(() => {
+    if (!acct?.hasEmail) return;
+    void listMine().then((r) => setMine(r.tournaments)).catch(() => setMine([]));
+  }, [acct]);
+
+  const profile = games.find((g) => g.key === game);
 
   async function addEmail() {
     setBusy(true);
@@ -48,7 +70,12 @@ export default function Host() {
     setBusy(true);
     setError(null);
     try {
-      const res = await createTournament(name.trim(), mode, { podSize, roundMinutes });
+      const res = await createTournament(
+        name.trim(),
+        mode,
+        { podSize, roundMinutes, ...(structure ? { structure } : {}) },
+        game,
+      );
       navigate(`/tournament/${res.code}/organize`);
     } catch (e) {
       setError(e instanceof TourneyError ? e.message : "Could not create the tournament");
@@ -111,11 +138,73 @@ export default function Host() {
     );
   }
 
+  // The organizer's home: their events first. Creating is one of the things you
+  // can do here, not the only thing — an event you already started matters more
+  // than a new one.
+  if (!creating && mine !== null) {
+    return (
+      <main className="tq-host">
+        <header>
+          <h1>Your tournaments</h1>
+          <p className="tagline">Signed in as {acct.username}</p>
+        </header>
+
+        {mine.length > 0 && (
+          <ul className="tq-mine">
+            {mine.map((t) => (
+              <li key={t.code}>
+                <Link
+                  to={`/tournament/${t.code}/organize/pods`}
+                  className={`tq-mine-card ${t.status}`}
+                >
+                  <span className="tq-mine-head">
+                    <strong>{t.name}</strong>
+                    <span className="tq-code">{t.code}</span>
+                  </span>
+                  <span className="tq-mine-meta">
+                    {t.status === "ended"
+                      ? "ended"
+                      : t.rounds === 0
+                        ? "not started"
+                        : `round ${t.rounds}`}
+                    <span className="dot-sep">·</span>
+                    {t.entrants} {t.entrants === 1 ? "player" : "players"}
+                    <span className="dot-sep">·</span>
+                    {ago(t.last_active ?? t.created_at)} ago
+                    {t.openCalls > 0 && (
+                      <strong className="tq-mine-calls">
+                        {" "}
+                        {t.openCalls} call{t.openCalls === 1 ? "" : "s"} waiting
+                      </strong>
+                    )}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {mine.length === 0 && (
+          <p className="hint">
+            No tournaments yet. Creating one takes a name and about ten seconds — players
+            join by scanning a code, with no account of their own.
+          </p>
+        )}
+
+        <button className="primary" onClick={() => setCreating(true)}>
+          <Icon name="plus" /> New tournament
+        </button>
+      </main>
+    );
+  }
+
   return (
     <main className="tq-host">
       <header>
+        <button className="sheet-back" onClick={() => setCreating(false)} aria-label="Back">
+          <Icon name="back" /> Back
+        </button>
         <h1>Create a tournament</h1>
-        <p className="tagline">Signed in as {acct.username}</p>
       </header>
       <div className="sheet">
         <label>
@@ -128,25 +217,62 @@ export default function Host() {
             onChange={(e) => setName(e.target.value)}
           />
         </label>
+
+        {games.length > 1 && (
+          <label>
+            Game
+            <select value={game} onChange={(e) => setGame(e.target.value)}>
+              {games.map((g) => (
+                <option key={g.key} value={g.key}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
         <label>
           Format
           <div className="tr-mode">
-            <button className={mode === "life" ? "active" : ""} onClick={() => setMode("life")}>
-              Life counter
-            </button>
-            <button
-              className={mode === "treachery" ? "active" : ""}
-              onClick={() => setMode("treachery")}
-            >
-              Hidden roles
-            </button>
+            {(profile?.modes ?? ["life", "treachery"]).map((m) => (
+              <button
+                key={m}
+                className={mode === m ? "active" : ""}
+                onClick={() => setMode(m)}
+              >
+                {m === "life" ? "Life counter" : m === "treachery" ? "Hidden roles" : m}
+              </button>
+            ))}
           </div>
         </label>
+
+        {profile && profile.structures?.length > 0 && (
+          <label>
+            Structure
+            <select value={structure} onChange={(e) => setStructure(e.target.value)}>
+              {profile.structures.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <span className="hint">
+              {(() => {
+                const s = profile.structures.find((x) => x.key === (structure || profile.structures[0].key));
+                if (!s) return null;
+                return s.official
+                  ? `Official — ${s.source}`
+                  : `House convention. ${s.source}`;
+              })()}
+            </span>
+          </label>
+        )}
+
         <label>
           Players per pod
           <input
             type="number"
-            min={3}
+            min={2}
             max={6}
             value={podSize}
             onChange={(e) => setPodSize(Number(e.target.value))}

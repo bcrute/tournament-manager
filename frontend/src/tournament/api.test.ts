@@ -323,3 +323,26 @@ describe("round clock", () => {
     expect(formatClock(null)).toBe("—");
   });
 });
+
+describe("organizer entry points", () => {
+  it("lists this organizer's own events", async () => {
+    const fn = mockFetch({ tournaments: [] });
+    const { listMine } = await import("./api");
+    await listMine();
+    expect(lastCall(fn).url).toBe("/api/tournament/mine");
+  });
+
+  it("asks for a plan against the live roster by default", async () => {
+    const fn = mockFetch({ swissRounds: 3 });
+    const { getPlan } = await import("./api");
+    await getPlan("AB123");
+    expect(lastCall(fn).url).toBe("/api/tournament/AB123/plan");
+  });
+
+  it("can ask what a hypothetical turnout would need", async () => {
+    const fn = mockFetch({ swissRounds: 6 });
+    const { getPlan } = await import("./api");
+    await getPlan("AB123", 40);
+    expect(lastCall(fn).url).toBe("/api/tournament/AB123/plan?players=40");
+  });
+});
