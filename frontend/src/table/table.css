@@ -1515,3 +1515,9 @@ button.ghost.danger {
   padding-top: 0.8rem;
   border-top: 1px solid #241c33;
 }
+
+.notice.warn {
+  background: #2e2718;
+  border-color: #5e552c;
+  color: #e8dcb0;
+}

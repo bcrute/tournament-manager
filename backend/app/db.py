@@ -99,6 +99,89 @@ _db.executescript(
 )
 
 
+_db.executescript(
+    """
+    -- Tournaments. An organizer runs one; entrants are tournament-scoped and
+    -- need no account, so a player only ever provides a display name.
+    CREATE TABLE IF NOT EXISTS tournaments (
+        code TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        organizer_account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        mode TEXT NOT NULL DEFAULT 'life',
+        settings TEXT NOT NULL DEFAULT '{}',
+        status TEXT NOT NULL DEFAULT 'setup',   -- setup | running | ended
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        last_active INTEGER
+    );
+    CREATE TABLE IF NOT EXISTS entrants (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tournament_code TEXT NOT NULL REFERENCES tournaments(code) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        token TEXT UNIQUE,          -- null until someone claims the seat
+        account_id INTEGER,
+        wizards_email TEXT,         -- only when the organizer enables it
+        dropped_at INTEGER,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+    CREATE TABLE IF NOT EXISTS trounds (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tournament_code TEXT NOT NULL REFERENCES tournaments(code) ON DELETE CASCADE,
+        number INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',  -- pending | active | closed
+        seed INTEGER NOT NULL DEFAULT 0,
+        started_at INTEGER,
+        ends_at INTEGER,
+        paused_at INTEGER,
+        UNIQUE (tournament_code, number)
+    );
+    CREATE TABLE IF NOT EXISTS pods (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        round_id INTEGER NOT NULL REFERENCES trounds(id) ON DELETE CASCADE,
+        number INTEGER NOT NULL,
+        room_code TEXT,
+        game_no INTEGER,
+        status TEXT NOT NULL DEFAULT 'pending',  -- pending|active|awaiting_result|complete
+        extension_seconds INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS pod_seats (
+        pod_id INTEGER NOT NULL REFERENCES pods(id) ON DELETE CASCADE,
+        entrant_id INTEGER NOT NULL,
+        seat INTEGER NOT NULL,       -- 1-based; seat order is turn order
+        place INTEGER,               -- 1 = won the pod
+        points INTEGER,
+        PRIMARY KEY (pod_id, entrant_id)
+    );
+    -- Results are versioned rather than mutated: an override keeps its history.
+    CREATE TABLE IF NOT EXISTS pod_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pod_id INTEGER NOT NULL REFERENCES pods(id) ON DELETE CASCADE,
+        version INTEGER NOT NULL,
+        kind TEXT NOT NULL,          -- placement | draw | bye | unfinished
+        source TEXT NOT NULL,        -- auto | organizer
+        note TEXT,
+        decided_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+    CREATE TABLE IF NOT EXISTS official_calls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tournament_code TEXT NOT NULL REFERENCES tournaments(code) ON DELETE CASCADE,
+        pod_id INTEGER,
+        entrant_id INTEGER,
+        category TEXT,
+        note TEXT,
+        status TEXT NOT NULL DEFAULT 'open',   -- open | acknowledged | resolved
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        acknowledged_at INTEGER,
+        resolved_at INTEGER,
+        resolution TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_entrants_tournament ON entrants(tournament_code);
+    CREATE INDEX IF NOT EXISTS idx_pods_round ON pods(round_id);
+    CREATE INDEX IF NOT EXISTS idx_pods_room ON pods(room_code, game_no);
+    CREATE INDEX IF NOT EXISTS idx_calls_tournament ON official_calls(tournament_code, status);
+    """
+)
+
+
 def _ensure_column(table: str, col: str, decl: str):
     cols = [r[1] for r in _db.execute(f"PRAGMA table_info({table})")]
     if col not in cols:
@@ -117,6 +200,8 @@ _ensure_column("players", "life", "INTEGER")
 _ensure_column("players", "eliminated", "INTEGER NOT NULL DEFAULT 0")
 _ensure_column("players", "seat_order", "INTEGER")
 _ensure_column("players", "account_id", "INTEGER")  # optional link to an account
+_ensure_column("pod_seats", "room_token", "TEXT")   # this entrant's token in the pod's room
+_ensure_column("players", "eliminated_at", "INTEGER")  # ordering for tournament placement
 # indexes on migrated columns must come after the columns exist
 _db.execute(
     "CREATE INDEX IF NOT EXISTS idx_players_account ON players(account_id) "

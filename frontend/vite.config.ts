@@ -18,6 +18,7 @@ export default defineConfig({
         "src/table/useAutoHide.ts",
         "src/table/fetchPolicy.ts",
         "src/table/seats.ts",
+        "src/tournament/api.ts",
       ],
       thresholds: {
         statements: 90,

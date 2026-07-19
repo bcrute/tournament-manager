@@ -10,6 +10,7 @@ from .accounts import router as accounts_router
 from .db import q
 from .limits import RateLimiter, classify, client_id, client_ip
 from .table import router as table_router
+from .tournaments import router as tournaments_router
 
 app = FastAPI(title="mtg")
 
@@ -19,6 +20,7 @@ app.state.limiter = limiter  # websocket handler reads it from here
 
 app.include_router(table_router, prefix="/api/table")
 app.include_router(accounts_router, prefix="/api/account")
+app.include_router(tournaments_router, prefix="/api/tournament")
 
 
 _last_prune = 0.0

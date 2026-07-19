@@ -19,6 +19,7 @@ export default function SignIn({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [codes, setCodes] = useState<string[] | null>(null);
+  const [emailWarning, setEmailWarning] = useState(false);
 
   async function go() {
     setBusy(true);
@@ -98,8 +99,19 @@ export default function SignIn({
         autoCapitalize="none"
         autoComplete="username"
         value={username}
-        onChange={(e) => setUsername(e.target.value)}
+        onChange={(e) => {
+          setUsername(e.target.value);
+          setEmailWarning(e.target.value.includes("@"));
+        }}
       />
+      {emailWarning && (
+        <p className="notice warn">
+          We discourage using an email address as a username — usernames are shown to other
+          players and can&rsquo;t be stored encrypted, because we have to look them up on
+          every sign-in. You can add an email privately in your account settings after
+          logging in if you want one for recovery. You&rsquo;re free to continue either way.
+        </p>
+      )}
       <input
         type="password"
         placeholder="Password"

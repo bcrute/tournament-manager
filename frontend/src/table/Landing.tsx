@@ -265,6 +265,8 @@ export default function Landing() {
       </div>
 
       <footer>
+        <Link to="/tournament">Tournaments</Link>
+        <span className="dot-sep">·</span>
         <Link to="/table/me">Your games &amp; notes</Link>
         <span className="dot-sep">·</span>
         <Link to="/">mtg.skadoosh.dev</Link>

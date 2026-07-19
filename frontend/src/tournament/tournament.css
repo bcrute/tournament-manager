@@ -1,0 +1,282 @@
+/* Tournament screens.
+   The organizer console is the only desktop-first surface in the app; the
+   player view stays on the same mobile rules as the rest of the table app. */
+
+.tq-host,
+.tq-play {
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 3rem;
+}
+
+.tq-console {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 1rem 1.25rem 3rem;
+}
+
+.tq-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line, #2a2f3a);
+  padding-bottom: 0.75rem;
+}
+
+.tq-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.4rem;
+  letter-spacing: 0.15em;
+}
+
+.tq-clock {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.tq-round {
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.tq-time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 2.2rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* five minutes out is the point an organizer starts making decisions */
+.tq-time.low {
+  color: #ffb4a2;
+}
+
+.tq-timer-controls {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.tq-grid {
+  display: grid;
+  grid-template-columns: minmax(15rem, 1fr) minmax(20rem, 2.2fr) minmax(15rem, 1fr);
+  gap: 1rem;
+  margin-top: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .tq-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tq-panel {
+  background: var(--panel, #161a23);
+  border: 1px solid var(--line, #2a2f3a);
+  border-radius: 0.6rem;
+  padding: 0.85rem;
+}
+
+.tq-panel h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+  margin: 0 0 0.6rem;
+}
+
+.tq-panel textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.tq-roster,
+.tq-calls,
+.tq-standings,
+.tq-claim {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.tq-roster li,
+.tq-standings li,
+.tq-calls li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--line, #2a2f3a);
+}
+
+.tq-roster li.dropped .tq-name {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.tq-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tq-tag {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--line, #2a2f3a);
+  opacity: 0.8;
+}
+
+.tq-tag.on {
+  border-color: #3d6b4a;
+  color: #9fe0b0;
+}
+
+.tq-row-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+button.link {
+  background: none;
+  border: none;
+  padding: 0.15rem 0.25rem;
+  font-size: 0.8rem;
+  text-decoration: underline;
+  opacity: 0.75;
+  cursor: pointer;
+  color: inherit;
+}
+
+.tq-round-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.tq-pods {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.75rem;
+}
+
+.tq-pod {
+  border: 1px solid var(--line, #2a2f3a);
+  border-radius: 0.5rem;
+  padding: 0.6rem;
+  background: var(--panel-2, #1b2130);
+}
+
+.tq-pod.complete {
+  border-color: #3d6b4a;
+}
+
+.tq-pod.awaiting_result {
+  border-color: #6b5a2c;
+}
+
+.tq-pod header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.tq-pod h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.tq-pod-status {
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+
+.tq-seats {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+}
+
+.tq-seats li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+}
+
+.tq-seat-no,
+.tq-rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  background: rgba(255, 255, 255, 0.08);
+  flex: none;
+}
+
+.tq-seats input[type="number"] {
+  width: 3.5rem;
+}
+
+.tq-place {
+  font-weight: 700;
+}
+
+.tq-pod footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.tq-standings .tq-pts {
+  font-variant-numeric: tabular-nums;
+}
+
+.tq-note {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+/* --- player side --- */
+
+.tq-claim li {
+  margin-bottom: 0.5rem;
+}
+
+.tq-claim button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.85rem;
+  font-size: 1.05rem;
+}
+
+.tq-play-clock {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  justify-content: center;
+  margin: 1rem 0;
+}
+
+.tq-my-standing {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}

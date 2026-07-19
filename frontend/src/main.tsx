@@ -5,8 +5,12 @@ import App from "./App";
 import Landing from "./table/Landing";
 import Dashboard from "./table/Dashboard";
 import Room from "./table/Room";
+import Host from "./tournament/Host";
+import Organize from "./tournament/Organize";
+import Play from "./tournament/Play";
 import "./index.css";
 import "./table/table.css";
+import "./tournament/tournament.css";
 
 function LegacyRoomRedirect() {
   const { code = "" } = useParams();
@@ -21,6 +25,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <Route path="/table" element={<Landing />} />
         <Route path="/table/r/:code" element={<Room />} />
         <Route path="/table/me" element={<Dashboard />} />
+        <Route path="/tournament" element={<Host />} />
+        <Route path="/tournament/:code" element={<Play />} />
+        <Route path="/tournament/:code/organize" element={<Organize />} />
         <Route path="/treachery" element={<Navigate to="/table" replace />} />
         <Route path="/treachery/r/:code" element={<LegacyRoomRedirect />} />
       </Routes>

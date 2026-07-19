@@ -15,4 +15,11 @@ export const APPS: AppEntry[] = [
     status: "live",
     href: "/table",
   },
+  {
+    name: "Tournaments",
+    description:
+      "Run an event: roster, Swiss pods, seating, round timer and standings. Players scan one code and their phone follows them from table to table.",
+    status: "live",
+    href: "/tournament",
+  },
 ];

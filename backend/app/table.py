@@ -59,6 +59,45 @@ async def check_last_standing(room):
                     room["code"],
                     f"final identity: {p['name']} — {card['name']} ({card['types']['subtype']})",
                 )
+    report_tournament_result(room)
+
+
+def report_tournament_result(room):
+    """If this room backs a tournament pod, record the result automatically.
+
+    Placement comes from elimination order: last standing is 1st, and the rest
+    place in reverse order of when they went out. An organizer's ruling always
+    wins — this never overwrites one.
+    """
+    seats = q(
+        "SELECT s.entrant_id, s.room_token FROM pod_seats s JOIN pods p ON p.id = s.pod_id "
+        "WHERE p.room_code = ?",
+        (room["code"],),
+    ).fetchall()
+    if not seats:
+        return  # an ordinary room, nothing to report
+    by_token = {s["room_token"]: s["entrant_id"] for s in seats if s["room_token"]}
+    players = q(
+        "SELECT token, eliminated, left_game, eliminated_at FROM players "
+        "WHERE room_code = ? AND is_display = 0",
+        (room["code"],),
+    ).fetchall()
+    alive, out = [], []
+    for p in players:
+        eid = by_token.get(p["token"])
+        if eid is None:
+            continue
+        if p["eliminated"] or p["left_game"]:
+            out.append((p["eliminated_at"] or 0, eid))
+        else:
+            alive.append(eid)
+    # survivors first, then the eliminated in reverse order of going out
+    order = alive + [eid for _, eid in sorted(out, key=lambda x: -x[0])]
+    if not order:
+        return
+    from .tournaments import record_room_result
+
+    record_room_result(room["code"], room["game_no"], order)
 
 
 def log_event(code: str, text: str):
@@ -121,12 +160,16 @@ def touch(code: str):
     q("UPDATE rooms SET last_active = unixepoch() WHERE code = ?", (code,))
 
 
+def _is_tournament_room(code: str) -> bool:
+    return bool(q("SELECT 1 FROM pods WHERE room_code = ? LIMIT 1", (code,)).fetchone())
+
+
 def get_room(code: str, allow_closed: bool = False):
     row = q("SELECT * FROM rooms WHERE code = ?", (code.upper(),)).fetchone()
     if not row:
         raise HTTPException(404, "room not found")
     # check just this room's idle clock (primary-key read); the bulk sweep runs on create
-    if row["status"] != "closed":
+    if row["status"] != "closed" and not _is_tournament_room(row["code"]):
         cutoff = q("SELECT unixepoch() - ? AS c", (IDLE_TIMEOUT,)).fetchone()["c"]
         if (row["last_active"] or row["created_at"]) < cutoff:
             q("UPDATE rooms SET status = 'closed' WHERE code = ?", (row["code"],))
@@ -696,10 +739,13 @@ async def eliminate(code: str, body: EliminateBody, x_player_token: str | None =
     if player["is_display"]:
         raise HTTPException(409, "displays can't be eliminated")
     if body.undo:
-        q("UPDATE players SET eliminated = 0 WHERE id = ?", (player["id"],))
+        q("UPDATE players SET eliminated = 0, eliminated_at = NULL WHERE id = ?", (player["id"],))
         log_event(room["code"], f"{player['name']} is back in the game")
     else:
-        q("UPDATE players SET eliminated = 1 WHERE id = ?", (player["id"],))
+        q(
+            "UPDATE players SET eliminated = 1, eliminated_at = unixepoch() WHERE id = ?",
+            (player["id"],),
+        )
         if room["mode"] == "treachery" and player["card_id"] and not player["revealed"]:
             # CR 907.13: losing the game reveals your identity
             q("UPDATE players SET revealed = 1 WHERE id = ?", (player["id"],))
