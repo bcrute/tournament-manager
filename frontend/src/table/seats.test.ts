@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { assignSeats, ringOrder, seatFonts, seatGrid, turnOrder, turnPositions } from "./seats";
+import {
+  assignSeats,
+  ringOrder,
+  seatFonts,
+  seatGrid,
+  swapSeats,
+  turnOrder,
+  turnPositions,
+} from "./seats";
 
 const P = (pid: number) => ({ pid, name: `p${pid}` });
 
@@ -60,6 +68,33 @@ describe("seatGrid", () => {
         expect(s.row).toBeLessThanOrEqual(g.rows);
       }
     }
+  });
+});
+
+describe("swapSeats", () => {
+  it("exchanges the two seats and leaves the rest alone", () => {
+    expect(swapSeats([1, 2, 3, 4, 5], 2, 5)).toEqual([1, 5, 3, 4, 2]);
+  });
+
+  it("is symmetric", () => {
+    expect(swapSeats([1, 2, 3], 3, 1)).toEqual(swapSeats([1, 2, 3], 1, 3));
+  });
+
+  it("no-ops when a seat is missing or is itself", () => {
+    const order = [1, 2, 3];
+    expect(swapSeats(order, 1, 1)).toEqual([1, 2, 3]);
+    expect(swapSeats(order, 1, 99)).toEqual([1, 2, 3]);
+  });
+
+  it("does not mutate the original order", () => {
+    const order = [1, 2, 3];
+    swapSeats(order, 1, 3);
+    expect(order).toEqual([1, 2, 3]);
+  });
+
+  it("keeps the same players, just repositioned", () => {
+    const out = swapSeats([1, 2, 3, 4], 1, 4);
+    expect([...out].sort()).toEqual([1, 2, 3, 4]);
   });
 });
 

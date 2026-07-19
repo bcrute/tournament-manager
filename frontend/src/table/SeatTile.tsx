@@ -16,6 +16,7 @@ export default function SeatTile({
   turn,
   nameOf,
   dragging,
+  dropTarget,
   flash,
   onDragStart,
   onDragMove,
@@ -27,6 +28,7 @@ export default function SeatTile({
   turn?: number;
   nameOf: Map<string, string>;
   dragging: boolean;
+  dropTarget?: boolean;
   flash?: number;
   onDragStart: (e: React.PointerEvent) => void;
   onDragMove: (e: React.PointerEvent) => void;
@@ -67,7 +69,7 @@ export default function SeatTile({
       onPointerCancel={onDragEnd}
     >
       <div
-        className={`seat-card${p.eliminated ? " dead" : ""}${p.left ? " gone" : ""}${dragging ? " dragging" : ""}`}
+        className={`seat-card${p.eliminated ? " dead" : ""}${p.left ? " gone" : ""}${dragging ? " dragging" : ""}${dropTarget ? " drop-target" : ""}`}
         style={{ ...inner, transform: `rotate(${slot.rotate}deg)` }}
       >
         <button

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { api, PlayerInfo, RoomState } from "./api";
 import SeatTile, { halfDelta } from "./SeatTile";
-import { assignSeats, seatGrid, turnPositions } from "./seats";
+import { assignSeats, seatGrid, swapSeats, turnPositions } from "./seats";
 
 export default function DisplayView({
   state,
@@ -25,7 +25,9 @@ export default function DisplayView({
   // drag to rearrange seats: local order while dragging, committed on release
   const [localOrder, setLocalOrder] = useState<number[] | null>(null);
   const [dragPid, setDragPid] = useState<number | null>(null);
+  const [overPid, setOverPid] = useState<number | null>(null);
   const moved = useRef(false);
+  const origin = useRef<{ x: number; y: number } | null>(null);
   // brief tap feedback; :active can't be used because the seat captures the pointer
   const [flash, setFlash] = useState<{ pid: number; delta: number } | null>(null);
   const flashTimer = useRef<number | undefined>(undefined);
@@ -51,32 +53,36 @@ export default function DisplayView({
   function onDragStart(e: React.PointerEvent, pid: number) {
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     setDragPid(pid);
+    setOverPid(null);
+    origin.current = { x: e.clientX, y: e.clientY };
     moved.current = false;
   }
 
   function onDragMove(e: React.PointerEvent) {
-    if (dragPid === null) return;
+    if (dragPid === null || !origin.current) return;
+    const dx = e.clientX - origin.current.x;
+    const dy = e.clientY - origin.current.y;
+    if (!moved.current && Math.hypot(dx, dy) < 10) return; // still a tap
+    moved.current = true;
+    // highlight the seat under the finger; the swap happens on release so the
+    // grid stays still while you aim
     const el = document
       .elementFromPoint(e.clientX, e.clientY)
       ?.closest("[data-pid]") as HTMLElement | null;
-    const overPid = el ? Number(el.dataset.pid) : null;
-    if (!overPid || overPid === dragPid) return;
-    moved.current = true;
-    setLocalOrder((cur) => {
-      const list = [...(cur ?? serverOrder)];
-      const from = list.indexOf(dragPid);
-      const to = list.indexOf(overPid);
-      if (from < 0 || to < 0) return cur;
-      list.splice(to, 0, ...list.splice(from, 1));
-      return list;
-    });
+    const over = el ? Number(el.dataset.pid) : null;
+    setOverPid(over && over !== dragPid ? over : null);
   }
 
   async function onDragEnd(e: React.PointerEvent, pid: number) {
-    const wasDragging = dragPid !== null;
+    const dragged = dragPid;
+    const target = overPid;
+    const wasDrag = moved.current;
     setDragPid(null);
-    if (!wasDragging) return;
-    if (!moved.current) {
+    setOverPid(null);
+    origin.current = null;
+    if (dragged === null) return;
+
+    if (!wasDrag) {
       // a tap, not a drag: which half of the card was hit?
       const delta = halfDelta(document.elementFromPoint(e.clientX, e.clientY));
       if (delta !== null) {
@@ -85,9 +91,16 @@ export default function DisplayView({
       }
       return;
     }
-    const pids = (localOrder ?? serverOrder).filter((p) => byPid.has(p));
+    if (target === null) return; // dropped on empty space: leave the seats be
+
+    const next = swapSeats(localOrder ?? serverOrder, dragged, target);
+    setLocalOrder(next);
     try {
-      await api(`/rooms/${code}/order`, { method: "POST", token, body: { pids } });
+      await api(`/rooms/${code}/order`, {
+        method: "POST",
+        token,
+        body: { pids: next.filter((p) => byPid.has(p)) },
+      });
     } catch {
       setLocalOrder(null);
     }
@@ -152,6 +165,7 @@ export default function DisplayView({
               turn={state.room.firstPid !== null ? turns.get(player.pid) : undefined}
               nameOf={nameOf}
               dragging={dragPid === player.pid}
+              dropTarget={overPid === player.pid}
               flash={flash?.pid === player.pid ? flash.delta : undefined}
               onDragStart={(e) => onDragStart(e, player.pid)}
               onDragMove={onDragMove}

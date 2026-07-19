@@ -475,6 +475,13 @@
 .seat-card.dragging {
   border-color: #c9a84c;
   box-shadow: 0 8px 26px rgba(0, 0, 0, 0.6);
+  opacity: 0.9;
+}
+
+/* the seat this card will swap with on release */
+.seat-card.drop-target {
+  border-color: #6fd08c;
+  box-shadow: inset 0 0 0 2px rgba(111, 208, 140, 0.45);
 }
 
 /* tap zones: left takes a life, right gives one */

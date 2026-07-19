@@ -52,6 +52,21 @@ export function assignSeats<T>(players: T[]): Array<{ player: T; slot: SeatSlot 
   return players.map((player, i) => ({ player, slot: slots[i] }));
 }
 
+/**
+ * Exchange two seats. Dragging one card onto another swaps the pair and leaves
+ * every other seat where it is — the point is to match where people actually
+ * sit, not to shuffle the whole table.
+ */
+export function swapSeats(order: number[], a: number, b: number): number[] {
+  const i = order.indexOf(a);
+  const j = order.indexOf(b);
+  if (i < 0 || j < 0 || i === j) return order;
+  const next = [...order];
+  next[i] = b;
+  next[j] = a;
+  return next;
+}
+
 export interface SeatFonts {
   life: number;
   name: number;
