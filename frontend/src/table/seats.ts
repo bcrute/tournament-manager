@@ -51,3 +51,41 @@ export function assignSeats<T>(players: T[]): Array<{ player: T; slot: SeatSlot 
   const { slots } = seatGrid(players.length);
   return players.map((player, i) => ({ player, slot: slots[i] }));
 }
+
+/**
+ * Walk the seats the way you'd walk the table: down the left edge, across the
+ * bottom, then back up the right edge. That is the physical circle, which is
+ * what turn order follows — not the order the grid happens to store them in.
+ */
+export function ringOrder<T>(players: T[]): T[] {
+  const n = players.length;
+  if (n <= 2) return [...players];
+  const hasBottom = n % 2 === 1;
+  const perSide = (n - (hasBottom ? 1 : 0)) / 2;
+  const left = players.slice(0, perSide);
+  const right = players.slice(perSide, perSide * 2);
+  const bottom = hasBottom ? players.slice(perSide * 2) : [];
+  return [...left, ...bottom, ...right.reverse()];
+}
+
+/**
+ * Turn order: the physical ring, rotated to start with whoever goes first.
+ * Rearranging seats therefore rearranges the turn order.
+ */
+export function turnOrder<T extends { pid: number }>(players: T[], firstPid: number | null): T[] {
+  const ring = ringOrder(players);
+  if (firstPid === null) return ring;
+  const start = ring.findIndex((p) => p.pid === firstPid);
+  if (start < 0) return ring;
+  return [...ring.slice(start), ...ring.slice(0, start)];
+}
+
+/** pid -> 1-based seat position in turn order. */
+export function turnPositions<T extends { pid: number }>(
+  players: T[],
+  firstPid: number | null,
+): Map<number, number> {
+  const out = new Map<number, number>();
+  turnOrder(players, firstPid).forEach((p, i) => out.set(p.pid, i + 1));
+  return out;
+}

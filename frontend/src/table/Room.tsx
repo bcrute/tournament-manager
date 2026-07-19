@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api, ApiError, GameMode, PlayerInfo, RoomState } from "./api";
 import { createBackGuard } from "./backGuard";
 import { CarouselEntry, carouselEntries, clampIndex, indexOfPid, step } from "./carousel";
+import { turnPositions } from "./seats";
 import { clearSession, loadSession } from "./session";
 import DisplayView from "./DisplayView";
 import LifePanel from "./LifePanel";
@@ -661,6 +662,10 @@ function TableView({
 }) {
   const treachery = state.room.mode === "treachery";
   const ended = state.room.status === "ended";
+  // same seating the table display shows, so turn order matches the physical table
+  const turns = turnPositions(state.players, state.room.firstPid);
+  const turnLabel = (pid: number) =>
+    state.room.firstPid !== null && turns.get(pid) ? `#${turns.get(pid)} ` : "";
   return (
     <main className="tr-table">
       <header>
@@ -679,6 +684,7 @@ function TableView({
           {state.players.map((p) => (
             <li key={p.pid} className={p.eliminated ? "dead" : ""}>
               <span>
+                {turnLabel(p.pid)}
                 {state.room.firstPid === p.pid && "👑 "}
                 {p.name}
                 {p.isMe ? " (you)" : ""}

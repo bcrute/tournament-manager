@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { api, PlayerInfo, RoomState } from "./api";
 import SeatTile, { halfDelta } from "./SeatTile";
-import { assignSeats, seatGrid } from "./seats";
+import { assignSeats, seatGrid, turnPositions } from "./seats";
 
 export default function DisplayView({
   state,
@@ -85,6 +85,8 @@ export default function DisplayView({
 
   const grid = seatGrid(ordered.length);
   const seated = assignSeats(ordered);
+  // turn order follows the seating: rearranging the tiles rearranges play order
+  const turns = turnPositions(ordered, state.room.firstPid);
 
   return (
     <main className="display-view">
@@ -133,6 +135,7 @@ export default function DisplayView({
               p={player}
               slot={slot}
               first={state.room.firstPid === player.pid}
+              turn={state.room.firstPid !== null ? turns.get(player.pid) : undefined}
               nameOf={nameOf}
               dragging={dragPid === player.pid}
               onDragStart={(e) => onDragStart(e, player.pid)}

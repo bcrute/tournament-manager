@@ -13,6 +13,7 @@ export default function SeatTile({
   p,
   slot,
   first,
+  turn,
   nameOf,
   dragging,
   onDragStart,
@@ -22,6 +23,7 @@ export default function SeatTile({
   p: PlayerInfo;
   slot: SeatSlot;
   first: boolean;
+  turn?: number;
   nameOf: Map<string, string>;
   dragging: boolean;
   onDragStart: (e: React.PointerEvent) => void;
@@ -67,6 +69,12 @@ export default function SeatTile({
       >
         <button className="seat-half dec" data-delta="-1" aria-label={`${p.name} minus 1`} />
         <button className="seat-half inc" data-delta="1" aria-label={`${p.name} plus 1`} />
+
+        {turn !== undefined && (
+          <span className={`seat-turn${first ? " first" : ""}`} title="turn order">
+            {turn}
+          </span>
+        )}
 
         <div className="seat-face">
           <span className="seat-name">

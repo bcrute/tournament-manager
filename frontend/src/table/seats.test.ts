@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { assignSeats, seatGrid } from "./seats";
+import { assignSeats, ringOrder, seatGrid, turnOrder, turnPositions } from "./seats";
+
+const P = (pid: number) => ({ pid, name: `p${pid}` });
 
 describe("seatGrid", () => {
   it("seats two players facing each other across the display", () => {
@@ -58,6 +60,71 @@ describe("seatGrid", () => {
         expect(s.row).toBeLessThanOrEqual(g.rows);
       }
     }
+  });
+});
+
+describe("ringOrder", () => {
+  it("walks down the left edge, across the bottom, then up the right edge", () => {
+    // 5 seats: L0 L1 | R0 R1 | B  →  ring: L0 L1 B R1 R0
+    const ring = ringOrder([P(1), P(2), P(3), P(4), P(5)]);
+    expect(ring.map((p) => p.pid)).toEqual([1, 2, 5, 4, 3]);
+  });
+
+  it("closes the circle for an even table", () => {
+    // 6 seats: L0 L1 L2 | R0 R1 R2  →  ring: L0 L1 L2 R2 R1 R0
+    const ring = ringOrder([P(1), P(2), P(3), P(4), P(5), P(6)]);
+    expect(ring.map((p) => p.pid)).toEqual([1, 2, 3, 6, 5, 4]);
+  });
+
+  it("leaves tiny tables alone", () => {
+    expect(ringOrder([P(1), P(2)]).map((p) => p.pid)).toEqual([1, 2]);
+    expect(ringOrder([P(1)]).map((p) => p.pid)).toEqual([1]);
+    expect(ringOrder([])).toEqual([]);
+  });
+
+  it("keeps every player exactly once", () => {
+    for (const n of [3, 4, 5, 6, 7, 8]) {
+      const players = Array.from({ length: n }, (_, i) => P(i + 1));
+      const ring = ringOrder(players);
+      expect(new Set(ring.map((p) => p.pid)).size).toBe(n);
+    }
+  });
+});
+
+describe("turnOrder", () => {
+  const five = [P(1), P(2), P(3), P(4), P(5)]; // ring: 1 2 5 4 3
+
+  it("starts with whoever goes first and follows the ring", () => {
+    expect(turnOrder(five, 5).map((p) => p.pid)).toEqual([5, 4, 3, 1, 2]);
+  });
+
+  it("is the plain ring when nobody has been picked yet", () => {
+    expect(turnOrder(five, null).map((p) => p.pid)).toEqual([1, 2, 5, 4, 3]);
+  });
+
+  it("falls back to the ring if the first player has left", () => {
+    expect(turnOrder(five, 999).map((p) => p.pid)).toEqual([1, 2, 5, 4, 3]);
+  });
+
+  it("rearranging seats rearranges turn order", () => {
+    const swapped = [P(2), P(1), P(3), P(4), P(5)]; // p2 dragged to the top-left seat
+    expect(turnOrder(swapped, 2).map((p) => p.pid)).toEqual([2, 1, 5, 4, 3]);
+  });
+});
+
+describe("turnPositions", () => {
+  it("numbers seats from the first player around the ring", () => {
+    const pos = turnPositions([P(1), P(2), P(3), P(4), P(5)], 5);
+    expect(pos.get(5)).toBe(1);
+    expect(pos.get(4)).toBe(2);
+    expect(pos.get(3)).toBe(3);
+    expect(pos.get(1)).toBe(4);
+    expect(pos.get(2)).toBe(5);
+  });
+
+  it("covers every player", () => {
+    const players = Array.from({ length: 7 }, (_, i) => P(i + 1));
+    expect(turnPositions(players, 3).size).toBe(7);
   });
 });
 
