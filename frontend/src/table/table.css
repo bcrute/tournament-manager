@@ -188,6 +188,137 @@
   top: calc(3.2rem + env(safe-area-inset-top));
 }
 
+/* sheets: sign-in, notes */
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(10, 7, 16, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.sheet {
+  width: min(94vw, 420px);
+  margin: 1.5rem auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  background: #1d1628;
+  border: 1px solid #322747;
+  border-radius: 16px;
+  padding: 1.2rem;
+  text-align: left;
+  max-height: 88dvh;
+  overflow-y: auto;
+}
+
+.sheet h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.sheet input,
+.note-input {
+  font-size: 1rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid #322747;
+  background: #14101c;
+  color: #e8e4f0;
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.note-input {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.codes {
+  list-style: none;
+  padding: 0.7rem;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  background: #14101c;
+  border: 1px dashed #3a3150;
+  border-radius: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+  color: #c9a84c;
+}
+
+/* dashboard */
+.dashboard {
+  max-width: 640px;
+}
+
+.history {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  text-align: left;
+}
+
+.history li {
+  border: 1px solid #241c33;
+  border-radius: 12px;
+  padding: 0.8rem 1rem;
+  background: #1a1424;
+}
+
+.history-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.history-room {
+  letter-spacing: 0.2em;
+  color: #c9a84c;
+}
+
+.history-when {
+  margin-left: auto;
+  color: #8a7fa0;
+  font-size: 0.85rem;
+}
+
+.history-detail {
+  color: #b8b0c8;
+  font-size: 0.9rem;
+  margin-top: 0.2rem;
+}
+
+.history-note {
+  white-space: pre-wrap;
+  background: #14101c;
+  border-left: 2px solid #3a3150;
+  padding: 0.5rem 0.7rem;
+  margin: 0.6rem 0;
+  color: #e8e4f0;
+  font-size: 0.92rem;
+}
+
+.history-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.dot-sep {
+  color: #3a3150;
+  margin: 0 0.5rem;
+}
+
 /* rejoining a game in progress */
 .seat-picker {
   list-style: none;
@@ -1192,4 +1323,20 @@ button.ghost {
   padding: 0.9rem 0 0.4rem;
   background: linear-gradient(transparent, #14101c 35%);
   margin-top: 1.5rem;
+}
+
+.notice {
+  background: #1a2438;
+  border: 1px solid #2c4160;
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+  margin: 0;
+  color: #cfe0f5;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.sheet .hint {
+  line-height: 1.5;
+  margin: 0;
 }

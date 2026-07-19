@@ -7,6 +7,7 @@ import { CarouselEntry, carouselEntries, clampIndex, indexOfPid, step } from "./
 import { clearSession, loadSession } from "./session";
 import DisplayView from "./DisplayView";
 import LifePanel from "./LifePanel";
+import NotesSheet from "./NotesSheet";
 import RoomBar from "./RoomBar";
 import SlideToUnveil from "./SlideToUnveil";
 import { useAutoHide } from "./useAutoHide";
@@ -48,6 +49,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   const [tab, setTab] = useState<Tab | null>(null);
   const [cardIndex, setCardIndex] = useState(0);
   const [zoomPid, setZoomPid] = useState<number | null>(null);
+  const [notesOpen, setNotesOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const prev = useRef<{ status: string; pids: Set<number>; first: number | null } | null>(null);
   const toastId = useRef(0);
@@ -253,9 +255,21 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         code={code}
         name={state.me.name}
         onRename={() => void renameSelf()}
+        onNotes={() => setNotesOpen(true)}
         onDisplay={() => void toggleDisplay(true)}
         onLeave={() => void leave(leaveMsg())}
       />
+      {notesOpen && (
+        <NotesSheet
+          code={code}
+          gameNo={Math.max(1, state.room.gameNo ?? 1)}
+          onClose={() => setNotesOpen(false)}
+          onNeedsAccount={() => {
+            setNotesOpen(false);
+            window.location.href = "/table/me";
+          }}
+        />
+      )}
       <div className="toasts" onPointerDown={(e) => e.stopPropagation()}>
         {toasts.map((t) => (
           <button

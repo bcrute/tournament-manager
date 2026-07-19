@@ -251,6 +251,7 @@ def personalize(snap, me):
             "status": status,
             "mode": room["mode"],
             "startingLife": room["starting_life"],
+            "gameNo": room["game_no"],
             "firstPid": first_pid,
             "firstPlayer": first_name,
             "options": json.loads(room["options"]),

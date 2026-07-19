@@ -36,6 +36,7 @@ export interface RoomState {
     status: RoomStatus;
     mode: GameMode;
     startingLife: number;
+    gameNo: number;
     firstPid: number | null;
     firstPlayer: string | null;
     options: { rarities?: string[] };
