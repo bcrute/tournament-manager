@@ -10,6 +10,7 @@ const card = (id: number): CardInfo => ({
   text: "",
   uri: "",
   artist: "Test Artist",
+  rulings: [],
   image: `/cards/trd/${id}.jpg`,
 });
 

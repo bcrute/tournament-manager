@@ -7,6 +7,7 @@ export default function RoomBar({
   onDisplay,
   displayLabel,
   onNotes,
+  onRules,
   onLeave,
   leaveLabel = "Leave game",
 }: {
@@ -16,6 +17,7 @@ export default function RoomBar({
   onDisplay?: () => void;
   displayLabel?: string;
   onNotes?: () => void;
+  onRules?: () => void;
   onLeave: () => void;
   leaveLabel?: string;
 }) {
@@ -63,6 +65,16 @@ export default function RoomBar({
               }}
             >
               Notes
+            </button>
+          )}
+          {onRules && (
+            <button
+              onClick={() => {
+                setOpen(false);
+                onRules();
+              }}
+            >
+              Treachery rules
             </button>
           )}
           {onDisplay && (

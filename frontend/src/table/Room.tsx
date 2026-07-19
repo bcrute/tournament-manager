@@ -9,6 +9,7 @@ import DisplayView from "./DisplayView";
 import LifePanel from "./LifePanel";
 import NotesSheet from "./NotesSheet";
 import RoomBar from "./RoomBar";
+import RulesSheet from "./RulesSheet";
 import SlideToUnveil from "./SlideToUnveil";
 import { useAutoHide } from "./useAutoHide";
 import { useRoom } from "./useRoom";
@@ -50,6 +51,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   const [cardIndex, setCardIndex] = useState(0);
   const [zoomPid, setZoomPid] = useState<number | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const prev = useRef<{ status: string; pids: Set<number>; first: number | null } | null>(null);
   const toastId = useRef(0);
@@ -222,10 +224,14 @@ function RoomInner({ code, token }: { code: string; token: string }) {
           code={code}
           name={state.me.name}
           onRename={() => void renameSelf()}
+          onRules={() => setRulesOpen(true)}
           onDisplay={() => void toggleDisplay(true)}
           onLeave={() => void leave("Leave this room?")}
           leaveLabel="Leave room"
         />
+        {rulesOpen && (
+        <RulesSheet treachery={state.room.mode === "treachery"} onClose={() => setRulesOpen(false)} />
+      )}
         <Lobby state={state} code={code} token={token} onRename={() => void renameSelf()} />
       </>
     );
@@ -256,9 +262,13 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         name={state.me.name}
         onRename={() => void renameSelf()}
         onNotes={() => setNotesOpen(true)}
+        onRules={() => setRulesOpen(true)}
         onDisplay={() => void toggleDisplay(true)}
         onLeave={() => void leave(leaveMsg())}
       />
+      {rulesOpen && (
+        <RulesSheet treachery={state.room.mode === "treachery"} onClose={() => setRulesOpen(false)} />
+      )}
       {notesOpen && (
         <NotesSheet
           code={code}
@@ -633,6 +643,16 @@ function CardZoom({ p, onClose }: { p: PlayerInfo; onClose: () => void }) {
         {p.card.artist && <span className="art-credit">art by {p.card.artist}</span>}
       </div>
       <img src={p.card.image} alt={p.card.name} draggable={false} />
+      {p.card.rulings.length > 0 && (
+        <div className="card-rulings" onClick={(e) => e.stopPropagation()}>
+          <h3>Rulings</h3>
+          <ul>
+            {p.card.rulings.map((r2, i) => (
+              <li key={i}>{r2}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       <span className="zoom-hint">tap to close</span>
     </div>
   );

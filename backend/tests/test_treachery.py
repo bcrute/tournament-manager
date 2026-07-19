@@ -172,3 +172,18 @@ class TestArtistCredit:
 
         missing = [c["name"] for c in _cards_by_id.values() if not c.get("artist")]
         assert missing == []
+
+
+class TestRulings:
+    def test_cards_carry_their_rulings(self, api, treachery_room):
+        """Rulings ship with the card so players can settle questions at the
+        table without leaving the app."""
+        code, tokens = treachery_room
+        card = api.me(code, tokens["host"])["me"]["card"]
+        assert isinstance(card["rulings"], list)
+
+    def test_the_whole_set_has_rulings_available(self):
+        from app.table import _cards_by_id
+
+        with_rulings = [c for c in _cards_by_id.values() if c.get("rulings")]
+        assert len(with_rulings) == len(_cards_by_id)

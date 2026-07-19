@@ -1424,3 +1424,94 @@ button.ghost.danger {
 .fan-notice a {
   color: #8a7fa0;
 }
+
+/* rules reference and per-card rulings */
+.sheet.rules {
+  width: min(94vw, 560px);
+}
+
+.sheet.rules h3 {
+  margin: 0.4rem 0 0;
+  font-size: 0.8rem;
+  color: #c9a84c;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.sheet.rules ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: #b8b0c8;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.sheet.rules li + li {
+  margin-top: 0.35rem;
+}
+
+.sheet.rules a {
+  color: #c9a84c;
+}
+
+.card-rulings {
+  width: min(94vw, 560px);
+  max-height: 34vh;
+  overflow-y: auto;
+  background: #1d1628;
+  border: 1px solid #322747;
+  border-radius: 12px;
+  padding: 0.7rem 0.9rem;
+  text-align: left;
+  cursor: default;
+}
+
+.card-rulings h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.75rem;
+  color: #8a7fa0;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.card-rulings ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: #b8b0c8;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.card-rulings li + li {
+  margin-top: 0.35rem;
+}
+
+.rule-links {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rule-links a {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid #322747;
+  border-radius: 10px;
+  background: #14101c;
+  color: #e8e4f0;
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+
+.rule-links a span {
+  color: #8a7fa0;
+  font-size: 0.75rem;
+}
+
+.rules-sub {
+  margin-top: 0.6rem !important;
+  padding-top: 0.8rem;
+  border-top: 1px solid #241c33;
+}

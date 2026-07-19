@@ -6,6 +6,7 @@ export interface CardInfo {
   text: string;
   uri: string;
   artist: string;
+  rulings: string[];
   image: string;
 }
 
