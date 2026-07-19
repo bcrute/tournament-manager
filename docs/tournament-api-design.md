@@ -112,9 +112,12 @@ attacked, and the decision taken for each.
 
 9. **Time called with several players alive.** Auto-detect never fires, because
    nobody was last-standing. The timer expiring flips the table to
-   `awaiting_result`, and the organizer records a placement or a draw.
-10. **Draw semantics.** `kind: "draw"` with the surviving entrants sharing a
-    place; eliminated players keep their real placement below the draw.
+   `awaiting_result` and applies the tournament's time-called policy (§6).
+10. **Draw semantics vary by rules set, so it's a setting.** Per MTR 2.4 an
+    unfinished game is a draw and life totals are *not* a tiebreaker; life only
+    decides single-elimination rounds. Current cEDH practice goes further and
+    gives the draw to *every* player in the pod, including those already
+    eliminated. Both are supported — see §6.
 11. **Concession.** Treated as elimination at that moment — it feeds the same
     elimination-order placement as dying.
 12. **Placement comes from elimination order.** We already record who died and
@@ -198,9 +201,74 @@ attacked, and the decision taken for each.
 
 ---
 
-## 5. Still open
+## 5. Clients
 
-- Scoring presets: which defaults ship? (win 3/draw 1/loss 0 vs placement 4/3/2/1)
-- Do we support a top cut, or Swiss-only for v1? (leaning Swiss-only)
-- Seat assignment within a pod: random, or seeded by standings?
-- Does a tournament require accounts for organizers, or is a secret enough for v1?
+**Organizer management is desktop-first.** Pairing review, re-rolls, result
+overrides, timer control and standings all want screen area and a pointer;
+cramming them into a phone would compromise the part of the product that has to
+be fast under pressure at a live event. Player and display clients stay
+mobile-first as they are today. Native/mobile management comes later — the API
+boundary means it's a client, not a rewrite.
+
+## 6. Settings
+
+Everything contested is configurable rather than decided for the organizer.
+Defaults follow official rules where they exist, and prevailing Commander
+practice where they don't.
+
+### Scoring
+
+| Setting | Options | Default |
+|---|---|---|
+| `scoring` | `win_draw_loss` (3/1/0) · `placement` (4/3/2/1) | `win_draw_loss` |
+| `byeScoring` | `win` · `draw` · `custom` | `win` |
+| `drawPoints` | integer | 1 |
+
+### Time called
+
+Per MTR 2.4 the active player finishes their turn, then five additional turns
+are played; if still unfinished it's a draw, and **life totals are not a Swiss
+tiebreaker**. Life totals decide single-elimination only. cEDH events commonly
+extend the turn instead of counting turns.
+
+| Setting | Options | Default |
+|---|---|---|
+| `timeCalledPolicy` | `draw_survivors` · `draw_all` (cEDH: eliminated players share it) · `highest_life` · `organizer_decides` | `draw_all` |
+| `extraTurns` | integer (MTR: 5) · `0` to disable | 5 |
+| `turnExtensionMinutes` | integer · `0` to disable | 0 |
+| `topCutPolicy` | `highest_life` (MTR single-elim) · `organizer_decides` | `highest_life` |
+
+`highest_life` reads the life totals the table is already tracking, which is the
+one place our owning the table pays off directly for adjudication.
+
+### Structure
+
+| Setting | Options | Default |
+|---|---|---|
+| `structure` | `swiss` · `swiss_top_cut` | `swiss` |
+| `topCutSize` | 4 · 8 · 16 | 4 |
+| `podSize` | 3 · 4 · 5 (preferred; sizer degrades as needed) | 4 |
+| `rounds` | integer · `auto` (by entrant count) | `auto` |
+
+### Seating
+
+| Setting | Options | Default |
+|---|---|---|
+| `seatAssignment` | `random` · `by_standings` (leader seats first) · `manual` | `random` |
+
+Seat order is turn order, and turn order is a real advantage in multiplayer, so
+this is a genuine fairness knob rather than cosmetics.
+
+### Access
+
+| Setting | Options | Default |
+|---|---|---|
+| `organizerAuth` | `secret` (device-held) · `account` (recoverable, multi-device) | `account` when signed in, else `secret` |
+| `collectWizardsEmail` | `off` · `optional` · `required` | `off` |
+| `spectatorView` | `public` · `code_only` · `off` | `code_only` |
+
+## 7. Still open
+
+- Whether `rounds: auto` uses the usual Swiss table (log2 of entrants) or a
+  Commander-specific curve — worth checking against real event structures.
+- Whether top cut re-pods by standings or by bracket seeding.
