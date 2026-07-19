@@ -24,6 +24,9 @@ router = APIRouter()
 
 SESSION_COOKIE = "table_session"
 SESSION_DAYS = 90
+# A session unused for this long is dead even if its absolute expiry is far off,
+# so a stolen cookie has a bounded life rather than the full 90 days.
+SESSION_IDLE_DAYS = 30
 RECOVERY_CODE_COUNT = 8
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,24}$")
 
@@ -40,6 +43,20 @@ def hash_password(password: str) -> str:
     return "scrypt${}${}".format(
         base64.b64encode(salt).decode(), base64.b64encode(dk).decode()
     )
+
+
+# A hash of a value nobody knows, used to spend the same scrypt time when no
+# account matches. Without it, "no such user" returns in microseconds while a
+# real username costs ~100ms of KDF — which enumerates accounts by stopwatch,
+# whatever the response body says.
+_ABSENT_ACCOUNT_HASH: str | None = None
+
+
+def _absent_account_hash() -> str:
+    global _ABSENT_ACCOUNT_HASH
+    if _ABSENT_ACCOUNT_HASH is None:
+        _ABSENT_ACCOUNT_HASH = hash_password(secrets.token_urlsafe(32))
+    return _ABSENT_ACCOUNT_HASH
 
 
 def verify_password(password: str, stored: str) -> bool:
@@ -92,13 +109,22 @@ def account_for_session(token: str | None):
     if not token:
         return None
     row = q(
-        "SELECT a.*, s.expires_at FROM sessions s JOIN accounts a ON a.id = s.account_id "
+        "SELECT a.*, s.expires_at, s.last_seen AS session_last_seen "
+        "FROM sessions s JOIN accounts a ON a.id = s.account_id "
         "WHERE s.token_hash = ?",
         (_token_hash(token),),
     ).fetchone()
     if not row:
         return None
-    if row["expires_at"] <= time.time():
+    now = time.time()
+    # note: a.* also carries accounts.last_seen, so the session's is aliased
+    if row["session_last_seen"] and now - row["session_last_seen"] > SESSION_IDLE_DAYS * 86400:
+        q("DELETE FROM sessions WHERE token_hash = ?", (_token_hash(token),))
+        return None
+    # cheap enough at this scale, and without it last_seen is written once at
+    # creation and never again, which makes idle expiry meaningless
+    q("UPDATE sessions SET last_seen = ? WHERE token_hash = ?", (int(now), _token_hash(token)))
+    if row["expires_at"] <= now:
         q("DELETE FROM sessions WHERE token_hash = ?", (_token_hash(token),))
         return None
     return row
@@ -194,8 +220,12 @@ def signup(body: Credentials, response: Response):
 @router.post("/login")
 def login(body: Credentials, response: Response):
     acct = q("SELECT * FROM accounts WHERE username = ?", (body.username.strip(),)).fetchone()
-    # same error either way: don't reveal which usernames exist
-    if not acct or not verify_password(body.password, acct["pw_hash"]):
+    # Same error *and* the same work either way: verifying against a throwaway
+    # hash when the account is absent keeps the timing indistinguishable.
+    if not acct:
+        verify_password(body.password, _absent_account_hash())
+        raise HTTPException(401, "wrong username or password")
+    if not verify_password(body.password, acct["pw_hash"]):
         raise HTTPException(401, "wrong username or password")
     q("UPDATE accounts SET last_seen = unixepoch() WHERE id = ?", (acct["id"],))
     _set_cookie(response, _new_session(acct["id"]))

@@ -37,6 +37,18 @@ def host(client, name="Friday Night", mode="life", settings=None):
     return r.json()["code"]
 
 
+def seat_token(client, code, pod):
+    """A token belonging to somebody actually sitting at this table. Calling an
+    official is restricted to players at that table, so tests need one. Takes
+    the first seat still unclaimed, so repeated calls return distinct players
+    rather than failing on the second."""
+    for seat in pod["seats"]:
+        r = client.post(f"/api/tournament/{code}/claim", json={"entrantId": seat["entrantId"]})
+        if r.status_code == 200:
+            return r.json()["entrantToken"]
+    raise AssertionError("every seat in this pod is already claimed")
+
+
 def add(client, code, names):
     return client.post(f"/api/tournament/{code}/entrants", json={"names": names}).json()["added"]
 
@@ -335,7 +347,8 @@ class TestRoundClosing:
             json={"kind": "placement",
                   "places": [{"entrantId": e["entrantId"], "place": i} for i, e in enumerate(added, 1)]},
         )
-        client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call", json={"category": "rules"})
+        client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call",
+                    params={"token": seat_token(client, code, pod)}, json={"category": "rules"})
         blocked = client.post(f"/api/tournament/{code}/rounds/close")
         assert blocked.status_code == 409 and "official call" in blocked.json()["detail"]
 
@@ -424,6 +437,7 @@ class TestOfficialCalls:
         client.post(f"/api/tournament/{code}/rounds", json={})
         pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
         client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call",
+                    params={"token": seat_token(client, code, pod)},
                     json={"category": "rules", "note": "stack question"})
         calls = client.get(f"/api/tournament/{code}").json()["calls"]
         assert len(calls) == 1 and calls[0]["status"] == "open"
@@ -434,8 +448,10 @@ class TestOfficialCalls:
         add(client, code, ["o5", "o6", "o7", "o8"])
         client.post(f"/api/tournament/{code}/rounds", json={})
         pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
-        first = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call", json={}).json()
-        again = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call", json={}).json()
+        first = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call",
+                            params={"token": seat_token(client, code, pod)}, json={}).json()
+        again = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call",
+                            params={"token": seat_token(client, code, pod)}, json={}).json()
         assert again["callId"] == first["callId"] and again.get("alreadyOpen") is True
 
     def test_acknowledge_then_resolve(self, client):
@@ -444,7 +460,8 @@ class TestOfficialCalls:
         add(client, code, ["o9", "o10", "o11", "o12"])
         client.post(f"/api/tournament/{code}/rounds", json={})
         pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
-        call_id = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call", json={}).json()["callId"]
+        call_id = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call",
+                            params={"token": seat_token(client, code, pod)}, json={}).json()["callId"]
         client.post(f"/api/tournament/{code}/calls/{call_id}/ack")
         assert client.get(f"/api/tournament/{code}").json()["calls"][0]["status"] == "acknowledged"
         client.post(f"/api/tournament/{code}/calls/{call_id}/resolve", json={"note": "ruled"})
@@ -1051,7 +1068,8 @@ class TestJudgeExtensions:
 
     def _call(self, client, code):
         pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
-        call = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call", json={}).json()
+        call = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call",
+                            params={"token": seat_token(client, code, pod)}, json={}).json()
         return pod, call
 
     def test_the_table_gets_its_lost_time_back_automatically(self, client):
@@ -1141,7 +1159,8 @@ class TestJudgeExtensions:
         add(client, code, ["z5", "z6", "z7", "z8"])
         client.post(f"/api/tournament/{code}/rounds", json={})
         pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
-        call = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call", json={}).json()
+        call = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call",
+                            params={"token": seat_token(client, code, pod)}, json={}).json()
         r = client.post(f"/api/tournament/{code}/calls/{call['callId']}/resolve",
                         json={"note": "deck check", "extendMinutes": 7}).json()
         assert r["grantedMinutes"] == 7
@@ -1154,7 +1173,8 @@ class TestJudgeExtensions:
         add(client, code, ["z9", "z10", "z11", "z12"])
         client.post(f"/api/tournament/{code}/rounds", json={})
         pod = client.get(f"/api/tournament/{code}").json()["pods"][0]
-        client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call", json={})
+        client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call",
+                    params={"token": seat_token(client, code, pod)}, json={})
         call = client.get(f"/api/tournament/{code}").json()["calls"][0]
         assert "openSeconds" in call and "suggestedMinutes" in call
 
@@ -1255,3 +1275,138 @@ class TestEntrantIdsAreOpaque:
         add(client, b, ["r2", "r3", "r4", "r5"])
         assert client.post(f"/api/tournament/{b}/claim",
                            json={"entrantId": mine}).status_code == 404
+
+
+class TestPodAuthorization:
+    """A pod id is a global integer and is NOT self-authorizing. Every one of
+    these was exploitable before 2026-07-19; they are the same root cause."""
+
+    def _event(self, client, user, names):
+        organizer(client, user)
+        code = host(client)
+        add(client, code, names)
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        return code, client.get(f"/api/tournament/{code}").json()["pods"][0]
+
+    def test_a_stranger_cannot_count_turns_to_force_a_result(self, client):
+        """Counting turns ends in a recorded result, so an anonymous caller who
+        merely knows the tournament code must not be able to drive one."""
+        code, pod = self._event(client, "secA", ["s1", "s2", "s3", "s4"])
+        client.post(f"/api/tournament/{code}/rounds/time")
+        client.cookies.clear()
+        r = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/turn", json={"delta": -1})
+        assert r.status_code == 403
+        assert client.get(f"/api/tournament/{code}").json()["pods"][0]["turnsRemaining"] == 5
+
+    def test_a_player_at_another_table_cannot_count_this_ones_turns(self, client):
+        code, _ = self._event(client, "secB", [f"t{i}" for i in range(8)])
+        pods = client.get(f"/api/tournament/{code}").json()["pods"]
+        client.post(f"/api/tournament/{code}/rounds/time")
+        outsider = seat_token(client, code, pods[1])
+        client.cookies.clear()
+        r = client.post(f"/api/tournament/{code}/pods/{pods[0]['podId']}/turn",
+                        params={"token": outsider}, json={"delta": -1})
+        assert r.status_code == 403
+
+    def test_a_player_at_the_table_still_can(self, client):
+        code, pod = self._event(client, "secC", ["u1", "u2", "u3", "u4"])
+        client.post(f"/api/tournament/{code}/rounds/time")
+        tok = seat_token(client, code, pod)
+        client.cookies.clear()
+        r = client.post(f"/api/tournament/{code}/pods/{pod['podId']}/turn",
+                        params={"token": tok}, json={"delta": -1})
+        assert r.status_code == 200 and r.json()["turnsRemaining"] == 4
+
+    def test_an_organizer_cannot_write_results_into_another_event(self, client):
+        """require_organizer authorized the tournament; the pod was then looked
+        up by global id, so an organizer of A could rule on B's pods."""
+        code_a, _ = self._event(client, "secD", ["a1", "a2", "a3", "a4"])
+        client.cookies.clear()
+        code_b, pod_b = self._event(client, "secE", ["b1", "b2", "b3", "b4"])
+        client.cookies.clear()
+        organizer(client, "secD2")           # a different organizer entirely
+        code_c = host(client)
+        add(client, code_c, ["c1", "c2", "c3", "c4"])
+        client.post(f"/api/tournament/{code_c}/rounds", json={})
+        r = client.post(f"/api/tournament/{code_c}/pods/{pod_b['podId']}/result",
+                        json={"kind": "draw", "places": []})
+        assert r.status_code == 404
+        assert q("SELECT COUNT(*) c FROM pod_results WHERE pod_id = ?",
+                 (pod_b["podId"],)).fetchone()["c"] == 0
+
+    def test_an_organizer_cannot_extend_another_events_clock(self, client):
+        code_a, pod_a = self._event(client, "secF", ["d1", "d2", "d3", "d4"])
+        client.cookies.clear()
+        organizer(client, "secG")
+        code_b = host(client)
+        add(client, code_b, ["e1", "e2", "e3", "e4"])
+        client.post(f"/api/tournament/{code_b}/rounds", json={})
+        client.post(f"/api/tournament/{code_b}/timer", json={"action": "start", "minutes": 50})
+        r = client.post(f"/api/tournament/{code_b}/timer",
+                        json={"action": "extend", "minutes": 30, "podId": pod_a["podId"]})
+        assert r.status_code == 404
+        assert q("SELECT extension_seconds e FROM pods WHERE id = ?",
+                 (pod_a["podId"],)).fetchone()["e"] == 0
+
+    def test_only_a_player_at_the_table_may_call_an_official(self, client):
+        """A call earns that table a time extension when resolved, so a
+        stranger must not be able to raise one — nor aim it at someone else."""
+        code, _ = self._event(client, "secH", [f"f{i}" for i in range(8)])
+        pods = client.get(f"/api/tournament/{code}").json()["pods"]
+        outsider = seat_token(client, code, pods[1])
+        client.cookies.clear()
+        anon = client.post(f"/api/tournament/{code}/pods/{pods[0]['podId']}/call", json={})
+        assert anon.status_code == 403
+        wrong_table = client.post(f"/api/tournament/{code}/pods/{pods[0]['podId']}/call",
+                                  params={"token": outsider}, json={})
+        assert wrong_table.status_code == 403
+
+    def test_a_pod_from_another_tournament_never_resolves(self, client):
+        code_a, pod_a = self._event(client, "secI", ["g1", "g2", "g3", "g4"])
+        client.cookies.clear()
+        code_b, _ = self._event(client, "secJ", ["h1", "h2", "h3", "h4"])
+        for path, body in (("result", {"kind": "draw", "places": []}),
+                           ("call", {}), ("turn", {"delta": -1})):
+            r = client.post(f"/api/tournament/{code_b}/pods/{pod_a['podId']}/{path}", json=body)
+            assert r.status_code in (403, 404), path
+
+
+class TestRoomCodesAreNotPublished:
+    """A room code lets its holder take a seat in that room, so it is a
+    credential. Publishing every pod's code to anyone holding the tournament
+    code let a stranger walk into any game."""
+
+    def test_an_anonymous_viewer_gets_no_room_codes(self, client):
+        organizer(client, "secK")
+        code = host(client)
+        add(client, code, [f"i{j}" for j in range(8)])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        real = [r["room_code"] for r in q(
+            "SELECT room_code FROM pods p JOIN trounds r ON r.id = p.round_id "
+            "WHERE r.tournament_code = ?", (code,)).fetchall()]
+        client.cookies.clear()
+        body = json.dumps(client.get(f"/api/tournament/{code}").json())
+        for rc in real:
+            assert rc not in body
+
+    def test_a_player_gets_their_own_table_only(self, client):
+        organizer(client, "secL")
+        code = host(client)
+        add(client, code, [f"j{k}" for k in range(8)])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        pods = client.get(f"/api/tournament/{code}").json()["pods"]
+        mine = q("SELECT room_code FROM pods WHERE id = ?", (pods[0]["podId"],)).fetchone()["room_code"]
+        theirs = q("SELECT room_code FROM pods WHERE id = ?", (pods[1]["podId"],)).fetchone()["room_code"]
+        tok = seat_token(client, code, pods[0])
+        client.cookies.clear()
+        state = client.get(f"/api/tournament/{code}", params={"token": tok}).json()
+        assert state["myPod"]["roomCode"] == mine
+        assert theirs not in json.dumps(state)
+
+    def test_the_organizer_still_sees_every_room(self, client):
+        organizer(client, "secM")
+        code = host(client)
+        add(client, code, [f"k{m}" for m in range(8)])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        state = client.get(f"/api/tournament/{code}").json()
+        assert all(p["roomCode"] for p in state["pods"])

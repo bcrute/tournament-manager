@@ -91,6 +91,33 @@ def resolve_entrant(code: str, public_id) -> "object | None":
     ).fetchone()
 
 
+def pod_in(code: str, pod_id: int):
+    """Resolve a pod *through its tournament*.
+
+    A pod id is a global integer. Treating it as self-authorizing let an
+    organizer of one event write results into another's, and let anonymous
+    callers act on pods they had nothing to do with. Every pod lookup goes
+    through here.
+    """
+    pod = q(
+        "SELECT p.* FROM pods p JOIN trounds r ON r.id = p.round_id "
+        "WHERE p.id = ? AND r.tournament_code = ?",
+        (pod_id, code),
+    ).fetchone()
+    if not pod:
+        raise HTTPException(404, "pod not found")
+    return pod
+
+
+def seat_in_pod(pod_id: int, entrant_id: int) -> bool:
+    return bool(
+        q(
+            "SELECT 1 FROM pod_seats WHERE pod_id = ? AND entrant_id = ?",
+            (pod_id, entrant_id),
+        ).fetchone()
+    )
+
+
 def public_ids(code: str) -> dict:
     """Internal id to public id for one tournament, in a single query."""
     return {
@@ -229,7 +256,10 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
             "podId": p["id"],
             "table": p["number"],
             "status": p["status"],
-            "roomCode": p["room_code"],
+            # A room code lets its holder take a seat in that room, so it is a
+            # credential, not a label. Only the organizer and the players at
+            # that table get it; it is added to `my_pod` below.
+            "roomCode": p["room_code"] if organizer else None,
             "extensionSeconds": p["extension_seconds"],
             "turnsRemaining": p["turns_remaining"],
             "seats": [
@@ -243,7 +273,12 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
         if mine:
             # the room token is the viewer's own seat only — it never reaches
             # the pod list everyone else sees
-            my_pod = {**view, "roomToken": mine["room_token"], "mySeat": mine["seat"]}
+            my_pod = {
+                **view,
+                "roomCode": p["room_code"],   # their own table, so they get it
+                "roomToken": mine["room_token"],
+                "mySeat": mine["seat"],
+            }
 
     calls = []
     if organizer:
@@ -735,9 +770,7 @@ def _write_result(t, pod, kind: str, places: list[dict], source: str, note: str 
 def report_result(code: str, pod_id: int, body: ResultBody, request: Request):
     """Organizer override. Auto-detection writes the same rows from the room."""
     t, _ = require_organizer(code, request)
-    pod = q("SELECT * FROM pods WHERE id = ?", (pod_id,)).fetchone()
-    if not pod:
-        raise HTTPException(404, "pod not found")
+    pod = pod_in(t["code"], pod_id)
     current = q(
         "SELECT COALESCE(MAX(version), 0) AS v FROM pod_results WHERE pod_id = ?", (pod_id,)
     ).fetchone()["v"]
@@ -903,15 +936,26 @@ class TurnBody(BaseModel):
 
 
 @router.post("/{code}/pods/{pod_id}/turn")
-async def advance_turn(code: str, pod_id: int, body: TurnBody, token: str | None = None):
+async def advance_turn(
+    code: str, pod_id: int, body: TurnBody, request: Request, token: str | None = None
+):
     """Count an additional turn at the table. Any player in the pod may tap it
     — a judge shouldn't have to stand there — and +1 undoes a mis-tap. When the
     count reaches zero the pod is decided by the time-called policy."""
     t = get_tournament(code)
     cfg = settings_of(t)
-    pod = q("SELECT * FROM pods WHERE id = ?", (pod_id,)).fetchone()
-    if not pod:
-        raise HTTPException(404, "pod not found")
+    pod = pod_in(t["code"], pod_id)
+
+    # Counting a turn ends in a recorded result, so it is a privileged action.
+    # Any player *at that table* may do it — a judge shouldn't have to stand
+    # there for five turns — but nobody else, and not an anonymous caller who
+    # merely knows the tournament code.
+    entrant = entrant_from_token(t["code"], token)
+    if not (entrant and seat_in_pod(pod["id"], entrant["id"])):
+        try:
+            require_organizer(code, request)
+        except HTTPException:
+            raise HTTPException(403, "only a player at this table, or the organizer, may count turns")
     if pod["turns_remaining"] is None:
         raise HTTPException(409, "time has not been called on this pod")
     if pod["status"] == "complete":
@@ -928,7 +972,7 @@ async def advance_turn(code: str, pod_id: int, body: TurnBody, token: str | None
     touch(t["code"])
 
     if left == 0:
-        pod = q("SELECT * FROM pods WHERE id = ?", (pod_id,)).fetchone()
+        pod = pod_in(t["code"], pod_id)
         resolve_pod_at_time(t, cfg, pod)
         await push_to_pods(room_codes=[pod["room_code"]] if pod["room_code"] else [])
         return {"ok": True, "turnsRemaining": 0, "decided": True}
@@ -966,9 +1010,10 @@ async def timer(code: str, body: TimerBody, request: Request):
     elif body.action == "extend":
         mins = body.minutes or 5
         if body.podId:  # a judge extends one table, not the whole round
+            target = pod_in(t["code"], body.podId)
             q(
                 "UPDATE pods SET extension_seconds = extension_seconds + ? WHERE id = ?",
-                (mins * 60, body.podId),
+                (mins * 60, target["id"]),
             )
         else:
             q("UPDATE trounds SET ends_at = ends_at + ? WHERE id = ?", (mins * 60, rnd["id"]))
@@ -987,7 +1032,12 @@ def call_official(code: str, pod_id: int, body: CallBody, token: str | None = No
     t = get_tournament(code)
     if not settings_of(t)["allowOfficialCalls"]:
         raise HTTPException(409, "official calls are disabled for this tournament")
+    pod = pod_in(t["code"], pod_id)
     entrant = entrant_from_token(t["code"], token)
+    # A call can earn that table a time extension, so it can't be raised by a
+    # stranger with the tournament code, nor against someone else's table.
+    if not (entrant and seat_in_pod(pod["id"], entrant["id"])):
+        raise HTTPException(403, "only a player at this table may call an official")
     existing = q(
         "SELECT id FROM official_calls WHERE pod_id = ? AND status != 'resolved'", (pod_id,)
     ).fetchone()

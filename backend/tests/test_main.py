@@ -69,3 +69,38 @@ class TestShell:
         """The Scryfall proxy was removed; make sure it stays gone."""
         r = main_client.get("/api/random-card")
         assert "SPA-INDEX" in r.text  # falls through to the SPA, no API route
+
+
+class TestSchemaExposure:
+    """The schema and interactive docs are dev conveniences. Serving them in
+    production hands an attacker a complete route and model map."""
+
+    def _app(self, dev_docs: str):
+        import importlib
+        import os
+        os.environ["TABLE_DEV_DOCS"] = dev_docs
+        from app import main as main_mod
+        importlib.reload(main_mod)
+        return main_mod.app
+
+    def test_schema_and_docs_are_off_by_default(self):
+        from fastapi.testclient import TestClient
+        with TestClient(self._app("off"), base_url="https://testserver") as c:
+            for path in ("/openapi.json", "/docs", "/redoc"):
+                # the SPA fallback may answer, but the schema itself must not
+                r = c.get(path)
+                assert "paths" not in (r.json() if r.headers.get(
+                    "content-type", "").startswith("application/json") else {}), path
+
+    def test_they_can_be_enabled_for_development(self):
+        from fastapi.testclient import TestClient
+        with TestClient(self._app("on"), base_url="https://testserver") as c:
+            r = c.get("/openapi.json")
+            assert r.status_code == 200 and "paths" in r.json()
+
+    def teardown_method(self):
+        import importlib
+        import os
+        os.environ["TABLE_DEV_DOCS"] = "off"
+        from app import main as main_mod
+        importlib.reload(main_mod)

@@ -12,7 +12,18 @@ from .limits import RateLimiter, classify, client_id, client_ip
 from .table import router as table_router
 from .tournaments import router as tournaments_router
 
-app = FastAPI(title="mtg")
+# The interactive docs and schema are development conveniences. In production
+# they enumerate every route, parameter and model on an otherwise hardened box —
+# free reconnaissance for anyone probing it. Authentication still holds without
+# them, so the loss is an attacker's map, not a user's feature.
+_DEV_DOCS = os.environ.get("TABLE_DEV_DOCS", "off") == "on"
+
+app = FastAPI(
+    title="mtg",
+    openapi_url="/openapi.json" if _DEV_DOCS else None,
+    docs_url="/docs" if _DEV_DOCS else None,
+    redoc_url="/redoc" if _DEV_DOCS else None,
+)
 
 # Counters are per-process; a second worker would need a shared store.
 limiter = RateLimiter(db=q) if os.environ.get("TABLE_RATELIMIT", "on") != "off" else None

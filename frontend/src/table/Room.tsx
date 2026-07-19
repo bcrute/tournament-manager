@@ -53,7 +53,12 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   async function countTurn(delta: number) {
     const t = state?.tournament;
     if (!t) return;
-    await fetch(`/api/tournament/${t.code}/pods/${t.podId}/turn`, {
+    // counting a turn decides the pod, so the server requires proof the caller
+    // is actually at this table — that's the entrant token, not the room token
+    const { loadSeat } = await import("../tournament/api");
+    const seat = loadSeat();
+    const auth = seat && seat.code === t.code ? `?token=${encodeURIComponent(seat.token)}` : "";
+    await fetch(`/api/tournament/${t.code}/pods/${t.podId}/turn${auth}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ delta }),

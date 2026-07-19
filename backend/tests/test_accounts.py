@@ -304,3 +304,45 @@ class TestAccountDeletion:
         assert seat["name"] == "bram"       # the table still shows what happened
         assert seat["account_id"] is None   # but nothing ties it to an account
         assert q("SELECT COUNT(*) c FROM rooms WHERE code = ?", (code,)).fetchone()["c"] == 1
+
+
+class TestAuthTimingAndSessions:
+    def test_login_costs_the_same_whether_or_not_the_account_exists(self, fresh):
+        """Username enumeration by stopwatch: without constant work, a missing
+        account returns in microseconds and a real one costs a full scrypt."""
+        import time as _t
+        fresh.post("/api/account/signup",
+                    json={"username": "timingreal", "password": "a good long password"})
+
+        def elapsed(username):
+            best = 1e9
+            for _ in range(3):   # take the minimum: least affected by noise
+                s = _t.perf_counter()
+                fresh.post("/api/account/login",
+                            json={"username": username, "password": "wrong password here"})
+                best = min(best, _t.perf_counter() - s)
+            return best
+
+        real, absent = elapsed("timingreal"), elapsed("timingnobody")
+        # both should pay for a scrypt; allow generous slack for a noisy runner
+        assert absent > real * 0.5, f"absent={absent:.3f}s real={real:.3f}s"
+
+    def test_a_session_unused_past_the_idle_window_is_dead(self, fresh):
+        from app.accounts import SESSION_IDLE_DAYS
+        from app.db import q as dbq
+        fresh.post("/api/account/signup",
+                    json={"username": "idleuser", "password": "a good long password"})
+        assert fresh.get("/api/account/me").json()["account"] is not None
+        dbq("UPDATE sessions SET last_seen = last_seen - ?",
+            ((SESSION_IDLE_DAYS + 1) * 86400,))
+        assert fresh.get("/api/account/me").json()["account"] is None
+
+    def test_using_a_session_keeps_it_alive(self, fresh):
+        from app.db import q as dbq
+        fresh.post("/api/account/signup",
+                    json={"username": "activeuser", "password": "a good long password"})
+        dbq("UPDATE sessions SET last_seen = last_seen - 86400")
+        fresh.get("/api/account/me")     # a use must refresh it
+        row = dbq("SELECT last_seen FROM sessions ORDER BY rowid DESC LIMIT 1").fetchone()
+        import time as _t
+        assert _t.time() - row["last_seen"] < 60

@@ -165,6 +165,12 @@ SENSITIVE_SUFFIXES = (
     "/rooms",
     "/join",
     "/reclaim",
+    # claiming hands out an entrant token, and the roster is public to anyone
+    # with the tournament code — at the normal limit a script could claim every
+    # seat in an event in seconds
+    "/claim",
+    "/entrants",
+    "/turn",
     "/display",
     "/rename",
     "/start",
