@@ -1,4 +1,8 @@
-/** Optional accounts. Everything here degrades to anonymous play. */
+/**
+ * Accounts. Optional for playing — everything here degrades to anonymous play —
+ * but required for hosting a tournament, which additionally needs a recovery
+ * email. See `tournament/Host.tsx`.
+ */
 
 export interface Account {
   username: string;

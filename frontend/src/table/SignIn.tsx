@@ -6,10 +6,12 @@ import { looksLikeEmail, suggestUsername } from "../username";
 /**
  * Sign-in, used in two places that mean different things.
  *
- * For players an account is genuinely optional, and the copy says so loudly —
- * everything works signed out. For organizers it isn't: hosting needs an
- * account with a recovery email, so telling them accounts are optional is at
- * best noise and at worst a lie about what they're about to do.
+ * For players an account is genuinely optional — everything works signed out —
+ * but "accounts are optional" flat is wrong, because hosting a tournament
+ * requires one. The player copy says *playing* never needs an account and
+ * names the exception; the organizer copy drops the optional framing entirely,
+ * since they are one step from being required to have both an account and a
+ * recovery email.
  */
 export default function SignIn({
   onDone,
@@ -100,9 +102,10 @@ export default function SignIn({
       {optional && (
         <>
           <p className="notice">
-            <strong>Accounts are completely optional.</strong> Everything in the app works
-            signed out — an account only keeps a history of your games and your private
-            notes.
+            <strong>Playing never needs an account.</strong> Every game, table and
+            tournament works signed out — an account only keeps a history of your games
+            and your private notes. <em>Hosting</em> a tournament is the one exception:
+            organizers need an account so they can get back into their event.
           </p>
           <p className="hint">
             <strong>No email required.</strong> Sign up with just a username and a

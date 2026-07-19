@@ -21,9 +21,11 @@ Owner for everything below: Ben. Last reviewed 2026-07-19 (post-audit).
 An anonymous-first app for tabletop game nights and tournaments. The defining
 decision — which most of the rest follows from — is that **playing requires no
 account and no personal data**. A player supplies a display name they choose,
-and nothing else. Accounts are optional and exist only for history and notes;
-the sole exception is tournament organizers, who need a recovery email because
-losing access mid-event strands every table.
+and nothing else. **Playing** never requires an account — accounts exist only
+for history and notes. **Hosting** a tournament does require one, plus a
+recovery email, because an organizer losing access mid-event strands every
+table. Stating it as "accounts are optional" without that distinction is
+inaccurate and sets up an organizer for a surprise.
 
 The practical consequence is that **most data-protection questions are answered
 by not having the data**. That is a deliberate control, not an accident of

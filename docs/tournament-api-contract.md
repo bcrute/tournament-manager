@@ -372,9 +372,10 @@ magnitude inside the limit.
 
 ## 6. Why hosting requires an email
 
-Every other part of the app works with no email, and accounts are optional
-throughout. Hosting is the exception: an organizer locked out mid-event strands
-every table, and recovery codes are no help when they're in a drawer at home.
+Playing needs neither an account nor an email, anywhere in the app. Hosting
+needs both: an organizer locked out mid-event strands every table, and recovery
+codes are no help when they're in a drawer at home. "Accounts are optional" is
+true of players and false of organizers, so the UI never says it unqualified.
 It is enforced at create time (**409**), never at signup, so the requirement
 lands on the person choosing to host rather than on everyone.
 

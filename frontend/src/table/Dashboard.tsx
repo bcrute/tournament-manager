@@ -52,7 +52,8 @@ export default function Dashboard() {
         <header>
           <h1>Your games</h1>
           <p className="tagline">
-            Optional — sign in to keep a history and private notes. No email needed.
+            Optional for playing — sign in to keep a history and private notes. No email
+            needed. (Hosting a tournament does need an account.)
           </p>
         </header>
         <SignIn onDone={setAcct} onCancel={() => goBack(navigate, "/table")} />
