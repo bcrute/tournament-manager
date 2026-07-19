@@ -1,8 +1,12 @@
 # Security decisions
 
-This project's answers to the checklist in the security reference
-(`governance/security_open_questions.md`). The reference asks the questions;
-this file records what *this* project decided and why.
+This project's threat model, security decisions, and known gaps. It is
+self-contained — nothing here requires another repository to be checked out.
+
+The questions it answers come from a general security baseline kept separately
+(`ssh://git@192.168.30.4:2222/ben/security-docs.git`), which is the source of
+record for *how to think about* this. The answers are here, because they are
+about this project.
 
 Rules from the reference that apply here: a decision without a rationale is
 only an assertion; "deferred" needs an owner and a trigger; sections that don't
@@ -24,6 +28,63 @@ losing access mid-event strands every table.
 The practical consequence is that **most data-protection questions are answered
 by not having the data**. That is a deliberate control, not an accident of
 scope, and it should survive future features (see `docs/ideas.md`, "Identity").
+
+---
+
+## Threat model
+
+Derived from the method in the security baseline, applied to this app. The rule
+that makes it useful: **a threat is only mitigated if this table names the
+mechanism that mitigates it.** A generic control name with no implementation is
+an open threat.
+
+### Actors and what they start with
+
+| Actor | Starts with | Wants |
+| --- | --- | --- |
+| Passer-by | Nothing but the public URL | Any access at all |
+| Code holder | A tournament or room code, shared openly at the venue | To act as someone at a table they aren't at |
+| Player | A room token, or an entrant token for one event | To alter a result, take another seat, or read another table |
+| Organizer | An account session owning one tournament | To act on events they don't own |
+| Account holder | Optional account, history, notes | Another account's history |
+
+### Trust boundaries
+
+1. **Anonymous → room** — crossed by holding a room code or room token.
+2. **Anonymous → tournament** — crossed by holding a tournament code.
+3. **Player → their own pod** — a token grants one seat, not the table.
+4. **Organizer → their own tournament** — a session owns one event, not all.
+5. **Anonymous → account** — password plus optional recovery.
+
+### Threats and the actual control
+
+| # | Boundary | Threat | Mechanism in this codebase | State |
+| --- | --- | --- | --- | --- |
+| T1 | 2→3 | Force a match result by counting a pod's turns | `advance_turn` requires an entrant token seated in that pod, or the organizer session; pod resolved via `pod_in()` | Mitigated — `TestPodAuthorization` |
+| T2 | 4 | Organizer of A writes results or extends clocks in B | `report_result`, `timer extend`, `call_official` all resolve through `pod_in()`, scoped by tournament | Mitigated — `TestPodAuthorization` |
+| T3 | 1 | Seize an occupied seat using a published room code | Room codes are no longer published; only the organizer and that table's own players receive one | Mitigated — `TestRoomCodesAreNotPublished` |
+| T4 | 3 | Read another player's seat credential | Room token personalised onto the caller's own seat only, never in the shared pod list | Mitigated — `TestPlayerView` |
+| T5 | 2 | Claim every seat in an event before real players arrive | `/claim` rate-limited as *sensitive* (20 per 10 min); claims are first-come and the organizer can release | Partially mitigated — a determined attacker with the code can still race real players |
+| T6 | 2 | Enumerate platform size from a public roster | Entrant ids on the wire are random and tournament-scoped; the integer PK never leaves the server | Mitigated — `TestEntrantIdsAreOpaque` |
+| T7 | 5 | Enumerate usernames | Identical response text, and a throwaway scrypt verification when no account matches so timing matches too | Mitigated — `TestAuthTimingAndSessions` |
+| T8 | 5 | Reuse a stolen session cookie | httpOnly + Secure + SameSite; 90-day absolute expiry with a 30-day idle expiry that now actually updates | Mitigated |
+| T9 | 5 | Brute-force a password or recovery code | scrypt n=2^16; sensitive endpoints 20 per 10 min; escalating IP bans 1h→6h→24h→7d | Mitigated |
+| T10 | any | Probe the app without leaving a trace | **Nothing.** No application logging exists | **Open** — see gaps |
+| T11 | 2 | Entrant token captured from a URL | Token travels as `?token=`; the reverse proxy must strip query strings from access logs | **Partially mitigated** — depends on proxy config not in this repo |
+| T12 | 1 | Denial of service by room or event creation | Per-client rate limits; rooms idle out at 3h, tournaments at 12h | Mitigated |
+| T13 | 3 | Alter another player's life total | Every room mutation resolves the actor from `X-Player-Token` scoped to that room | Mitigated |
+| T14 | 4 | Player disputes an organizer's ruling | Results are versioned and never mutated; `source` records `auto` vs `organizer` | Mitigated by design |
+
+### Assumptions
+
+These are part of the model, not omissions from it:
+
+- TLS terminates at Caddy and the app is not directly reachable. Verified by
+  `docker-compose.yml` publishing no ports.
+- Whoever holds a tournament or room code is entitled to be at that venue.
+  Codes are shouted across a game store; they are a convenience, not a secret.
+- The host is trusted. A database file readable on the host reveals everything
+  the app knows, which is deliberately very little.
 
 ---
 
