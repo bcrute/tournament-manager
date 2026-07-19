@@ -1153,3 +1153,39 @@ class TestJudgeExtensions:
         client.post(f"/api/tournament/{code}/pods/{pod['podId']}/call", json={})
         call = client.get(f"/api/tournament/{code}").json()["calls"][0]
         assert "openSeconds" in call and "suggestedMinutes" in call
+
+
+class TestIdentityStaysSeparate:
+    """Playing is anonymous by design. An account is voluntary everywhere, and
+    claiming a spot hands out a tournament-scoped id — never the account's."""
+
+    def test_claiming_needs_no_account_at_all(self, client):
+        organizer(client, "hostBV")
+        code = host(client)
+        added = add(client, code, ["n1", "n2", "n3", "n4"])
+        client.cookies.clear()          # nobody is signed in
+        r = client.post(f"/api/tournament/{code}/claim",
+                        json={"entrantId": added[0]["entrantId"]})
+        assert r.status_code == 200 and r.json()["entrantToken"]
+
+    def test_a_signed_in_player_is_not_linked_to_their_account(self, client):
+        """Being signed in must not change what the tournament learns about
+        you. The entrant is identified by a temporary token, and the account
+        link stays empty unless a future feature asks permission."""
+        organizer(client, "hostBW")
+        code = host(client)
+        added = add(client, code, ["n5", "n6", "n7", "n8"])
+        client.cookies.clear()
+        client.post("/api/account/signup",
+                    json={"username": "playerBW", "password": "a good long password"})
+        client.post(f"/api/tournament/{code}/claim", json={"entrantId": added[0]["entrantId"]})
+        linked = q("SELECT account_id FROM entrants WHERE id = ?",
+                   (added[0]["entrantId"],)).fetchone()["account_id"]
+        assert linked is None
+
+    def test_the_roster_never_exposes_an_account(self, client):
+        organizer(client, "hostBX")
+        code = host(client)
+        add(client, code, ["n9", "n10", "n11", "n12"])
+        body = json.dumps(client.get(f"/api/tournament/{code}/roster").json())
+        assert "account" not in body.lower()

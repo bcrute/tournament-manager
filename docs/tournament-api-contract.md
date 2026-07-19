@@ -24,6 +24,14 @@ An organizer must own the tournament — `require_organizer` matches the session
 account against `tournaments.organizer_account_id`. Any other account gets 403,
 no session gets 401.
 
+**Players are anonymous by design.** `POST /claim` takes no authentication at
+all: possession of the tournament code is the gate, and it returns a token
+scoped to that tournament. Being signed in changes nothing about what the
+tournament learns — `entrants.account_id` is never written. It exists only as a
+hook for a future *opt-in* history link, and populating it as a side effect of
+a signed-in claim would be a privacy regression, not a convenience. Pinned by
+`TestIdentityStaysSeparate`.
+
 **Entrant tokens are query parameters, not headers**, because the player client
 reads state from a plain `GET` it can retry cheaply. That places the token in
 request URLs, so it must never be logged: the reverse proxy strips query strings
