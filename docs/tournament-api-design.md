@@ -277,7 +277,8 @@ is worse than an English one.
 
 ## 6. Clients
 
-**Organizer management is desktop-first.** Pairing review, re-rolls, result
+**Organizer management is mobile-first** (this said desktop-first when written;
+the decision was reversed once the console became section-based). Pairing review, re-rolls, result
 overrides, timer control and standings all want screen area and a pointer;
 cramming them into a phone would compromise the part of the product that has to
 be fast under pressure at a live event. Player and display clients stay

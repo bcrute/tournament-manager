@@ -24,9 +24,12 @@ import {
 import { useTournament } from "./useTournament";
 
 /**
- * The organizer console. Desktop-first — this is the one screen in the app
- * meant for a laptop at the front table, so it lays out wide: roster on the
- * left, pods in the middle, standings and the call queue on the right.
+ * The organizer console.
+ *
+ * Mobile-first like the rest of the app: an organizer is usually holding a
+ * phone and walking between tables, not sitting at a laptop. ConsoleLayout
+ * gives it sections rather than one scrolling page, and a sidebar once the
+ * screen is wide enough — which is a bonus, not the assumption.
  */
 export default function Organize() {
   const { code = "", section = "pods" } = useParams();

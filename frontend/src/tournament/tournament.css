@@ -1,6 +1,6 @@
-/* Tournament screens.
-   The organizer console is the only desktop-first surface in the app; the
-   player view stays on the same mobile rules as the rest of the table app. */
+/* Tournament screens. Mobile-first throughout, including the organizer console
+   — layout chrome lives in layouts/layouts.css; this file styles the contents
+   of each section. */
 
 .tq-host,
 .tq-play {
