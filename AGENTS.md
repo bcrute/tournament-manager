@@ -67,14 +67,20 @@ go and read — this is the whole list.
   perform. A comment is not a control.
 - **A settings flag that promises behaviour must implement it.** This project
   shipped three that were read by nothing (`timeCalledPolicy`,
-  `collectWizardsEmail`, and a status that could never be reached).
+  `collectWizardsEmail`, and a status that could never be reached). All three
+  are now genuinely read — but the failure mode inverted rather than went away:
+  settings are whitelist-filtered on create, so a key the server does not
+  implement is **dropped silently and returns 200**. A design doc promising a
+  setting that does not exist is now the likelier defect. See
+  `docs/tournament-api-contract.md` §6a, which is the authoritative list.
 - **Do not invent a citation.** Standards, control IDs, and tournament rules
   must be ones you have actually read. See `docs/tournament-api-contract.md`
   for how rules citations are handled.
 - **Surface the tradeoff instead of quietly taking it.** Say the secure option
   costs something and let a human choose.
 - **Reporting a gap is not fixing it.** The schema endpoints were flagged three
-  times across three sessions before anyone turned them off.
+  times across three sessions before anyone turned them off — they are off now,
+  behind `TABLE_DEV_DOCS`. Three sessions is the number to beat.
 
 ### What does not apply here
 
@@ -83,8 +89,12 @@ no regulated data, no contractual commitments, no vendors processing data, and
 no auditor. Mapping it to SOC 2 would spend effort away from the controls that
 matter.
 
-That changes if paid registration ships (`docs/ideas.md`) — payment brings a
-data regime this project deliberately does not have today.
+**That changes at payment tier 2** (`docs/events-platform.md` §9). Processing
+payment data on a shop's behalf makes them the controller and us the processor,
+which brings data processing agreements, breach notification duties and
+subprocessor disclosure. None of it applies today; all of it applies the day
+automated payment tracking ships, and this section must be rewritten in that
+same change rather than after it.
 
 ## Boundaries this project defends
 
@@ -100,19 +110,31 @@ fail, the change is wrong until proven otherwise:
 
 ## Engineering expectations
 
-- **Tests are a gate, not a courtesy.** CI enforces 90% backend coverage and
-  the frontend thresholds in `frontend/vite.config.ts`. Regression tests for
-  user-reported bugs are expected — several exist precisely because a bug came
-  back.
-- **A settings flag that promises behaviour must implement it.** This project
-  shipped three settings that were read by nothing (`timeCalledPolicy`,
-  `collectWizardsEmail`, and a status that could never be reached). Adding a
-  config key with no code behind it is worse than omitting the feature.
+- **Tests are a gate, not a courtesy.** The gate is `--cov-fail-under=90` in
+  the **Dockerfile**, alongside `npm run test` and the thresholds in
+  `frontend/vite.config.ts` — not in `.gitea/workflows/`, which only builds the
+  image. Looking only at the workflow would tell you no gate exists. Regression
+  tests for user-reported bugs are expected — several exist precisely because a
+  bug came back.
+- **A settings flag that promises behaviour must implement it.** Adding a
+  config key with no code behind it is worse than omitting the feature; see the
+  agent rules above for how this one has evolved.
 - **Don't claim something works without checking.** Run the suite. Read the
   output. "Should work" is not a result.
 - **Rules citations must be real.** Where this app implements tournament rules,
   cite the actual document and version (see `docs/tournament-api-contract.md`).
   A plausible-sounding rule reference is worse than none.
+
+## The table layer is frozen
+
+Lifetap is in active use. An events platform is being designed above all of
+this (`docs/events-platform.md`), and it sits **two layers above** the table —
+so no part of that work may change `backend/app/table.py`, the room API, or
+`frontend/src/table/`. If a design appears to require it, the design is wrong;
+say so rather than reaching down.
+
+This is not a general freeze on the table surface — bug fixes to lifetap itself
+are fine. It is a rule about which direction new work may reach.
 
 ## The three surfaces
 
@@ -169,9 +191,10 @@ is several sections someone moves between while an event runs, with state that
 must stay visible throughout. Forcing the console into the player shell is what
 made the organizer view one enormous scrolling page.
 
-**Console sections are routes, not tabs in state** (`/organize/pods`,
-`/admin/rooms`). An organizer can bookmark the standings, reload without losing
-their place, and the browser Back button does what it should.
+**Console sections are routes, not tabs in state**
+(`/tournament/:code/organize/pods`, `/admin/:section`). An organizer can
+bookmark the standings, reload without losing their place, and the browser Back
+button does what it should.
 
 **Icons, never emoji.** Every glyph comes from `Icon.tsx` — a single-colour
 outline set that inherits `currentColor`, so it themes and renders identically
@@ -186,8 +209,8 @@ handling — announcing a menu to a screen reader that doesn't behave like one,
 and breaking every `getByRole("button")` query at the same time. Prefer native
 semantics; add ARIA only when implementing the whole pattern. Icon-only
 controls need an accessible name, focus must never be stranded (Escape closes
-and returns it), and `e2e/a11y.spec.ts` pins the skip link, focus return,
-accessible names, `lang`, and landmarks.
+and returns it), and `frontend/e2e/a11y.spec.ts` pins the skip link, focus
+return, accessible names, `lang`, and landmarks.
 
 **Mobile-first is not negotiable, including the console.** Base rules are the
 phone; media queries add room and never take it away. An organizer is usually
@@ -198,8 +221,22 @@ holding a phone and walking between tables.
 - `backend/app/` — FastAPI. `db.py` owns the schema and migrations; `table.py`
   rooms and games; `tournaments.py` events; `admin.py` the operator surface;
   `accounts.py` optional accounts; `limits.py` rate limiting and bans;
-  `games.py` game profiles.
+  `games.py` game profiles; `pairing.py` the pod pairer; `audit.py` the audit
+  and security logs.
+  - **`pairing.py` is pure.** No database, no clock, no unseeded randomness —
+    deterministic given `(entrants, history, seed)`, which is what makes a
+    re-roll reproducible and a disputed pairing re-derivable. Keep it that way;
+    anything needing I/O belongs in `tournaments.py`.
+  - **`audit.py` is where two of the rules above are actually implemented** —
+    "admin actions are logged" and "log the decision, not the secret".
 - `frontend/src/` — Vite + React + TS. `site/` the public page, `table/`,
   `tournament/`, `admin/`, with `layouts/` and `nav.ts` shared between them.
-- `docs/` — design, the API contract, security decisions, and an ideas parking
-  lot that is explicitly not a roadmap.
+  End-to-end specs are in `frontend/e2e/`, run by `npm run e2e` and excluded
+  from vitest.
+- `docs/` — `tournament-api-contract.md` is what the server actually serves and
+  wins any disagreement; `tournament-api-design.md` is the intent and stress
+  test behind it; `security.md` the threat model; `tournament-research.md` the
+  research and the decisions taken; `commercial-position.md` the paid-tier
+  question; `events-platform.md` the design for the events layer above all of
+  this, none of which is built; `ideas.md` a parking lot that is explicitly not
+  a roadmap.

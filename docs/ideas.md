@@ -10,6 +10,12 @@ If something here graduates, it gets its own design doc and moves out.
 
 ## Paid registration through a payment processor
 
+> **Superseded 2026-07-20 by [`events-platform.md`](./events-platform.md) §9**,
+> which splits participant payments into three tiers and separates them from
+> subscription billing. The conclusions below survive and are load-bearing
+> there — never hold money, never touch card data, containment rather than
+> compromise — but the single-adapter shape does not. Kept for the reasoning.
+
 *Noted 2026-07-19.*
 
 Players already hand the organizer their details and money to register. The app
@@ -53,9 +59,9 @@ a first-class path** (see "Identity" below). If a design ever requires an
 account to play, the design is wrong.
 
 **Money changes the licensing question.** The Wizards Fan Content Policy is
-noncommercial. Charging for tournament use was already flagged in the roadmap as
-needing an answer; a payment portal makes that question load-bearing rather than
-theoretical. The distinction between pass-through entry fees an organizer would
+noncommercial. Charging for tournament use is already flagged in
+`commercial-position.md` as needing an answer; a payment portal makes that
+question load-bearing rather than theoretical. The distinction between pass-through entry fees an organizer would
 have charged anyway and revenue we take is likely to matter.
 
 **Then the ordinary hard parts:** refunds and cancellation windows, no-shows,
@@ -175,6 +181,11 @@ deliberate upgrade is a separate path and needs its own tests.
 
 ## Event directory
 
+> **Folded into [`events-platform.md`](./events-platform.md) §3** as the
+> directory surface, where events are the base object rather than tournaments.
+> The two constraints below — venue-centred rather than device location, and
+> verification before public listings — carried over unchanged.
+
 *Noted 2026-07-19.*
 
 Organizers publish events under a shop or venue name. Players log in, see
@@ -212,11 +223,14 @@ and schedules, which is a bigger model than "a code someone shares at a table".
   (`entrants.external_ref`, the mapping table in the API contract); the adapter
   itself is unwritten. Imports are one-way — their API can't accept results —
   and any UI must say so or organizers will assume a sync that doesn't exist.
-- **Top cut execution.** Presets recommend a cut; nothing performs one. Needs
-  re-podding, bracket seeding, and single-elimination rules (where highest life
-  *does* decide at time, unlike Swiss).
-- **`/openapi.json` and `/docs` are public** on production, enumerating every
-  route and schema on an otherwise hardened box.
+- **Top cut execution.** `GET /{code}/plan` recommends a cut from the game
+  profile's bracket; nothing performs one. Needs re-podding, bracket seeding,
+  and single-elimination rules (where highest life *does* decide at time,
+  unlike Swiss).
+- **Manual pod assignment.** An organizer cannot move an entrant between pods
+  or name a table. Planned first, overtaken by the pairer, never built.
+- ~~`/openapi.json` and `/docs` are public.~~ **Fixed.** Both, plus `/redoc`,
+  are off unless `TABLE_DEV_DOCS=on`.
 - ~~Entrant ids are sequential and semi-public.~~ **Fixed 2026-07-19.**
   `entrants.public_id` is a random string and is the only id on the wire; the
   integer primary key stays internal.

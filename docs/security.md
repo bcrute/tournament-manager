@@ -12,7 +12,9 @@ Rules from the reference that apply here: a decision without a rationale is
 only an assertion; "deferred" needs an owner and a trigger; sections that don't
 apply are marked not-applicable explicitly rather than deleted.
 
-Owner for everything below: Ben. Last reviewed 2026-07-19 (post-audit).
+Owner for everything below: Ben. Last reviewed 2026-07-19 (post-audit);
+re-checked against the code 2026-07-20, which closed the schema-endpoint and
+application-logging gaps and narrowed T10.
 
 ---
 
@@ -72,7 +74,7 @@ an open threat.
 | T7 | 5 | Enumerate usernames | Identical response text, and a throwaway scrypt verification when no account matches so timing matches too | Mitigated — `TestAuthTimingAndSessions` |
 | T8 | 5 | Reuse a stolen session cookie | httpOnly + Secure + SameSite; 90-day absolute expiry with a 30-day idle expiry that now actually updates | Mitigated |
 | T9 | 5 | Brute-force a password or recovery code | scrypt n=2^16; sensitive endpoints 20 per 10 min; escalating IP bans 1h→6h→24h→7d | Mitigated |
-| T10 | any | Probe the app without leaving a trace | **Nothing.** No application logging exists | **Open** — see gaps |
+| T10 | any | Probe the app without leaving a trace | `security_log` via `audit.py`: auth failures, unknown-user attempts, admin denials, rate-limit trips and bans, all keyed to a salted client id. 30-day retention, pruned on the hourly sweep | Partially mitigated — the tournament layer records nothing; see gaps |
 | T11 | 2 | Entrant token captured from a URL | Token travels as `?token=`; the reverse proxy must strip query strings from access logs | **Partially mitigated** — depends on proxy config not in this repo |
 | T12 | 1 | Denial of service by room or event creation | Per-client rate limits; rooms idle out at 3h, tournaments at 12h | Mitigated |
 | T18 | 1 | Enumerate room URLs to find live games | The address bar carries `rooms.url_id` — 128 random bits — not the five-character code. Pinned by `TestRoomUrlId` and a browser test | Mitigated |
@@ -173,9 +175,23 @@ the authorization, and they grant nothing outside their room or tournament.
 
 ## Audit and logging
 
-The admin surface has a real audit trail (`admin_log`); the rest of the app
-does not, and that split is deliberate — admin acts on people who cannot see
-it happening.
+Three logs, deliberately separate because they have three different readers,
+retentions and threat models. All three live in `audit.py` except `events`,
+which belongs to the room:
+
+| Log | Reader | Retention | Written by |
+| --- | --- | --- | --- |
+| `events` | the player, in-game | dies with the room | `table.py` |
+| `admin_log` | the operator, after the fact | 365 days | `audit.admin_action()`, only after a privileged action succeeds |
+| `security_log` | whoever is investigating | 30 days | `audit.security_event()`, on attack signal |
+
+Event kinds are constants (`AUTH_FAIL`, `AUTHZ_DENY`, `ADMIN_DENY`,
+`RATELIMIT_TRIP`, `BAN_ISSUED`, …) rather than free strings, so a typo cannot
+quietly create a category nobody queries.
+
+**There is still no `logging` module anywhere in `backend/app/`.** That is the
+design, not an omission: everything above is durable and queryable, and stdout
+on a single container is neither.
 
 | Question | Decision | Rationale |
 | --- | --- | --- |
@@ -183,7 +199,7 @@ it happening.
 | Audit immutability | Game events are append-only in practice but not enforced at the database level. Accepted. | The audit consumer is a player wondering who killed them, not a regulator. Hash chaining would be theatre here. |
 | Audit granularity | Game events record actor, action, target and timestamp. Result changes are versioned with source (`auto` vs `organizer`) and a note. | An organizer overriding a result is the one action with real consequences, so it keeps history rather than mutating. |
 | Audit retention | Tied to the room's lifetime; account history persists until the account is deleted. | |
-| Denial logging | **Gap.** Authorization denials are not logged distinctly from other 4xx. | Recorded rather than hidden; low priority while the app has no admin surface to attack. |
+| Denial logging | Admin denials (`ADMIN_DENY`) and authentication failures are recorded. **Gap: the tournament layer records nothing** — `tournaments.py` does not import `audit` at all, so a 403 from the pod-authorization checks leaves no trace. | The layer that produced five authorization defects is the one that would not show a sixth being probed. |
 
 **Never logged:** tokens, passwords, recovery codes, or raw IP addresses.
 Rate limiting identifies clients by a salted HMAC of the IP (`limits.client_id`).
@@ -303,18 +319,26 @@ internal detail. It was reaching the client and coming back trusted.
    say the codes are the only way back in, but the longer an address is stored
    without the feature existing, the more it reads as a promise. Owner: Ben.
    Trigger: implement it or stop collecting it before the first outside user.
-3. **No application logging at all.** There is no `import logging` anywhere in
-   `backend/app/`: no authorization denial, authentication failure, ban, or
-   rate-limit trip is recorded, and `broadcast` swallows exceptions with a bare
-   `except Exception: pass`. The audit rated this Medium. It is the largest
-   remaining gap now that the authorization defects are closed — an attacker
-   probing this app leaves no trace. Owner: Ben. Trigger: before the app is
-   used for an event with stakes.
-4. **Security headers are unverified.** CSP, HSTS, X-Content-Type-Options and
-   Referrer-Policy are not set by the application. Caddy may set them, but the
-   Caddyfile is not in this repo so it could not be confirmed. Referrer-Policy
-   matters directly for the next item.
-5. **Entrant tokens ride in query strings**, so the reverse proxy must strip
+3. **The tournament layer is unlogged.** The audit's "no application logging at
+   all" finding is largely closed — `security_log` now records auth failures,
+   admin denials, rate-limit trips and bans. `tournaments.py` is the exception:
+   it does not import `audit`, so every authorization denial it raises is
+   silent. That is precisely the layer the 2026-07-19 audit found five defects
+   in, so a sixth being probed would look like nothing at all. Owner: Ben.
+   Trigger: before the app is used for an event with stakes.
+4. **Failures are swallowed in three places.** `broadcast` (`table.py`) uses a
+   bare `except Exception: pass`; so does the limiter's audit write, annotated
+   and deliberate so logging cannot break the limiter. The third is the
+   concerning one: `get_state` in `tournaments.py` swallows any failure of
+   `current_account()` and silently downgrades the caller to non-organizer —
+   which turns a genuine auth bug into what looks like a permissions decision.
+   Fails closed, so it is not a vulnerability; it is a debugging trap.
+5. **Security headers are set by the app but unverified end-to-end.** `main.py`
+   sets a Permissions-Policy. CSP, HSTS, X-Content-Type-Options and
+   Referrer-Policy depend on Caddy, whose config is not in this repo, so the
+   served response has not been confirmed. Referrer-Policy matters directly for
+   the next item.
+6. **Entrant tokens ride in query strings**, so the reverse proxy must strip
    query parameters from access logs. That coupling is invisible from either
    file; a header would remove it. Tracked in `docs/ideas.md`.
 

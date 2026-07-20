@@ -6,10 +6,13 @@
 > disagree, the contract is right. Divergences are listed there with reasoning.
 
 
-*Written 2026-07-19. Design only; nothing here is implemented.*
+*Written 2026-07-19, before the tournament layer was built. Most of it shipped;
+the parts that did not are marked **not built** where they appear. Treat this as
+the record of intent and the stress test behind the decisions — never as a
+description of the server. That is [`tournament-api-contract.md`](./tournament-api-contract.md).*
 
-Companion to [tournaments-roadmap.md](./tournaments-roadmap.md), which covers the
-research, licensing and phasing. This document is the API and data model, plus a
+Companion to [tournament-research.md](./tournament-research.md), which covers the
+research and licensing. This document is the API and data model, plus a
 deliberate stress-test of both.
 
 ---
@@ -291,6 +294,12 @@ Everything contested is configurable rather than decided for the organizer.
 Defaults follow official rules where they exist, and prevailing Commander
 practice where they don't.
 
+> **Seven of these were never built**, and are marked **not built** below. The
+> shipped settings surface is the table in `tournament-api-contract.md` §6a,
+> which is authoritative. This matters more than a normal doc drift: unknown
+> keys are silently dropped on create, so posting one of the unbuilt settings
+> returns 200 and changes nothing.
+
 ### Scoring
 
 | Setting | Options | Default |
@@ -310,8 +319,8 @@ extend the turn instead of counting turns.
 |---|---|---|
 | `timeCalledPolicy` | `draw_survivors` · `draw_all` (cEDH: eliminated players share it) · `highest_life` · `organizer_decides` | `draw_all` |
 | `extraTurns` | integer (MTR: 5) · `0` to disable | 5 |
-| `turnExtensionMinutes` | integer · `0` to disable | 0 |
-| `topCutPolicy` | `highest_life` (MTR single-elim) · `organizer_decides` | `highest_life` |
+| `turnExtensionMinutes` — **not built** | integer · `0` to disable | 0 |
+| `topCutPolicy` — **not built**, no cut is performed | `highest_life` (MTR single-elim) · `organizer_decides` | `highest_life` |
 
 `highest_life` reads the life totals the table is already tracking, which is the
 one place our owning the table pays off directly for adjudication.
@@ -321,9 +330,9 @@ one place our owning the table pays off directly for adjudication.
 | Setting | Options | Default |
 |---|---|---|
 | `structure` | `swiss` · `swiss_top_cut` | `swiss` |
-| `topCutSize` | 4 · 8 · 16 | 4 |
+| `topCutSize` — **not built**; cut size comes from the game profile's bracket | 4 · 8 · 16 | 4 |
 | `podSize` | 3 · 4 · 5 (preferred; sizer degrades as needed) | 4 |
-| `rounds` | integer · `auto` (by entrant count) | `auto` |
+| `rounds` — **not built**; round count is advisory from `GET /{code}/plan` and configures nothing | integer · `auto` (by entrant count) | `auto` |
 
 ### Seating
 
@@ -338,10 +347,10 @@ this is a genuine fairness knob rather than cosmetics.
 
 | Setting | Options | Default |
 |---|---|---|
-| `organizerAuth` | `secret` (device-held) · `account` (recoverable, multi-device) | `account` when signed in, else `secret` |
+| `organizerAuth` — **not built, and the choice was removed**: hosting always requires an account with a recovery email | `secret` (device-held) · `account` (recoverable, multi-device) | — |
 | `collectWizardsEmail` | `off` · `optional` · `required` | `off` |
-| `spectatorView` | `public` · `code_only` · `off` | `code_only` |
-| `staffRoles` | `off` · `judges` (result entry, timer, official calls; no re-pairing or deletion) | `judges` |
+| `spectatorView` — **not built**; the roster is public to anyone holding the code | `public` · `code_only` · `off` | `code_only` |
+| `staffRoles` — **not built**; every staff action requires the owning organizer's session | `off` · `judges` (result entry, timer, official calls; no re-pairing or deletion) | `judges` |
 | `allowOfficialCalls` | `on` · `off` (small leagues with no judge) | `on` |
 
 ## 8. Still open

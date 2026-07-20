@@ -92,6 +92,17 @@ without one this returns **409**, not 403. Rationale in §6.
 { "code": "K7M2Q" }                    // 5 chars, alphabet excludes I/L/O/0/1
 ```
 
+### `GET /api/tournament/mine`  *(organizer)*
+Tournaments owned by the calling account, most recently active first. Account
+session required; scoped to the caller, never to all events.
+
+### `GET /api/tournament/{code}/plan`
+Advisory only. Returns the structure recommended for the current field —
+round count and, where the game profile defines a bracket, a suggested cut.
+**Nothing acts on it**: `open_round` always runs Swiss, and no setting stores
+the answer. It exists so an organizer can see what a field of this size would
+usually be run as, not to configure the event.
+
 ### `GET /api/tournament/{code}`
 The single snapshot every client polls. Personalized in memory from one query
 set — no N+1, no per-viewer queries.
@@ -252,7 +263,9 @@ is decided immediately rather than stranded.
 ```
 Any player at the table may call this with their entrant token — a judge should
 not have to stand there for five turns. The app cannot detect a turn passing;
-the table counts them, which is what players already do by hand.
+the table counts them, which is what players already do by hand. The organizer
+may also count for a table, which is the fallback when a pod has no working
+phone between them.
 
 The count may exceed where it started: MTR 2.6 says certain slow-play penalties
 add turns rather than time, and those are added to the end-of-match additional
@@ -306,8 +319,13 @@ that's what override means. This is the least-tested path in the system (§8).
 `alreadyOpen: true` rather than queueing duplicates — four players tapping the
 same button must not summon four judges. Disabled tournaments return **409**.
 
-The token is optional; an anonymous call records `entrant_id: null`. A table
-with a problem should be able to raise a hand even if a phone lost its token.
+**The token is required, and must belong to someone seated at that table.**
+A caller who is not seated in the pod gets **403**. This reverses an earlier
+decision that allowed anonymous calls so a player whose phone lost its token
+could still raise a hand: because resolving a call grants that table a time
+extension, an anonymous call let a stranger holding the tournament code aim
+free time at any pod. At a physical event the fallback is raising an actual
+hand. See `docs/security.md`, "Audit, 2026-07-19".
 
 ### `POST /api/tournament/{code}/calls/{id}/ack`  *(organizer)*
 ### `POST /api/tournament/{code}/calls/{id}/resolve`  *(organizer)*
@@ -389,17 +407,54 @@ warning, not a block.
 
 ---
 
+## 6a. Settings, as actually accepted
+
+`settings` is a JSON blob, but it is **whitelist-filtered on create** against
+the defaults for the chosen game, so a key that is not in this table cannot be
+stored at all (`tournaments.py`, `cfg = {k: v for k, v in body.settings.items()
+if k in allowed}`). Create is the only write path — there is no
+update-settings endpoint, so an event's settings are fixed once it exists.
+
+Every key below is read by code. That is the standard: **this table and the
+defaults dict must agree, and a key appears here only once something reads it.**
+
+| Key | Read by |
+|---|---|
+| `scoring`, `drawPoints`, `byeScoring` | `points_for`, at result-decision time |
+| `podSize` | `pair_round(preferred_size=…)`, and the recommended structure |
+| `seatAssignment` | `seat_pods(mode=…)` |
+| `structure` | `structure_for(…)` |
+| `roundMinutes` | `timer` `start` when no `minutes` given |
+| `timeCalledPolicy` | `rounds/time`, and pod resolution when extra turns run out |
+| `extraTurns` | `rounds/time`, drives the countdown and `extra_turns` status |
+| `collectWizardsEmail` | `claim` |
+| `allowOfficialCalls` | the call endpoint, and the player UI |
+| `autoExtendOnCall` | `calls/{id}/resolve` |
+| `startingLife` | creating each pod's room. Read it as "the profile's resource start" |
+
+**Unknown keys are dropped silently, and that is a sharp edge.** A client
+posting a setting this server does not implement gets **200** and no effect.
+`tournament-api-design.md` §7 describes several that were designed and never
+built (`topCutSize`, `topCutPolicy`, `turnExtensionMinutes`, `organizerAuth`,
+`spectatorView`, `staffRoles`, `rounds`); they are marked there. Anything added
+to the defaults dict must be read by something in the same change — a settings
+key with no code behind it is the failure mode `AGENTS.md` names, and silent
+filtering makes it invisible from the outside rather than merely inert.
+
 ## 7. Divergences from `tournament-api-design.md`
 
 | Design | Shipped | Why |
 |---|---|---|
 | `GET /rounds/latest`, `/standings`, `/calls` | folded into `GET /{code}` | three polls became one snapshot; cheaper and race-free |
 | `/tables/{id}` | `/pods/{pod_id}` | "pod" is the word players use |
-| `WS /{code}/ws` | not built | polling is enough at this scale and costs nothing idle; see §8 |
+| `WS /{code}/ws` | not built | the room WebSocket carries tournament clock pushes to the players who need them; a second channel earned nothing |
 | `GET /rounds/{n}` (history) | not built | nothing needs it yet |
 | organizer secret returned once | account session + email | recoverable; a lost secret mid-event is unrecoverable |
+| anonymous official calls allowed | seated entrant token required | resolving a call grants time; anonymous let a stranger aim it at any table |
+| organizer-named pods, drag-to-assign | neither built | automated pairing landed first and covered the need; pods are numbered |
 | — | `POST /rounds/close` | the design had no way to end a round |
-| — | `entrants/{id}/release`, `/drop` | mis-taps and departures both happen constantly |
+| — | `entrants/{id}/release`, `/drop`, `/undrop` | mis-taps and departures both happen constantly |
+| — | `GET /mine`, `GET /{code}/plan` | an organizer needs to find their own events, and to see what a field this size is usually run as |
 
 ---
 
@@ -497,13 +552,21 @@ that adding one later doesn't require a migration of live event data.
 - **Auto-result is test-covered, not event-proven.** The room → placement path
   has never run in a real game inside a tournament pod. Prove it with a
   throwaway 4-player event before running anything that counts.
-- **No WebSocket.** Timer updates lag by up to one poll (5 s foreground).
-- **No top cut / playoff re-podding**, and no `rounds: auto` recommendation.
-  These are the largest remaining gaps for running a full competitive event.
+- **No tournament WebSocket.** Tournament state is polled (5 s foreground,
+  30 s hidden), so standings and roster changes lag by up to one poll. Clock
+  changes do not: they are pushed over each pod room's existing socket,
+  because a pause a player cannot see is a timer that visibly keeps running.
+- **No top cut / playoff re-podding.** `GET /{code}/plan` will *recommend* a
+  cut from the game profile's bracket, but nothing performs one — there is no
+  single-elimination path and `open_round` always pairs Swiss. This is the
+  largest remaining gap for running a full competitive event.
+- **No manual pod assignment.** An organizer cannot move an entrant between
+  pods or name a table; the only route into a pod is the pairer. Re-roll
+  exists in the API but has no UI control.
+- **No CSV/JSON export** of standings or results.
 - **No entrant rename** outside an import.
 - **No import adapter** yet; the data model is ready for one (§9).
-- **`/openapi.json` and `/docs` are publicly served**, enumerating every route
-  and schema. Authentication still holds, but it's free reconnaissance on an
-  otherwise hardened box. Disable with
-  `FastAPI(openapi_url=None, docs_url=None)` in `main.py`, or gate them behind
-  the organizer session.
+- **Tournaments never expire.** Rooms belonging to a live tournament are exempt
+  from the 3 h idle sweep, which is what keeps a pod alive over lunch — but
+  nothing expires the tournament itself. `tournaments.IDLE_TIMEOUT` is defined
+  and read by nothing; either wire it up or delete it.
