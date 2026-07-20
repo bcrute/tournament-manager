@@ -1,5 +1,34 @@
 # Working on this project
 
+## Setting up on a new machine
+
+The repo is self-contained for *understanding* the project. Three things are
+not in it and never should be:
+
+1. **A Gitea SSH key to push.** Generate one, register it in Gitea (Settings →
+   SSH keys), and pin it for this clone so the agent's other keys aren't
+   offered first:
+   ```
+   ssh-keygen -t ed25519 -f ~/.ssh/gitea_ed25519 -C "$(hostname)" -N ""
+   git remote set-url origin ssh://git@192.168.30.4:2222/ben/mtg.git
+   git config core.sshCommand 'ssh -i ~/.ssh/gitea_ed25519 -o IdentitiesOnly=yes'
+   ```
+   Gitea's SSH is on **unraid:2222**. The `gitea.skadoosh.dev` name is only the
+   HTTPS front end — port 22 there is the host's own sshd, and will refuse you.
+
+2. **A toolchain.** Nothing here assumes node or python are installed
+   system-wide. `npm ci` in `frontend/`, a venv from `backend/requirements*.txt`,
+   and `npx playwright install chromium` for the browser tests.
+
+3. **Server environment variables**, which live on the deployment, not here:
+   `TABLE_ADMINS` (admin surface is absent without it), `TABLE_IP_SALT` (keeps
+   bans stable across redeploys), `TABLE_DEV_DOCS` (off in production).
+
+**Verifying a deploy:** compare the bundle hash the site serves against your
+local `frontend/dist/` build. Checking an API endpoint proves the server
+updated, not that any browser sees it — that distinction hid a day of invisible
+deploys once already.
+
 ## Security
 
 Everything you need is in this repo — [`docs/security.md`](docs/security.md)
