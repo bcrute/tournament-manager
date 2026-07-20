@@ -138,3 +138,56 @@ class TestStaticCaching:
         c = self._client(tmp_path)
         cc = c.get("/assets/index-abc123.js").headers["cache-control"]
         assert "immutable" in cc and "max-age=31536000" in cc
+
+
+class TestSecurityHeaders:
+    """The privacy position is only as good as what the browser enforces."""
+
+    def _res(self):
+        from fastapi.testclient import TestClient
+        from app.main import app
+        with TestClient(app, base_url="https://testserver") as c:
+            return c.get("/api/health")
+
+    def test_a_strict_policy_is_sent(self):
+        csp = self._res().headers["content-security-policy"]
+        assert "default-src 'self'" in csp
+        # the claim "no third-party requests" is this line
+        assert "connect-src 'self'" in csp
+        assert "object-src 'none'" in csp
+        assert "frame-ancestors 'none'" in csp
+        assert "base-uri 'none'" in csp
+
+    def test_no_unsafe_script_execution_is_allowed(self):
+        csp = self._res().headers["content-security-policy"]
+        assert "'unsafe-eval'" not in csp
+        # inline *scripts* stay forbidden; only style attributes are permitted
+        script = next(p for p in csp.split("; ") if p.startswith("script-src"))
+        assert "'unsafe-inline'" not in script
+
+    def test_urls_never_travel_in_a_referer(self):
+        assert self._res().headers["referrer-policy"] == "no-referrer"
+
+    def test_capabilities_are_denied_except_the_camera_we_ask_for(self):
+        pp = self._res().headers["permissions-policy"]
+        assert "camera=(self)" in pp
+        for denied in ("microphone=()", "geolocation=()", "payment=()"):
+            assert denied in pp
+        # advertising topics APIs are opted out of explicitly
+        assert "interest-cohort=()" in pp and "browsing-topics=()" in pp
+
+    def test_clickjacking_and_sniffing_are_blocked(self):
+        h = self._res().headers
+        assert h["x-frame-options"] == "DENY"
+        assert h["x-content-type-options"] == "nosniff"
+
+    def test_hsts_is_set(self):
+        assert "max-age=31536000" in self._res().headers["strict-transport-security"]
+
+    def test_headers_reach_the_app_pages_too_not_just_the_api(self):
+        from fastapi.testclient import TestClient
+        from app.main import app
+        with TestClient(app, base_url="https://testserver") as c:
+            r = c.get("/table")
+        assert "content-security-policy" in r.headers
+        assert r.headers["referrer-policy"] == "no-referrer"

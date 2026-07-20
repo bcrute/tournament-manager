@@ -295,6 +295,8 @@ function RoomInner({ code, token }: { code: string; token: string }) {
           onTournament={state.tournament ? () => setTourneyOpen(true) : undefined}
           onDisplay={() => void toggleDisplay(true)}
           onTrack={() => void toggleTracking(true)}
+          onShowQr={() => setQrOpen(true)}
+          onMyGames={signedIn ? () => navigate("/table/me") : undefined}
           onLeave={() => void leave("Leave this room?")}
           leaveLabel="Leave room"
         />
@@ -341,6 +343,8 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         onTournament={state.tournament ? () => setTourneyOpen(true) : undefined}
         onDisplay={() => void toggleDisplay(true)}
         onTrack={() => void toggleTracking(true)}
+        onShowQr={() => setQrOpen(true)}
+        onMyGames={signedIn ? () => navigate("/table/me") : undefined}
         onLeave={() => void leave(leaveMsg())}
       />
       {rulesOpen && (

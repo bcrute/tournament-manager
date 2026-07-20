@@ -25,6 +25,7 @@ export interface NavItem {
 export const SITE_NAV: NavItem[] = [
   { label: "Play", to: "/table", icon: "heart", listed: true },
   { label: "Tournaments", to: "/tournament", icon: "crown", listed: true },
+  { label: "Privacy", to: "/privacy", icon: "note", listed: true },
 ];
 
 /**

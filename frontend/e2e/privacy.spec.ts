@@ -63,10 +63,51 @@ test.describe("privacy posture", () => {
 
   test("the privacy page lists what is stored, and is reachable", async ({ page }) => {
     await page.goto("/");
-    await page.getByRole("link", { name: /^privacy$/i }).click();
+    // reachable from the nav and the footer; either proves the point
+    await page.getByRole("link", { name: /^privacy$/i }).first().click();
     await expect(page).toHaveURL(/\/privacy$/);
     await expect(page.getByRole("heading", { name: /privacy/i })).toBeVisible();
     await expect(page.getByText(/no cookie banner/i).first()).toBeVisible();
     await expect(page.locator(".privacy-table")).toBeVisible();
+  });
+});
+
+test.describe("browser-enforced policy", () => {
+  test("a strict CSP doesn't break the app", async ({ page }) => {
+    // a policy that silently blocks the app's own assets is worse than none —
+    // it fails at runtime, in a browser, long after the tests passed
+    const violations: string[] = [];
+    page.on("console", (m) => {
+      const text = m.text();
+      if (/content security policy|refused to/i.test(text)) violations.push(text);
+    });
+    page.on("pageerror", (e) => violations.push(String(e)));
+
+    await page.goto("/");
+    await page.goto("/table");
+    await page.getByRole("button", { name: /create game/i }).click();
+    await page.getByPlaceholder(/your name/i).fill("ada");
+    await page.getByRole("button", { name: /create room/i }).click();
+    await page.waitForURL(/\/table\/r\/.+/);
+    // the websocket has to survive connect-src 'self'
+    await expect(page.locator(".room-bar")).toBeVisible();
+    await page.getByRole("button", { name: /menu/i }).click();
+    await page.getByRole("button", { name: /show qr code/i }).click();
+    await expect(page.locator(".qr-holder")).toBeVisible();
+
+    expect(violations, `CSP/runtime errors: ${violations.join(" | ")}`).toEqual([]);
+  });
+
+  test("the policy actually blocks a third-party load", async ({ page }) => {
+    await page.goto("/");
+    const blocked = await page.evaluate(async () => {
+      try {
+        await fetch("https://example.com/beacon", { mode: "no-cors" });
+        return false; // the policy let it through
+      } catch {
+        return true;
+      }
+    });
+    expect(blocked, "connect-src 'self' should stop an off-origin beacon").toBe(true);
   });
 });

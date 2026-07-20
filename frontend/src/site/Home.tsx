@@ -79,6 +79,40 @@ export default function Home() {
         </article>
       </section>
 
+      <section className="stance">
+        <h2>
+          <Icon name="check" /> Built privacy-first, and checkable
+        </h2>
+        <ul>
+          <li>
+            <strong>No accounts to play.</strong> No email, no password, no name beyond
+            the one you type at the table.
+          </li>
+          <li>
+            <strong>No tracking, no analytics, no ads.</strong> Nothing about you is
+            measured, profiled, sold or shared.
+          </li>
+          <li>
+            <strong>No third-party requests at all.</strong> No CDN, no hosted fonts, no
+            embedded widgets — the page loads from this server and nowhere else, and the
+            browser is told to enforce it.
+          </li>
+          <li>
+            <strong>No cookie banner</strong>, because there is nothing to consent to.
+            Everything stored is what makes your game work.
+          </li>
+          <li>
+            <strong>Your address is never stored.</strong> Rate limiting uses a salted
+            hash, kept thirty days.
+          </li>
+        </ul>
+        <p>
+          <Link className="cta ghost" to="/privacy">
+            Read exactly what is stored
+          </Link>
+        </p>
+      </section>
+
       <section className="shots">
         <h2>What it looks like</h2>
         <p className="lede">

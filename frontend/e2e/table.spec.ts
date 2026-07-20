@@ -30,6 +30,8 @@ test.describe("a game at the table", () => {
     await expect(menu.getByRole("button", { name: /rename/i })).toBeVisible();
     await expect(menu.getByRole("button", { name: /show table view here/i })).toBeVisible();
     await expect(menu.getByRole("button", { name: /use as table display/i })).toBeVisible();
+    // present in the lobby too, not only mid-game: someone always arrives late
+    await expect(menu.getByRole("button", { name: /show qr code/i })).toBeVisible();
     // no tournament entry in an ordinary room — it only belongs in a pod
     await expect(menu.getByRole("button", { name: /tournament standings/i })).toHaveCount(0);
     // and no "your games" while signed out, where it would lead to a wall

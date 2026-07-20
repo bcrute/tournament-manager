@@ -40,6 +40,56 @@ app.include_router(admin_router, prefix="/api/admin")
 _last_prune = 0.0
 
 
+# The browser-enforced half of the privacy position. The app claims no
+# third-party requests and no tracking; a Content-Security-Policy is what makes
+# that a rule the browser applies rather than a promise we make. Set here, in
+# the repo, rather than in a proxy config — so it is reviewable and testable
+# alongside the code it protects.
+CSP = "; ".join(
+    [
+        "default-src 'self'",
+        "script-src 'self'",
+        # inline *attributes* (style={{…}}) are used throughout the seat layout
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data:",
+        # the QR scanner attaches a MediaStream to a <video>
+        "media-src 'self' blob:",
+        "font-src 'self'",
+        # same-origin only: this is what forbids a CDN or an analytics beacon
+        "connect-src 'self'",
+        "object-src 'none'",
+        "base-uri 'none'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+        "upgrade-insecure-requests",
+    ]
+)
+
+SECURITY_HEADERS = {
+    "Content-Security-Policy": CSP,
+    # never send our URLs to anyone. Room addresses are opaque ids now, and
+    # this keeps them from travelling in a Referer even so.
+    "Referrer-Policy": "no-referrer",
+    # deny every capability except the camera, which the QR scanner asks for
+    "Permissions-Policy": (
+        "camera=(self), microphone=(), geolocation=(), payment=(), usb=(), "
+        "interest-cohort=(), browsing-topics=()"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+}
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    for header, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(header, value)
+    return response
+
+
 @app.middleware("http")
 async def rate_limit(request: Request, call_next):
     """Limit API traffic per client. Static assets are left alone — they are
