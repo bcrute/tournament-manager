@@ -17,7 +17,7 @@ export default function SeatTile({
   first,
   turn,
   nameOf,
-  seatOrder,
+  cmdLayout,
   onCmdOpen,
   dragging,
   dropTarget,
@@ -31,8 +31,14 @@ export default function SeatTile({
   first: boolean;
   turn?: number;
   nameOf: Map<string, string>;
-  /** Every seat in turn order, so the damage grid reads positionally. */
-  seatOrder: { pid: number; seat: number }[];
+  /**
+   * The table's own arrangement, reused for the damage grid: same rows, same
+   * columns, same positions. A total is then read by *where* someone sits
+   * rather than by matching a name or a number — and because it comes from the
+   * same seat assignment the table uses, dragging a player moves their square
+   * here too, with nothing to keep in sync.
+   */
+  cmdLayout: { rows: number; cols: number; cells: { pid: number; row: number; col: number; colSpan: number }[] };
   /** Opens the editor for this seat. Omitted on devices that may not edit. */
   onCmdOpen?: (pid: number) => void;
   dragging: boolean;
@@ -60,13 +66,26 @@ export default function SeatTile({
   const turned = slot.rotate !== 0;
   const inner = turned ? { width: size.h, height: size.w } : { width: size.w, height: size.h };
   const font = seatFonts(inner.width, inner.height);
-  // A diagram, not a list: one cell per opponent in seat order, so a total is
-  // found by position rather than by reading names in a rotated card.
-  const cells = seatOrder.map((src) => ({
-    pid: src.pid,
-    seat: src.seat,
-    amount: p.cmdDamage[String(src.pid)] ?? 0,
-    own: src.pid === p.pid,
+  // Sized so the squares stay square: the block takes about a third of the
+  // card's shorter side, whatever the table's shape.
+  // Fit first, then size: the block is placed inside a card that is rotated
+  // and clips its overflow, so deriving from one axis let it spill and get cut
+  // off. Cap the whole block to a fraction of the card's *shorter* side and
+  // divide by the larger of rows/cols, so it always lands inside.
+  const block = Math.min(inner.width, inner.height) * 0.4;
+  const miniCell = Math.max(12, block / Math.max(cmdLayout.rows, cmdLayout.cols));
+  const mini = {
+    w: miniCell * cmdLayout.cols,
+    h: miniCell * cmdLayout.rows,
+    font: Math.max(11, miniCell * 0.55),
+  };
+
+  // A miniature of the table, not a list. No names, no seat numbers — the
+  // position is the label.
+  const cells = cmdLayout.cells.map((c) => ({
+    ...c,
+    amount: p.cmdDamage[String(c.pid)] ?? 0,
+    own: c.pid === p.pid,
   }));
 
   return (
@@ -117,7 +136,6 @@ export default function SeatTile({
 
         <button
           className="seat-cmd-grid"
-          style={{ fontSize: font.cmd, maxHeight: font.cmdBar }}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
@@ -125,14 +143,21 @@ export default function SeatTile({
           }}
           aria-label={t("cmd.editFor", { name: p.name })}
           disabled={!onCmdOpen}
+          style={{
+            width: mini.w,
+            height: mini.h,
+            fontSize: mini.font,
+            gridTemplateRows: `repeat(${cmdLayout.rows}, 1fr)`,
+            gridTemplateColumns: `repeat(${cmdLayout.cols}, 1fr)`,
+          }}
         >
           {cells.map((c) => (
             <span
               key={c.pid}
               className={`cmd-cell${c.amount >= 21 ? " lethal" : ""}${c.amount === 0 ? " zero" : ""}${c.own ? " own" : ""}`}
+              style={{ gridRow: c.row, gridColumn: `${c.col} / span ${c.colSpan}` }}
             >
-              <b className="cmd-src">{c.seat}</b>
-              <b className="cmd-amt">{c.amount || "·"}</b>
+              {c.amount || ""}
             </span>
           ))}
         </button>

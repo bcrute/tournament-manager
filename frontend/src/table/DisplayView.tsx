@@ -17,7 +17,9 @@ export default function DisplayView({
   code: string;
   token: string;
   onTakeSeat?: () => void;
-  onLeave: () => void;
+  /** Only a dedicated display disconnects. A player showing the table view
+   *  keeps their seat and leaves via "Back to my view". */
+  onLeave?: () => void;
 }) {
   const lobby = state.room.status === "lobby";
   const ended = state.room.status === "ended";
@@ -123,6 +125,18 @@ export default function DisplayView({
     seat: turns.get(p.pid) ?? i + 1,
     name: p.name,
   }));
+  // the damage grid is a miniature of this exact arrangement, so a seat moved
+  // by dragging moves in every card's grid too, with nothing to keep in sync
+  const cmdLayout = {
+    rows: grid.rows,
+    cols: grid.cols,
+    cells: seated.map(({ player, slot }) => ({
+      pid: player.pid,
+      row: slot.row,
+      col: slot.col,
+      colSpan: slot.colSpan,
+    })),
+  };
 
   async function changeCmd(defenderPid: number, attackerPid: number, delta: number) {
     try {
@@ -151,9 +165,11 @@ export default function DisplayView({
             Take a seat
           </button>
         )}
-        <button className="ghost" onClick={onLeave}>
-          Disconnect
-        </button>
+        {onLeave && (
+          <button className="ghost" onClick={onLeave}>
+            Disconnect
+          </button>
+        )}
       </header>
 
       {lobby ? (
@@ -187,7 +203,7 @@ export default function DisplayView({
               first={state.room.firstPid === player.pid}
               turn={state.room.firstPid !== null ? turns.get(player.pid) : undefined}
               nameOf={nameOf}
-              seatOrder={seatOrder}
+              cmdLayout={cmdLayout}
               onCmdOpen={state.room.status === "playing" ? setCmdFor : undefined}
               dragging={dragPid === player.pid}
               dropTarget={overPid === player.pid}

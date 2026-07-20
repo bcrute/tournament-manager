@@ -262,12 +262,11 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   if (state.me.isTracker && !state.me.isDisplay) {
     return (
       <>
-        <DisplayView
-          state={state}
-          code={code}
-          token={token}
-          onLeave={() => void leave("Leave this game?")}
-        />
+        {/* no onLeave: this is a player showing the table view, not a
+            dedicated display. "Disconnect" belongs to a device that gave up its
+            seat, and offering it here would drop them out of their own game —
+            "Back to my view" below is the way out. */}
+        <DisplayView state={state} code={code} token={token} />
         <div className="tracker-bar">
           <span>
             <Icon name="monitor" /> Keeping score for the table

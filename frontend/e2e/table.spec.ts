@@ -96,3 +96,52 @@ test.describe("room addresses", () => {
     expect(urlId.length).toBeGreaterThan(15);
   });
 });
+
+test.describe("the commander damage grid", () => {
+  test("is a miniature of the table, one square per seat", async ({ page, browser, isMobile }) => {
+    await page.goto("/table");
+    await page.getByRole("button", { name: /create game/i }).click();
+    await page.getByPlaceholder(/your name/i).fill("Ada");
+    await page.getByRole("button", { name: /create room/i }).click();
+    await page.waitForURL(/\/table\/r\/.+/);
+    const code = (await page.locator(".bar-code").first().textContent())!.trim();
+
+    for (const n of ["Bram", "Cleo", "Dev"]) {
+      const ctx = await browser.newContext();
+      const p = await ctx.newPage();
+      await p.goto("/table");
+      await p.evaluate((x) => localStorage.setItem("table.name", x), n);
+      await p.goto(`/table?join=${code}`);
+      await expect(p).toHaveURL(/\/table\/r\/.+/, { timeout: 15_000 });
+      await p.close();
+      await ctx.close();
+    }
+
+    // wait for all four seats before starting, then for the game to actually
+    // be under way — clicking straight through raced the joins
+    await expect(page.locator(".tr-players li")).toHaveCount(4, { timeout: 15_000 });
+    await page.getByRole("button", { name: /start/i }).first().click();
+    await expect(page.getByRole("button", { name: /i.m dead/i })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    if (isMobile) await page.getByRole("button", { name: /menu/i }).click();
+    await page.getByRole("button", { name: /show table view here/i }).click();
+    await expect(page.locator(".tracker-bar")).toBeVisible({ timeout: 10_000 });
+
+    const grid = page.locator(".seat-cmd-grid").first();
+    // one square per seat, including the card's own — a commander can be
+    // turned against its owner
+    await expect(grid.locator(".cmd-cell")).toHaveCount(4);
+    await expect(grid.locator(".cmd-cell.own")).toHaveCount(1);
+
+    // it must have real size: the sizing style was silently dropped once and
+    // every square collapsed to zero while still being in the DOM
+    const box = await grid.boundingBox();
+    expect(box!.width).toBeGreaterThan(30);
+    expect(box!.height).toBeGreaterThan(30);
+
+    // and no seat numbers or names — position is the label
+    await expect(grid).not.toContainText(/[A-Za-z]/);
+  });
+});

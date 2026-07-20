@@ -1657,17 +1657,18 @@ button.ghost.danger {
 /* Commander damage as a diagram, not a list.
    One cell per seat in turn order, so a total is found by position — names
    don't fit in a rotated card and can't be scanned across a table anyway. */
+/* A miniature of the table: same rows, same columns, same seats. Position is
+   the label, so there are no names or numbers in it — only totals. */
 .seat-cmd-grid {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
+  left: 5px;
+  bottom: 5px;
+  display: grid;
   gap: 2px;
-  padding: 2px;
+  padding: 0;
   background: none;
   border: none;
-  overflow: hidden;
+  overflow: visible;
   cursor: pointer;
 }
 
@@ -1676,24 +1677,14 @@ button.ghost.danger {
 }
 
 .cmd-cell {
-  flex: 1;
   min-width: 0;
+  background: rgba(255, 255, 255, 0.2);
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  line-height: 1.05;
+  line-height: 1;
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.07);
-  padding: 1px 0;
-}
-
-.cmd-cell .cmd-src {
-  font-size: 0.7em;
-  opacity: 0.55;
-}
-
-.cmd-cell .cmd-amt {
   font-variant-numeric: tabular-nums;
 }
 
@@ -1701,18 +1692,17 @@ button.ghost.danger {
   background: rgba(255, 255, 255, 0.03);
 }
 
-.cmd-cell.zero .cmd-amt {
-  opacity: 0.3;
+/* An empty square is not noise — it is the map. Without it the grid collapses
+   into a couple of floating numbers and stops reading as the table. */
+.cmd-cell.zero {
+  background: rgba(255, 255, 255, 0.09);
 }
 
-.cmd-cell.zero .cmd-src {
-  opacity: 0.4;
-}
-
-/* your own commander counts toward the 21, so it must be visibly different
-   rather than hidden */
+/* your own square in the miniature — your commander can be turned against you,
+   so it is shown, just marked as yours */
 .cmd-cell.own {
-  outline: 1px solid rgba(255, 255, 255, 0.22);
+  outline: 1px dashed rgba(255, 255, 255, 0.3);
+  outline-offset: -1px;
 }
 
 .cmd-cell.lethal {
