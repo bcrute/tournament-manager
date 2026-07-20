@@ -3,7 +3,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { api, PlayerInfo, RoomState } from "./api";
 import Icon from "../Icon";
 import SeatTile, { halfDelta } from "./SeatTile";
-import { assignSeats, seatGrid, swapSeats, turnPositions } from "./seats";
+import { assignSeats, MAX_TABLE_VIEW, seatGrid, swapSeats, turnPositions } from "./seats";
 import CmdDamageSheet from "./CmdDamageSheet";
 
 export default function DisplayView({
@@ -151,6 +151,33 @@ export default function DisplayView({
   }
 
   const cmdTarget = cmdFor === null ? null : ordered.find((p) => p.pid === cmdFor) ?? null;
+
+  // Past the limit the cards are too short to read from across a table. Say so
+  // plainly rather than rendering a grid nobody can use; every player still has
+  // their own phone, which is the better answer at this size anyway.
+  if (ordered.length > MAX_TABLE_VIEW) {
+    return (
+      <main className="display-root">
+        <div className="display-toomany">
+          <h1>{ordered.length} players is too many for one screen</h1>
+          <p>
+            The shared table view shows up to {MAX_TABLE_VIEW}. Above that the cards are
+            too small to read from across a table, so everyone should track their own
+            life on their own phone — which works exactly as it always does.
+          </p>
+          <ul className="display-compact">
+            {ordered.map((pl) => (
+              <li key={pl.pid}>
+                <span>{pl.name}</span>
+                <strong>{pl.eliminated ? <Icon name="skull" label="eliminated" /> : (pl.life ?? "—")}</strong>
+              </li>
+            ))}
+          </ul>
+          <p className="hint">Room {state.room.code}</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="display-view">

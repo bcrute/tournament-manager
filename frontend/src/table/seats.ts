@@ -24,6 +24,18 @@ export interface SeatGrid {
  * pointing at the screen's right edge (90deg), the right seat is the mirror
  * (-90deg), and the bottom seat reads normally (0deg).
  */
+/**
+ * The most seats the shared table view can show usefully.
+ *
+ * Measured rather than guessed: at eight the life totals are still large on a
+ * phone, which is the number people actually read across a table. The
+ * commander-damage squares are already small by seven and are the first thing
+ * to become unreadable — but they are secondary, and tapping a card opens them
+ * full size. Past eight the cards themselves get too short to read at a
+ * distance, and the honest answer is for everyone to use their own phone.
+ */
+export const MAX_TABLE_VIEW = 8;
+
 export function seatGrid(n: number): SeatGrid {
   if (n <= 0) return { rows: 1, cols: 2, slots: [] };
   const hasBottom = n % 2 === 1;
