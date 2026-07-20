@@ -259,7 +259,18 @@ _ensure_column("players", "eliminated_at", "INTEGER")
 # A seated player showing the table view on their own phone. Unlike is_display
 # this changes no game state: they keep their seat, life, card and host role.
 # It only grants the one capability the display has — adjusting other players.
-_ensure_column("players", "is_tracker", "INTEGER NOT NULL DEFAULT 0")  # ordering for tournament placement
+_ensure_column("players", "is_tracker", "INTEGER NOT NULL DEFAULT 0")
+# The id that appears in the address bar. The five-character code has to be
+# readable aloud across a table, which means it is short enough to guess; this
+# is 128 random bits, so a room URL can be shared, screenshotted or left in
+# history without handing over something joinable.
+_ensure_column("rooms", "url_id", "TEXT")
+for _r in _db.execute("SELECT code FROM rooms WHERE url_id IS NULL").fetchall():
+    _db.execute("UPDATE rooms SET url_id = ? WHERE code = ?", (secrets.token_urlsafe(16), _r[0]))
+_db.execute(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_rooms_url_id ON rooms(url_id) "
+    "WHERE url_id IS NOT NULL"
+)  # ordering for tournament placement
 # indexes on migrated columns must come after the columns exist
 _db.execute(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_entrants_external ON entrants(tournament_code, external_ref) "

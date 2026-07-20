@@ -671,9 +671,9 @@ def _make_room_for_pod(t, cfg, pod_id: int, seats: list[tuple[int, str]]) -> str
 
     room_code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(5))
     q(
-        "INSERT INTO rooms (code, mode, starting_life, status, last_active) "
-        "VALUES (?, ?, ?, 'lobby', unixepoch())",
-        (room_code, t["mode"], cfg["startingLife"]),
+        "INSERT INTO rooms (code, url_id, mode, starting_life, status, last_active) "
+        "VALUES (?, ?, ?, ?, 'lobby', unixepoch())",
+        (room_code, table_mod.new_url_id(), t["mode"], cfg["startingLife"]),
     )
     for order, (entrant_id, name) in enumerate(seats, 1):
         token = secrets.token_urlsafe(24)

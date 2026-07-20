@@ -46,12 +46,12 @@ export default function Landing() {
     if (!seat.vacant && !window.confirm(`${seat.name}'s seat is still in use. Take it over?`)) return;
     setBusy(true);
     try {
-      const res = await api<{ code: string; playerToken: string }>(
+      const res = await api<{ code: string; urlId?: string; playerToken: string }>(
         `/rooms/${rejoin.code}/reclaim`,
         { method: "POST", body: { pid: seat.pid, force: !seat.vacant } },
       );
-      saveSession({ code: res.code, token: res.playerToken });
-      navigate(`/table/r/${res.code}`, { replace: true });
+      saveSession({ code: res.code, urlId: res.urlId, token: res.playerToken });
+      navigate(`/table/r/${res.urlId ?? res.code}`, { replace: true });
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not take that seat");
     } finally {
@@ -78,13 +78,13 @@ export default function Landing() {
         }
         const nm = (localStorage.getItem("table.name") ?? "").trim() || randomName();
         try {
-          const res = await api<{ code: string; playerToken: string }>(
+          const res = await api<{ code: string; urlId?: string; playerToken: string }>(
             `/rooms/${joinParam.trim().toUpperCase()}/join`,
             { method: "POST", body: { name: nm, display: false } },
           );
           localStorage.setItem("table.name", nm);
-          saveSession({ code: res.code, token: res.playerToken });
-          navigate(`/table/r/${res.code}`, { replace: true });
+          saveSession({ code: res.code, urlId: res.urlId, token: res.playerToken });
+          navigate(`/table/r/${res.urlId ?? res.code}`, { replace: true });
         } catch (e) {
           const roomCode = joinParam.trim().toUpperCase();
           setAutoJoining(false);
@@ -104,7 +104,7 @@ export default function Landing() {
     // verify against the server before redirecting — a stale/left session must not pull us back in
     api(`/rooms/${s.code}/me`, { token: s.token })
       .then(() => {
-        if (!cancelled) navigate(`/table/r/${s.code}`, { replace: true });
+        if (!cancelled) navigate(`/table/r/${s.urlId ?? s.code}`, { replace: true });
       })
       .catch(() => {
         if (!cancelled) clearSession();
@@ -137,16 +137,16 @@ export default function Landing() {
     try {
       const res =
         mode === "create"
-          ? await api<{ code: string; playerToken: string }>("/rooms", {
+          ? await api<{ code: string; urlId?: string; playerToken: string }>("/rooms", {
               method: "POST",
               body: { name: trimmed, mode: gameMode },
             })
-          : await api<{ code: string; playerToken: string }>(
+          : await api<{ code: string; urlId?: string; playerToken: string }>(
               `/rooms/${joinCode.trim().toUpperCase()}/join`,
               { method: "POST", body: { name: trimmed || "display", display: asDisplay } },
             );
-      saveSession({ code: res.code, token: res.playerToken });
-      navigate(`/table/r/${res.code}`);
+      saveSession({ code: res.code, urlId: res.urlId, token: res.playerToken });
+      navigate(`/table/r/${res.urlId ?? res.code}`);
     } catch (e) {
       const roomCode = joinCode.trim().toUpperCase();
       if (mode === "join" && e instanceof ApiError && e.status === 409 && (await offerRejoin(roomCode))) {

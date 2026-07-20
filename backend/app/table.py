@@ -165,6 +165,35 @@ def _is_tournament_room(code: str) -> bool:
     return bool(q("SELECT 1 FROM pods WHERE room_code = ? LIMIT 1", (code,)).fetchone())
 
 
+def note_bad_join(request: Request):
+    """Record a join attempt against a room that isn't there.
+
+    Wrong codes happen — someone mistypes, or a room has expired. A client
+    producing them repeatedly is doing something else, and the shared limiter
+    already knows how to escalate; this just tells it that these attempts count.
+    """
+    limiter = getattr(request.app.state, "limiter", None)
+    if limiter is None:
+        return
+    from .audit import security_event
+    from .limits import client_id, client_ip
+
+    cid = client_id(client_ip(request))
+    security_event("join.unknown_room", cid, None)
+    limiter.strike(cid)
+
+
+def new_url_id() -> str:
+    """The opaque half of a room's identity.
+
+    The five-character code is what someone reads across a table, so it is
+    short by necessity. This is what goes in the address bar: 128 random bits,
+    so a link, a screenshot or a browser-history entry doesn't hand over
+    something joinable.
+    """
+    return secrets.token_urlsafe(16)
+
+
 def get_room(code: str, allow_closed: bool = False):
     row = q("SELECT * FROM rooms WHERE code = ?", (code.upper(),)).fetchone()
     if not row:
@@ -332,6 +361,7 @@ def personalize(snap, me):
         "tournament": snap.get("tournament"),
         "room": {
             "code": room["code"],
+            "urlId": room["url_id"],
             "status": status,
             "mode": room["mode"],
             "startingLife": room["starting_life"],
@@ -495,8 +525,8 @@ def create_room(body: CreateBody, request: Request):
     token = secrets.token_urlsafe(24)
     starting = 40 if body.mode == "treachery" else 20
     q(
-        "INSERT INTO rooms (code, mode, starting_life) VALUES (?, ?, ?)",
-        (code, body.mode, starting),
+        "INSERT INTO rooms (code, url_id, mode, starting_life) VALUES (?, ?, ?, ?)",
+        (code, url_id := new_url_id(), body.mode, starting),
     )
     q(
         "INSERT INTO players (room_code, token, name, is_host, account_id) VALUES (?, ?, ?, 1, ?)",
@@ -504,12 +534,21 @@ def create_room(body: CreateBody, request: Request):
     )
     log_event(code, f"{body.name.strip()} created the room ({body.mode} mode)")
     touch(code)
-    return {"code": code, "playerToken": token}
+    return {"code": code, "urlId": url_id, "playerToken": token}
 
 
 @router.post("/rooms/{code}/join")
 async def join_room(code: str, body: JoinBody, request: Request):
-    room = get_room(code)
+    # A room code is short enough to read across a table, which means it is
+    # short enough to guess. The URL id keeps codes out of links and history,
+    # but this is the endpoint an enumerator would actually hammer, so a client
+    # that keeps naming rooms that don't exist is treated as one.
+    try:
+        room = get_room(code)
+    except HTTPException:
+        note_bad_join(request)
+        raise
+
     name = body.name.strip()
     if body.display:
         token = secrets.token_urlsafe(24)
@@ -519,7 +558,7 @@ async def join_room(code: str, body: JoinBody, request: Request):
         )
         log_event(room["code"], "a table display connected")
         await broadcast(room["code"])
-        return {"code": room["code"], "playerToken": token}
+        return {"code": room["code"], "urlId": room["url_id"], "playerToken": token}
     if norm_status(room["status"]) != "lobby":
         raise HTTPException(409, "game already started — ask the host to reopen the lobby")
     token = secrets.token_urlsafe(24)
@@ -530,7 +569,7 @@ async def join_room(code: str, body: JoinBody, request: Request):
     log_event(room["code"], f"{name} joined")
     touch(room["code"])
     await broadcast(room["code"])
-    return {"code": room["code"], "playerToken": token}
+    return {"code": room["code"], "urlId": room["url_id"], "playerToken": token}
 
 
 @router.get("/rooms/{code}/seats")
@@ -578,7 +617,7 @@ async def reclaim(code: str, body: ReclaimBody):
     log_event(room["code"], f"{row['name']} rejoined")
     touch(room["code"])
     await broadcast(room["code"])
-    return {"code": room["code"], "playerToken": token}
+    return {"code": room["code"], "urlId": room["url_id"], "playerToken": token}
 
 
 @router.get("/rooms/{code}/me")

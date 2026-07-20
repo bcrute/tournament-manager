@@ -1,6 +1,8 @@
 const KEY = "table.session";
 
 export interface Session {
+  /** Opaque id used in the address bar, so links never carry a joinable code. */
+  urlId?: string;
   code: string;
   token: string;
 }

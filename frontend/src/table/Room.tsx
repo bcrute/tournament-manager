@@ -30,15 +30,19 @@ function distSummary(dist: Record<string, number>) {
 }
 
 export default function Room() {
-  const { code = "" } = useParams();
+  const { code: urlParam = "" } = useParams();
   const navigate = useNavigate();
   const session = loadSession();
 
   useEffect(() => {
-    if (!session || session.code !== code.toUpperCase()) navigate("/table", { replace: true });
-  }, [session, code, navigate]);
+    // match on the url id; fall back to the code so links shared before this
+    // change, and any still in someone's history, keep working
+    const mine = session && (session.urlId === urlParam || session.code === urlParam.toUpperCase());
+    if (!mine) navigate("/table", { replace: true });
+  }, [session, urlParam, navigate]);
 
-  if (!session || session.code !== code.toUpperCase()) return null;
+  if (!session || !(session.urlId === urlParam || session.code === urlParam.toUpperCase()))
+    return null;
   return <RoomInner code={session.code} token={session.token} />;
 }
 

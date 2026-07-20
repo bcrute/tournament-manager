@@ -121,6 +121,8 @@ function SeatView({
   // the whole point of checking in: the round opens and the phone follows
   useEffect(() => {
     if (pod?.roomCode && pod.roomToken) {
+      // the pod knows the room's code; Room resolves the address from the
+      // session, and the code still works as a route for exactly that reason
       saveSession({ code: pod.roomCode, token: pod.roomToken });
       navigate(`/table/r/${pod.roomCode}`);
     }

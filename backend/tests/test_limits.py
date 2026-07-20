@@ -206,3 +206,25 @@ class TestRetention:
         lim.prune()
         assert q("SELECT COUNT(*) c FROM bans WHERE subject = ?", (subject,)).fetchone()["c"] == 1
         lim.clear(subject)
+
+
+class TestJoinEnumeration:
+    """A short room code is guessable by design — it has to be readable across
+    a table. What stops enumeration is that guessing wrong repeatedly is
+    treated like any other abuse."""
+
+    def test_wrong_codes_escalate_into_a_ban(self):
+        from app.limits import RateLimiter, STRIKES_BEFORE_BAN
+        rl = RateLimiter(db=None)
+        cid = "hashed-enumerator"
+        for _ in range(STRIKES_BEFORE_BAN - 1):
+            assert rl.strike(cid) is None
+        assert rl.strike(cid) is not None, "an enumerator should end up banned"
+        assert rl.check(cid, "normal")[0] is False
+
+    def test_an_occasional_wrong_code_is_forgiven(self):
+        """People mistype, and rooms expire. A couple of misses must not ban."""
+        from app.limits import RateLimiter
+        rl = RateLimiter(db=None)
+        assert rl.strike("hashed-typist") is None
+        assert rl.check("hashed-typist", "normal")[0] is True

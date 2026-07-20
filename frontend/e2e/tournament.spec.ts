@@ -109,7 +109,7 @@ test.describe("hosting a tournament", () => {
     await player.goto(`/tournament/${code}`);
     await player.getByRole("button", { name: "ada", exact: false }).first().click();
     // checking in routes them into their pod's room without typing a code
-    await expect(player).toHaveURL(/\/table\/r\/[A-Z0-9]{5}/, { timeout: 20_000 });
+    await expect(player).toHaveURL(/\/table\/r\/.+/, { timeout: 20_000 });
 
     // and the round clock reaches them there
     await expect(player.locator(".round-clock")).toBeVisible({ timeout: 15_000 });

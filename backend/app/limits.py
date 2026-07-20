@@ -97,6 +97,18 @@ class RateLimiter:
         if self.db:
             self.db("DELETE FROM bans WHERE subject = ?", (cid,))
 
+    def strike(self, cid: str) -> float | None:
+        """Public entry for callers outside the request-rate path.
+
+        Guessing room codes isn't a rate violation — an enumerator can stay
+        well inside the limit — but it is the same kind of behaviour, so it
+        feeds the same escalation.
+        """
+        until = self._strike(cid)
+        if until:
+            self._log(BAN_ISSUED, cid, f"join.unknown_room until={int(until)}")
+        return until
+
     def _strike(self, cid: str) -> float | None:
         """Record a limit violation; ban once they pile up. Returns ban expiry."""
         now = self.clock()

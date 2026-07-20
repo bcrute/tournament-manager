@@ -6,8 +6,11 @@ async function createRoom(page: Page, name: string) {
   await page.getByRole("button", { name: /create game/i }).click();
   await page.getByPlaceholder(/your name/i).fill(name);
   await page.getByRole("button", { name: /create room/i }).click();
-  await expect(page).toHaveURL(/\/table\/r\/[A-Z0-9]{5}/);
-  return page.url().split("/").pop()!;
+  await expect(page).toHaveURL(/\/table\/r\/.+/);
+  // the address bar carries an opaque id now, not the joinable code — read the
+  // code from the page instead
+  const code = (await page.locator(".bar-code").first().textContent())!.trim();
+  return code;
 }
 
 test.describe("a game at the table", () => {
@@ -39,7 +42,7 @@ test.describe("a game at the table", () => {
     const second = await browser.newContext();
     const p2 = await second.newPage();
     await p2.goto(`/table?join=${code}`);
-    await expect(p2).toHaveURL(new RegExp(`/table/r/${code}`), { timeout: 15_000 });
+    await expect(p2).toHaveURL(/\/table\/r\/.+/, { timeout: 15_000 });
 
     // the first player sees them arrive, without reloading
     await expect(page.getByText(/joined/i).first()).toBeVisible({ timeout: 15_000 });
@@ -58,5 +61,23 @@ test.describe("a game at the table", () => {
 
     await back.click();
     await expect(page.getByRole("button", { name: /menu/i })).toBeVisible({ timeout: 10_000 });
+  });
+});
+
+test.describe("room addresses", () => {
+  test("the address bar never carries the joinable code", async ({ page }) => {
+    await page.goto("/table");
+    await page.getByRole("button", { name: /create game/i }).click();
+    await page.getByPlaceholder(/your name/i).fill("ada");
+    await page.getByRole("button", { name: /create room/i }).click();
+    await expect(page).toHaveURL(/\/table\/r\/.+/);
+
+    const code = (await page.locator(".bar-code").first().textContent())!.trim();
+    const urlId = page.url().split("/table/r/")[1];
+    expect(code).toMatch(/^[A-Z0-9]{5}$/);
+    // a screenshot of the address bar, or a link in someone's history, must not
+    // hand over something that joins the game
+    expect(urlId).not.toBe(code);
+    expect(urlId.length).toBeGreaterThan(15);
   });
 });

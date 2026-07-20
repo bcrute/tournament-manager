@@ -51,6 +51,7 @@ export interface RoomState {
   tournament: RoomTournament | null;
   room: {
     code: string;
+    urlId: string;
     status: RoomStatus;
     mode: GameMode;
     startingLife: number;

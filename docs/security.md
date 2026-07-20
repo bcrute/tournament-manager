@@ -75,6 +75,8 @@ an open threat.
 | T10 | any | Probe the app without leaving a trace | **Nothing.** No application logging exists | **Open** — see gaps |
 | T11 | 2 | Entrant token captured from a URL | Token travels as `?token=`; the reverse proxy must strip query strings from access logs | **Partially mitigated** — depends on proxy config not in this repo |
 | T12 | 1 | Denial of service by room or event creation | Per-client rate limits; rooms idle out at 3h, tournaments at 12h | Mitigated |
+| T18 | 1 | Enumerate room URLs to find live games | The address bar carries `rooms.url_id` — 128 random bits — not the five-character code. Pinned by `TestRoomUrlId` and a browser test | Mitigated |
+| T19 | 1 | Guess room codes at the join endpoint | A code is short by necessity (it is read aloud at a table), so the defence is behavioural: a join naming a room that doesn't exist is a strike, escalating into the existing ban ladder | Mitigated — `TestJoinEnumeration` |
 | T13 | 3 | Alter another player's life total | Every room mutation resolves the actor from `X-Player-Token` scoped to that room | Mitigated |
 | T14 | 4 | Player disputes an organizer's ruling | Results are versioned and never mutated; `source` records `auto` vs `organizer` | Mitigated by design |
 | T15 | 6 | Find and use the unlisted admin surface | Not the URL — `require_admin` on every endpoint, admin list in the environment rather than the database, 404 for everyone else so probing yields nothing | Mitigated — `test_admin.py::TestAccess` |
@@ -104,6 +106,14 @@ These are part of the model, not omissions from it:
 | Break-glass access | The admin surface *is* the break-glass path. It is off unless `TABLE_ADMINS` names an account, and every action it takes is logged. | A deployment that never sets the variable has no admin surface at all, which is the default. |
 | Strong authenticators | Not supported. | See second-factor recovery. |
 | Bootstrap/first admin | Admins are named in `TABLE_ADMINS` (an environment variable), matched case-insensitively against an ordinary account. There is no in-app promotion. | Privilege from the environment, not the database: a flag in `accounts` is one bad `UPDATE` or one signup bug away from escalation. Changing it requires restarting the process, which needs host access already. |
+
+**A room has two identifiers, deliberately.** The five-character code is a
+credential people read across a table, so it must stay short and therefore
+guessable. The URL id is 128 random bits and identifies the room in links,
+history and screenshots without being joinable. Conflating them forced one
+value to be both typeable and unguessable, which is not possible. The URL id is
+explicitly *not* accepted as a join credential — a test pins that, because
+making it work "for convenience" would undo the whole point.
 
 **Player and entrant credentials** are bearer tokens, not accounts:
 

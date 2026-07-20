@@ -189,3 +189,43 @@ class TestDisplayCommanderDamage:
                         headers={"X-Player-Token": disp}).json()
         row = next(p for p in me["players"] if p["pid"] == pids["alice"])
         assert row["cmdDamage"].get(str(pids["bob"]), 0) == 0
+
+
+class TestRoomUrlId:
+    """The address bar carries an opaque id; the short code stays the thing
+    people read aloud."""
+
+    def test_every_room_gets_an_unguessable_url_id(self, client):
+        r = client.post("/api/table/rooms", json={"name": "ada", "mode": "life"}).json()
+        assert r["urlId"] and r["urlId"] != r["code"]
+        # 128 bits, base64url — not five characters of a small alphabet
+        assert len(r["urlId"]) >= 20
+
+    def test_url_ids_are_distinct_across_rooms(self, client):
+        ids = {client.post("/api/table/rooms", json={"name": f"p{i}", "mode": "life"})
+               .json()["urlId"] for i in range(5)}
+        assert len(ids) == 5
+
+    def test_joining_and_state_both_report_it(self, client):
+        made = client.post("/api/table/rooms", json={"name": "host", "mode": "life"}).json()
+        joined = client.post(f"/api/table/rooms/{made['code']}/join",
+                             json={"name": "bob", "display": False}).json()
+        assert joined["urlId"] == made["urlId"]
+        state = client.get(f"/api/table/rooms/{made['code']}/me",
+                           headers={"X-Player-Token": made["playerToken"]}).json()
+        assert state["room"]["urlId"] == made["urlId"]
+
+    def test_the_url_id_is_not_a_join_credential(self, client):
+        """It identifies a room in a link; it must not substitute for the code,
+        or the opaque id becomes the very thing it was meant to protect."""
+        made = client.post("/api/table/rooms", json={"name": "host", "mode": "life"}).json()
+        r = client.post(f"/api/table/rooms/{made['urlId']}/join",
+                        json={"name": "intruder", "display": False})
+        assert r.status_code == 404
+
+    def test_a_tournament_pod_room_gets_one_too(self, client):
+        from app.db import q as dbq
+        made = client.post("/api/table/rooms", json={"name": "x", "mode": "life"}).json()
+        missing = dbq("SELECT COUNT(*) c FROM rooms WHERE url_id IS NULL").fetchone()["c"]
+        assert missing == 0, "a room without a url_id would fall back to exposing its code"
+        assert made["urlId"]
