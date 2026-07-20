@@ -26,8 +26,9 @@ test("a game in progress, four players", async ({ page, browser }) => {
   await page.getByRole("button", { name: /create game/i }).click();
   await page.getByPlaceholder(/your name/i).fill("Ada");
   await page.getByRole("button", { name: /create room/i }).click();
-  await expect(page).toHaveURL(/\/table\/r\/[A-Z0-9]{5}/);
-  const code = page.url().split("/").pop()!;
+  // the address carries an opaque id now; the joinable code is on the page
+  await expect(page).toHaveURL(/\/table\/r\/.+/);
+  const code = (await page.locator(".bar-code").first().textContent())!.trim();
 
   // real opponents, so the seats and the log are genuine
   for (const name of ["Bram", "Cleo", "Dev"]) {
@@ -38,7 +39,7 @@ test("a game in progress, four players", async ({ page, browser }) => {
     await p.goto("/table");
     await p.evaluate((n) => localStorage.setItem("table.name", n), name);
     await p.goto(`/table?join=${code}`);
-    await expect(p).toHaveURL(new RegExp(`/table/r/${code}`), { timeout: 15_000 });
+    await expect(p).toHaveURL(/\/table\/r\/.+/, { timeout: 15_000 });
     await p.close();
     await ctx.close();
   }
