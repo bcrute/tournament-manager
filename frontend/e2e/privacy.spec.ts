@@ -91,7 +91,9 @@ test.describe("browser-enforced policy", () => {
     await page.waitForURL(/\/table\/r\/.+/);
     // the websocket has to survive connect-src 'self'
     await expect(page.locator(".room-bar")).toBeVisible();
-    await page.getByRole("button", { name: /menu/i }).click();
+    if (test.info().project.use.isMobile) {
+      await page.getByRole("button", { name: /menu/i }).click();
+    }
     await page.getByRole("button", { name: /show qr code/i }).click();
     await expect(page.locator(".qr-holder")).toBeVisible();
 

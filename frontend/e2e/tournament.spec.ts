@@ -115,7 +115,8 @@ test.describe("hosting a tournament", () => {
     await expect(player.locator(".round-clock")).toBeVisible({ timeout: 15_000 });
 
     // standings live behind the menu, not in their way
-    await player.getByRole("button", { name: /menu/i }).click();
+    const menuBtn = player.getByRole("button", { name: /menu/i });
+    if (await menuBtn.isVisible().catch(() => false)) await menuBtn.click();
     await player.getByRole("button", { name: /tournament standings/i }).click();
     await expect(player.getByText(/won–drew–lost/i)).toBeVisible({ timeout: 15_000 });
     await ctx.close();

@@ -21,9 +21,16 @@ test.describe("a game at the table", () => {
     await expect(page.getByText(code).first()).toBeVisible();
   });
 
-  test("the menu offers the options a player actually has", async ({ page }) => {
+  test("the menu offers the options a player actually has", async ({ page, isMobile }) => {
     await createRoom(page, "ada");
-    await page.getByRole("button", { name: /menu/i }).click();
+    // a hamburger is a phone affordance: on a pointer device the same actions
+    // are simply shown, so there is nothing to open
+    const trigger = page.getByRole("button", { name: /menu/i });
+    if (isMobile) {
+      await trigger.click();
+    } else {
+      await expect(trigger).toBeHidden();
+    }
     // scope to the menu: the lobby has its own Rename control, which now has a
     // real accessible name since it stopped being a bare glyph
     const menu = page.locator(".bar-menu");
@@ -51,9 +58,12 @@ test.describe("a game at the table", () => {
     await second.close();
   });
 
-  test("switching to the table view keeps the seat and can be switched back", async ({ page }) => {
+  test("switching to the table view keeps the seat and can be switched back", async ({
+    page,
+    isMobile,
+  }) => {
     await createRoom(page, "ada");
-    await page.getByRole("button", { name: /menu/i }).click();
+    if (isMobile) await page.getByRole("button", { name: /menu/i }).click();
     await page.getByRole("button", { name: /show table view here/i }).click();
 
     const back = page.getByRole("button", { name: /back to my view/i });
@@ -62,7 +72,10 @@ test.describe("a game at the table", () => {
     await expect(page.locator(".tracker-bar")).toContainText(/keeping score/i);
 
     await back.click();
-    await expect(page.getByRole("button", { name: /menu/i })).toBeVisible({ timeout: 10_000 });
+    // back in the player view — assert on the bar itself, since a pointer
+    // device has no menu button to look for
+    await expect(page.locator(".room-bar")).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator(".tracker-bar")).toHaveCount(0);
   });
 });
 

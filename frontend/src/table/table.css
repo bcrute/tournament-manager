@@ -44,16 +44,23 @@
   border-radius: 8px;
 }
 
+/* Phone: a dropdown hanging from the hamburger, which is on the LEFT — it was
+   anchored right, left over from when the trigger was. */
 .bar-menu {
+  display: none;
   position: absolute;
   top: 100%;
-  right: 0.6rem;
+  left: 0.6rem;
   min-width: 10rem;
   background: #1d1628;
   border: 1px solid #322747;
   border-radius: 10px;
   overflow: hidden;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.bar-menu.open {
+  display: block;
 }
 
 .bar-menu button {
@@ -2052,4 +2059,54 @@ button.ghost.danger {
   border-radius: 12px;
   background: #000;
   object-fit: cover;
+}
+
+
+/* ---------- the room bar on a pointer device ----------
+   A hamburger is a phone affordance: it trades a tap for screen space that a
+   laptop has spare. On a wide screen the actions are simply shown, and the
+   menu button disappears rather than hiding things that fit. */
+
+@media (min-width: 60rem) {
+  .bar-menu-btn {
+    display: none;
+  }
+
+  .bar-menu,
+  .bar-menu.open {
+    display: flex;
+    position: static;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.25rem;
+    margin-left: auto;
+    min-width: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  /* the dropdown makes each item a full-width block with a divider; inline
+     they are ordinary buttons again */
+  .bar-menu button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    width: auto;
+    border-radius: 8px;
+    padding: 0.45rem 0.7rem;
+    white-space: nowrap;
+    font-size: 0.9rem;
+  }
+
+  .bar-menu button + button {
+    border-top: none;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .bar-menu button:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+  }
 }

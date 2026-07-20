@@ -53,7 +53,8 @@ test.describe("accessibility", () => {
       .toEqual([]);
   });
 
-  test("the menu closes on Escape and hands focus back", async ({ page }) => {
+  test("the menu closes on Escape and hands focus back", async ({ page, isMobile }) => {
+    test.skip(!isMobile, "there is no menu to close on a pointer device");
     await page.goto("/table");
     await page.getByRole("button", { name: /create game/i }).click();
     await page.getByPlaceholder(/your name/i).fill("ada");
@@ -66,7 +67,9 @@ test.describe("accessibility", () => {
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
 
     await page.keyboard.press("Escape");
-    await expect(page.locator(".bar-menu")).toHaveCount(0);
+    // the menu is always in the DOM now (a class shows it), so it is hidden
+    // rather than removed
+    await expect(page.locator(".bar-menu")).toBeHidden();
     // focus must not be stranded where the menu used to be
     await expect(trigger).toBeFocused();
   });

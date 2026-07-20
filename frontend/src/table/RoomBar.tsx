@@ -73,8 +73,7 @@ export default function RoomBar({
       </button>
       <span className="bar-code">{code}</span>
       <span className="bar-name">{name}</span>
-      {open && (
-        <div className="bar-menu">
+      <div className={`bar-menu${open ? " open" : ""}`}>
           {onRename && (
             <button
               onClick={() => {
@@ -164,8 +163,7 @@ export default function RoomBar({
           >
             <Icon name="exit" /> {leaveLabel ?? t("menu.leaveGame")}
           </button>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
