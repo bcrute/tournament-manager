@@ -14,6 +14,7 @@ import RoomBar from "./RoomBar";
 import RoundClock from "./RoundClock";
 import { getAccount } from "./account";
 import TournamentSheet from "./TournamentSheet";
+import QrSheet from "./QrSheet";
 import RulesSheet from "./RulesSheet";
 import SlideToUnveil from "./SlideToUnveil";
 import { useAutoHide } from "./useAutoHide";
@@ -76,6 +77,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   const [notesOpen, setNotesOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [tourneyOpen, setTourneyOpen] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
   // "Your games & notes" only means something with an account behind it
   const [signedIn, setSignedIn] = useState(false);
   useEffect(() => {
@@ -295,6 +297,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         {rulesOpen && (
         <RulesSheet treachery={state.room.mode === "treachery"} onClose={() => setRulesOpen(false)} />
       )}
+      {qrOpen && <QrSheet code={code} onClose={() => setQrOpen(false)} />}
       {tourneyOpen && state.tournament && (
         <TournamentSheet code={state.tournament.code} onClose={() => setTourneyOpen(false)} />
       )}
@@ -339,6 +342,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
       {rulesOpen && (
         <RulesSheet treachery={state.room.mode === "treachery"} onClose={() => setRulesOpen(false)} />
       )}
+      {qrOpen && <QrSheet code={code} onClose={() => setQrOpen(false)} />}
       {tourneyOpen && state.tournament && (
         <TournamentSheet code={state.tournament.code} onClose={() => setTourneyOpen(false)} />
       )}

@@ -13,6 +13,7 @@ export default function RoomBar({
   onRules,
   onTournament,
   onMyGames,
+  onShowQr,
   onLeave,
   leaveLabel,
 }: {
@@ -29,6 +30,8 @@ export default function RoomBar({
   onTournament?: () => void;
   /** "Your games & notes" — omitted when signed out, where it leads nowhere. */
   onMyGames?: () => void;
+  /** The room's QR code — useful after the lobby stops showing it. */
+  onShowQr?: () => void;
   onLeave: () => void;
   leaveLabel?: string;
 }) {
@@ -100,6 +103,16 @@ export default function RoomBar({
               }}
             >
               <Icon name="book" /> {t("menu.rules")}
+            </button>
+          )}
+          {onShowQr && (
+            <button
+              onClick={() => {
+                setOpen(false);
+                onShowQr();
+              }}
+            >
+              <Icon name="card" /> {t("menu.showQr")}
             </button>
           )}
           {onTournament && (

@@ -3,7 +3,9 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, ApiError, GameMode, SeatInfo, SeatsResponse } from "./api";
 import { clearSession, landingAction, loadSession, saveSession } from "./session";
 import FanContentNotice from "../FanContentNotice";
+import { t } from "../i18n";
 import Icon from "../Icon";
+import QrScanner, { scanSupported } from "./QrScanner";
 
 function randomName() {
   const chars = "abcdefghjkmnpqrstuvwxyz23456789";
@@ -24,6 +26,7 @@ export default function Landing() {
   const [gameMode, setGameMode] = useState<GameMode>("life");
   const [asDisplay, setAsDisplay] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // a game already in progress: offer the seats so a dropped player can return
   const [rejoin, setRejoin] = useState<{ code: string; seats: SeatInfo[] } | null>(null);
@@ -260,6 +263,11 @@ export default function Landing() {
               onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
             />
             </label>
+            {scanSupported() && (
+              <button className="ghost" onClick={() => setScanning(true)}>
+                <Icon name="card" /> {t("scan.button")}
+              </button>
+            )}
             <label className="display-toggle">
               <input
                 type="checkbox"
@@ -301,6 +309,16 @@ export default function Landing() {
       <footer>
         <Link to="/">mtg.skadoosh.dev</Link>
       </footer>
+
+      {scanning && (
+        <QrScanner
+          onClose={() => setScanning(false)}
+          onCode={(code) => {
+            setScanning(false);
+            setJoinCode(code);
+          }}
+        />
+      )}
 
       <FanContentNotice />
     </main>

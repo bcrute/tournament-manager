@@ -440,3 +440,27 @@ textarea:focus-visible,
     padding: 0.9rem 2rem;
   }
 }
+
+/* the masthead carries the site's nav, not just a logo — losing it was what
+   made /table stop feeling like part of the site */
+.play-masthead nav {
+  margin-left: auto;
+  display: flex;
+  gap: 0.25rem;
+}
+
+.play-masthead nav a {
+  padding: 0.5rem 0.75rem;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 0.5rem;
+  text-decoration: none;
+  color: inherit;
+  opacity: 0.75;
+}
+
+.play-masthead nav a.active {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.07);
+}

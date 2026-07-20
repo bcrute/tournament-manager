@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
 import Icon from "../Icon";
-import { PLAY_NAV } from "../nav";
+import { PLAY_NAV, SITE_NAV } from "../nav";
 
 /**
  * Player chrome: one screen, one task, thumb-first.
@@ -30,6 +30,17 @@ export default function PlayLayout({
         <Link to="/" className="site-logo">
           mtg<span>.skadoosh.dev</span>
         </Link>
+        <nav aria-label="Site">
+          {SITE_NAV.filter((n) => n.listed).map((n) => (
+            <NavLink
+              key={n.to}
+              to={n.to}
+              className={({ isActive }) => (isActive ? "active" : undefined)}
+            >
+              {n.label}
+            </NavLink>
+          ))}
+        </nav>
       </header>
       {title && (
         <header className="play-bar">
