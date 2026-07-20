@@ -2,6 +2,7 @@ import { useState } from "react";
 import Icon from "../Icon";
 import { Account, AccountError, login, signup } from "./account";
 import { looksLikeEmail, suggestUsername } from "../username";
+import { getItem } from "../storage";
 
 /**
  * Sign-in, used in two places that mean different things.
@@ -27,7 +28,7 @@ export default function SignIn({
 }) {
   const optional = purpose === "optional";
   const [mode, setMode] = useState<"login" | "signup">("login");
-  const [username, setUsername] = useState(localStorage.getItem("table.name") ?? "");
+  const [username, setUsername] = useState(getItem("table.name") ?? "");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

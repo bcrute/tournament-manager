@@ -1,3 +1,4 @@
+import { getItem, removeItem, setItem, storageAvailable } from "../storage";
 /**
  * Tournament API client.
  *
@@ -271,23 +272,29 @@ export interface SeatSession {
   name: string;
 }
 
+/** Same fallback as the room session: a blocked browser still plays. */
+let seatMemory: SeatSession | null = null;
+
 export function loadSeat(): SeatSession | null {
   try {
-    const raw = localStorage.getItem(SEAT_KEY);
-    if (!raw) return null;
+    const raw = getItem(SEAT_KEY);
+    // same rule as the room session: empty working storage means no seat
+    if (!raw) return storageAvailable() ? null : seatMemory;
     const s = JSON.parse(raw) as SeatSession;
     return s && typeof s.code === "string" && typeof s.token === "string" ? s : null;
   } catch {
-    return null;
+    return storageAvailable() ? null : seatMemory;
   }
 }
 
 export function saveSeat(s: SeatSession) {
-  localStorage.setItem(SEAT_KEY, JSON.stringify(s));
+  seatMemory = s;
+  setItem(SEAT_KEY, JSON.stringify(s));
 }
 
 export function clearSeat() {
-  localStorage.removeItem(SEAT_KEY);
+  seatMemory = null;
+  removeItem(SEAT_KEY);
 }
 
 /** Seconds left on the round clock, corrected for client clock skew. */

@@ -6,6 +6,7 @@ import FanContentNotice from "../FanContentNotice";
 import { t } from "../i18n";
 import Icon from "../Icon";
 import QrScanner, { scanSupported } from "./QrScanner";
+import { getItem, removeItem, setItem } from "../storage";
 
 function randomName() {
   const chars = "abcdefghjkmnpqrstuvwxyz23456789";
@@ -19,7 +20,7 @@ export default function Landing() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [name, setName] = useState(
-    () => localStorage.getItem("table.name") ?? localStorage.getItem("treachery.name") ?? randomName(),
+    () => getItem("table.name") ?? getItem("treachery.name") ?? randomName(),
   );
   const [joinCode, setJoinCode] = useState(params.get("join") ?? "");
   const [mode, setMode] = useState<"join" | "create">(params.get("join") ? "join" : "create");
@@ -76,13 +77,13 @@ export default function Landing() {
           await api(`/rooms/${s.code}/leave`, { method: "POST", token: s.token }).catch(() => {});
           clearSession();
         }
-        const nm = (localStorage.getItem("table.name") ?? "").trim() || randomName();
+        const nm = (getItem("table.name") ?? "").trim() || randomName();
         try {
           const res = await api<{ code: string; urlId?: string; playerToken: string }>(
             `/rooms/${joinParam.trim().toUpperCase()}/join`,
             { method: "POST", body: { name: nm, display: false } },
           );
-          localStorage.setItem("table.name", nm);
+          setItem("table.name", nm);
           saveSession({ code: res.code, urlId: res.urlId, token: res.playerToken });
           navigate(`/table/r/${res.urlId ?? res.code}`, { replace: true });
         } catch (e) {
@@ -133,7 +134,7 @@ export default function Landing() {
     }
     setBusy(true);
     setError(null);
-    if (trimmed) localStorage.setItem("table.name", trimmed);
+    if (trimmed) setItem("table.name", trimmed);
     try {
       const res =
         mode === "create"

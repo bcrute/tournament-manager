@@ -27,6 +27,7 @@ export default defineConfig({
         "src/goBack.ts",
         "src/nav.ts",
         "src/table/qrPayload.ts",
+        "src/storage.ts",
       ],
       thresholds: {
         statements: 90,

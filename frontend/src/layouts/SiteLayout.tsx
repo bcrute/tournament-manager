@@ -27,6 +27,11 @@ export default function SiteLayout({ children }: { children: ReactNode }) {
       </header>
       <main className="site-body" id="main">{children}</main>
       <footer className="site-footer">
+        <p className="site-footer-links">
+          <Link to="/privacy">Privacy</Link>
+          <span className="dot-sep">·</span>
+          <span className="hint">No tracking, no cookie banner</span>
+        </p>
         <FanContentNotice />
       </footer>
     </div>

@@ -1,3 +1,4 @@
+import { getItem, removeItem, setItem, storageAvailable } from "../storage";
 const KEY = "table.session";
 
 export interface Session {
@@ -10,20 +11,36 @@ export interface Session {
 export function loadSession(): Session | null {
   try {
     // migrate the pre-rename key so live sessions survive the /treachery → /table move
-    const legacy = localStorage.getItem("treachery.session");
-    if (legacy && !localStorage.getItem(KEY)) {
-      localStorage.setItem(KEY, legacy);
-      localStorage.removeItem("treachery.session");
+    const legacy = getItem("treachery.session");
+    if (legacy && !getItem(KEY)) {
+      setItem(KEY, legacy);
+      removeItem("treachery.session");
     }
-    const raw = localStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as Session) : null;
+    const raw = getItem(KEY);
+    if (raw) return JSON.parse(raw) as Session;
+    // Empty *working* storage means there is genuinely no session — the user
+    // left, or cleared it. Returning the in-memory copy here would resurrect a
+    // session that was deliberately ended, which is a bug this project has
+    // already shipped once. Only fall back when storage cannot answer at all.
+    return storageAvailable() ? null : memory;
   } catch {
-    return null;
+    return storageAvailable() ? null : memory;
   }
 }
 
+/**
+ * Where the session lives when the browser refuses to keep it.
+ *
+ * Without this, a device that blocks storage can't hold a room at all: the
+ * player is sent to the room, Room finds no session, and bounces them back to
+ * the lobby in a loop. In memory they can play the whole game; only a refresh
+ * loses it — which is what the privacy page promises.
+ */
+let memory: Session | null = null;
+
 export function saveSession(s: Session) {
-  localStorage.setItem(KEY, JSON.stringify(s));
+  memory = s;
+  setItem(KEY, JSON.stringify(s));
 }
 
 export type LandingAction = "none" | "resume" | "autojoin";
@@ -40,7 +57,8 @@ export function landingAction(session: Session | null, joinParam: string | null)
 }
 
 export function clearSession() {
-  localStorage.removeItem(KEY);
+  memory = null;
+  removeItem(KEY);
   // the pre-rename key must go too, or loadSession() resurrects the old game
-  localStorage.removeItem("treachery.session");
+  removeItem("treachery.session");
 }

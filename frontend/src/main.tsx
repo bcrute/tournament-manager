@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import Home from "./site/Home";
+import Privacy from "./site/Privacy";
 import SiteLayout from "./layouts/SiteLayout";
 import PlayLayout from "./layouts/PlayLayout";
 import Landing from "./table/Landing";
@@ -27,6 +28,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<SiteLayout><Home /></SiteLayout>} />
+        <Route path="/privacy" element={<SiteLayout><Privacy /></SiteLayout>} />
         <Route path="/table" element={<PlayLayout><Landing /></PlayLayout>} />
         <Route path="/table/r/:code" element={<Room />} />
         <Route path="/table/me" element={<PlayLayout><Dashboard /></PlayLayout>} />

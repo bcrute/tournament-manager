@@ -202,6 +202,21 @@ salt — and it is documented as such rather than claimed as anonymous.
 | Sensitive artifacts | None stored. No recordings, transcripts, uploads, or location data. | |
 | Attachment handling | Not applicable — no uploads. | |
 
+**No consent banner, because there is nothing to consent to.** Every stored
+item is required to deliver what the user asked for: the room seat, the
+tournament seat, the display name they typed, their language, and — only if
+they choose to make an account — a sign-in cookie. There is no analytics, no
+advertising, and **no third-party requests at all**: no CDN, no hosted fonts,
+no embedded widgets. `/privacy` lists every item with its purpose and lifetime,
+and `e2e/privacy.spec.ts` asserts the two claims that make the position
+defensible — zero foreign requests during a full session, and zero cookies for
+a signed-out player.
+
+This is an engineering position, not legal advice. It rests on the storage
+being strictly necessary; if anything non-essential is ever added — a
+preference nobody asked for, a metric, a hosted font — the position changes and
+the banner question returns.
+
 **Personal data actually collected:** a display name (user-chosen, may be a
 random default), an optional password, an optional recovery email. No IP-to-user
 association, no location, no device identifiers, no third-party analytics.

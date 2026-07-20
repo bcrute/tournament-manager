@@ -1,3 +1,4 @@
+import { getItem, setItem } from "./storage";
 /**
  * Tiny i18n layer — no dependency, because the whole surface is a lookup with
  * interpolation and a fallback chain.
@@ -121,7 +122,7 @@ export function pickLocale(
 const STORAGE_KEY = "table.locale";
 
 let current =
-  (typeof localStorage !== "undefined" && localStorage.getItem(STORAGE_KEY)) ||
+  getItem(STORAGE_KEY) ||
   pickLocale(typeof navigator !== "undefined" ? navigator.languages ?? [navigator.language] : []);
 
 export const getLocale = () => current;
@@ -129,7 +130,7 @@ export const getLocale = () => current;
 export function setLocale(locale: string) {
   current = locale;
   try {
-    localStorage.setItem(STORAGE_KEY, locale);
+    setItem(STORAGE_KEY, locale);
   } catch {
     // private mode: the choice just won't persist
   }

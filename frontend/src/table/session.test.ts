@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { clearSession, landingAction, loadSession, saveSession } from "./session";
 
 describe("session storage", () => {
@@ -62,5 +62,40 @@ describe("landingAction (QR scans)", () => {
 
   it("QR for a DIFFERENT room -> autojoin (regression: must not bounce back to old game)", () => {
     expect(landingAction(session, "NEWRM")).toBe("autojoin");
+  });
+});
+
+describe("when the browser refuses storage", () => {
+  const deny = () => {
+    throw new DOMException("denied");
+  };
+
+  it("holds the session in memory so the player can still play", async () => {
+    const { saveSession, loadSession } = await import("./session");
+    vi.stubGlobal("localStorage", {
+      getItem: deny,
+      setItem: deny,
+      removeItem: deny,
+      clear: deny,
+    });
+    saveSession({ code: "ABCDE", token: "tok" });
+    expect(loadSession()).toEqual({ code: "ABCDE", token: "tok" });
+    vi.unstubAllGlobals();
+  });
+
+  it("does not resurrect a session that working storage says is gone", async () => {
+    // this project shipped exactly that bug once: leaving a game didn't stick
+    // because a stale copy was read back afterwards
+    const { saveSession, clearSession, loadSession } = await import("./session");
+    saveSession({ code: "ABCDE", token: "tok" });
+    clearSession();
+    expect(loadSession()).toBeNull();
+  });
+
+  it("treats storage cleared behind our back as no session", async () => {
+    const { saveSession, loadSession } = await import("./session");
+    saveSession({ code: "ABCDE", token: "tok" });
+    localStorage.clear();
+    expect(loadSession()).toBeNull();
   });
 });
