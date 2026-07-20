@@ -229,3 +229,147 @@ class TestRoomUrlId:
         missing = dbq("SELECT COUNT(*) c FROM rooms WHERE url_id IS NULL").fetchone()["c"]
         assert missing == 0, "a room without a url_id would fall back to exposing its code"
         assert made["urlId"]
+
+
+class TestCantLose:
+    """Cards that say you don't lose at zero life, or from commander damage.
+    The app can't know which card is out, so it stops asserting rather than
+    guessing."""
+
+    def _room(self, client):
+        r = client.post("/api/table/rooms", json={"name": "alice", "mode": "life"}).json()
+        bob = client.post(f"/api/table/rooms/{r['code']}/join",
+                          json={"name": "bob", "display": False}).json()["playerToken"]
+        client.post(f"/api/table/rooms/{r['code']}/start",
+                    headers={"X-Player-Token": r["playerToken"]})
+        return r["code"], r["playerToken"], bob
+
+    def test_a_player_can_declare_themselves_unable_to_lose(self, client):
+        code, host, _ = self._room(client)
+        r = client.post(f"/api/table/rooms/{code}/cantlose",
+                        headers={"X-Player-Token": host}, json={"value": True})
+        assert r.status_code == 200
+        me = client.get(f"/api/table/rooms/{code}/me",
+                        headers={"X-Player-Token": host}).json()["me"]
+        assert me["cantLose"] is True
+
+    def test_it_does_not_change_life_or_elimination_by_itself(self, client):
+        """It suppresses a threshold, it does not resurrect or protect anyone —
+        going to zero is still allowed, and still means nothing on its own."""
+        code, host, _ = self._room(client)
+        client.post(f"/api/table/rooms/{code}/cantlose",
+                    headers={"X-Player-Token": host}, json={"value": True})
+        client.post(f"/api/table/rooms/{code}/life",
+                    headers={"X-Player-Token": host}, json={"delta": -25})
+        me = client.get(f"/api/table/rooms/{code}/me",
+                        headers={"X-Player-Token": host}).json()["me"]
+        assert me["life"] == -5
+        assert me["eliminated"] is False
+        assert me["cantLose"] is True
+
+    def test_an_explicit_death_still_ends_it(self, client):
+        code, host, _ = self._room(client)
+        client.post(f"/api/table/rooms/{code}/cantlose",
+                    headers={"X-Player-Token": host}, json={"value": True})
+        client.post(f"/api/table/rooms/{code}/eliminate",
+                    headers={"X-Player-Token": host}, json={})
+        me = client.get(f"/api/table/rooms/{code}/me",
+                        headers={"X-Player-Token": host}).json()["me"]
+        assert me["eliminated"] is True
+
+    def test_it_can_be_taken_back_when_the_card_leaves(self, client):
+        code, host, _ = self._room(client)
+        client.post(f"/api/table/rooms/{code}/cantlose",
+                    headers={"X-Player-Token": host}, json={"value": True})
+        client.post(f"/api/table/rooms/{code}/cantlose",
+                    headers={"X-Player-Token": host}, json={"value": False})
+        me = client.get(f"/api/table/rooms/{code}/me",
+                        headers={"X-Player-Token": host}).json()["me"]
+        assert me["cantLose"] is False
+
+    def test_the_table_sees_who_cannot_lose(self, client):
+        code, host, bob = self._room(client)
+        client.post(f"/api/table/rooms/{code}/cantlose",
+                    headers={"X-Player-Token": host}, json={"value": True})
+        players = client.get(f"/api/table/rooms/{code}/me",
+                             headers={"X-Player-Token": bob}).json()["players"]
+        assert next(p for p in players if p["name"] == "alice")["cantLose"] is True
+        assert next(p for p in players if p["name"] == "bob")["cantLose"] is False
+
+    def test_an_ordinary_player_cannot_set_it_for_someone_else(self, client):
+        code, host, bob = self._room(client)
+        me = client.get(f"/api/table/rooms/{code}/me",
+                        headers={"X-Player-Token": host}).json()
+        other = next(p for p in me["players"] if p["name"] == "alice")
+        r = client.post(f"/api/table/rooms/{code}/cantlose",
+                        headers={"X-Player-Token": bob},
+                        json={"value": True, "playerPid": other["pid"]})
+        assert r.status_code == 403
+
+    def test_the_table_display_can_set_it_for_a_player(self, client):
+        """The display is where a long-press reaches this, for a player whose
+        phone is across the table or dead."""
+        code, host, _ = self._room(client)
+        disp = client.post(f"/api/table/rooms/{code}/join",
+                           json={"name": "screen", "display": True}).json()["playerToken"]
+        me = client.get(f"/api/table/rooms/{code}/me",
+                        headers={"X-Player-Token": host}).json()
+        alice = next(p for p in me["players"] if p["name"] == "alice")
+        r = client.post(f"/api/table/rooms/{code}/cantlose",
+                        headers={"X-Player-Token": disp},
+                        json={"value": True, "playerPid": alice["pid"]})
+        assert r.status_code == 200
+
+    def test_it_is_announced_to_the_table(self, client):
+        code, host, bob = self._room(client)
+        client.post(f"/api/table/rooms/{code}/cantlose",
+                    headers={"X-Player-Token": host}, json={"value": True})
+        log = " ".join(e["text"] for e in client.get(
+            f"/api/table/rooms/{code}/me", headers={"X-Player-Token": bob}).json()["log"])
+        assert "can't lose" in log
+
+    def test_the_display_can_end_a_players_game_for_them(self, client):
+        """Press-and-hold on the table view reaches a player whose phone is
+        across the table or out of battery."""
+        code, host, _ = self._room(client)
+        disp = client.post(f"/api/table/rooms/{code}/join",
+                           json={"name": "screen", "display": True}).json()["playerToken"]
+        me = client.get(f"/api/table/rooms/{code}/me",
+                        headers={"X-Player-Token": host}).json()
+        alice = next(p for p in me["players"] if p["name"] == "alice")
+        r = client.post(f"/api/table/rooms/{code}/eliminate",
+                        headers={"X-Player-Token": disp},
+                        json={"undo": False, "playerPid": alice["pid"]})
+        assert r.status_code == 200
+        assert client.get(f"/api/table/rooms/{code}/me",
+                          headers={"X-Player-Token": host}).json()["me"]["eliminated"] is True
+
+    def test_and_can_put_them_back_if_it_was_a_mistake(self, client):
+        # three players: with two, ending one game ends the whole thing and the
+        # endpoint correctly refuses to act on a finished game
+        r = client.post("/api/table/rooms", json={"name": "alice", "mode": "life"}).json()
+        code, host = r["code"], r["playerToken"]
+        for n in ("bob", "carol"):
+            client.post(f"/api/table/rooms/{code}/join", json={"name": n, "display": False})
+        disp = client.post(f"/api/table/rooms/{code}/join",
+                           json={"name": "screen", "display": True}).json()["playerToken"]
+        client.post(f"/api/table/rooms/{code}/start", headers={"X-Player-Token": host})
+        me = client.get(f"/api/table/rooms/{code}/me",
+                        headers={"X-Player-Token": host}).json()
+        alice = next(p for p in me["players"] if p["name"] == "alice")
+        client.post(f"/api/table/rooms/{code}/eliminate", headers={"X-Player-Token": disp},
+                    json={"undo": False, "playerPid": alice["pid"]})
+        client.post(f"/api/table/rooms/{code}/eliminate", headers={"X-Player-Token": disp},
+                    json={"undo": True, "playerPid": alice["pid"]})
+        assert client.get(f"/api/table/rooms/{code}/me",
+                          headers={"X-Player-Token": host}).json()["me"]["eliminated"] is False
+
+    def test_an_ordinary_player_still_cannot_end_someone_elses_game(self, client):
+        code, host, bob = self._room(client)
+        me = client.get(f"/api/table/rooms/{code}/me",
+                        headers={"X-Player-Token": host}).json()
+        alice = next(p for p in me["players"] if p["name"] == "alice")
+        r = client.post(f"/api/table/rooms/{code}/eliminate",
+                        headers={"X-Player-Token": bob},
+                        json={"undo": False, "playerPid": alice["pid"]})
+        assert r.status_code == 403

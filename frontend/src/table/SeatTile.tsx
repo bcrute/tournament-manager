@@ -19,6 +19,7 @@ export default function SeatTile({
   nameOf,
   cmdLayout,
   onCmdOpen,
+  onHold,
   dragging,
   dropTarget,
   flash,
@@ -41,6 +42,8 @@ export default function SeatTile({
   cmdLayout: { rows: number; cols: number; cells: { pid: number; row: number; col: number; colSpan: number }[] };
   /** Opens the editor for this seat. Omitted on devices that may not edit. */
   onCmdOpen?: (pid: number) => void;
+  /** Press and hold: reaches a player whose phone is across the table or dead. */
+  onHold?: (pid: number) => void;
   dragging: boolean;
   dropTarget?: boolean;
   flash?: number;
@@ -62,6 +65,15 @@ export default function SeatTile({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  const holdTimer = useRef<number | null>(null);
+  const held = useRef(false);
+  const cancelHold = () => {
+    if (holdTimer.current !== null) {
+      window.clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+  };
 
   const turned = slot.rotate !== 0;
   const inner = turned ? { width: size.h, height: size.w } : { width: size.w, height: size.h };
@@ -97,10 +109,29 @@ export default function SeatTile({
         gridRow: slot.row,
         gridColumn: `${slot.col} / span ${slot.colSpan}`,
       }}
-      onPointerDown={onDragStart}
-      onPointerMove={onDragMove}
-      onPointerUp={onDragEnd}
-      onPointerCancel={onDragEnd}
+      onPointerDown={(e) => {
+        // a hold opens the seat's own menu; a drag still rearranges, because the
+        // timer is cancelled as soon as the pointer moves or lifts
+        if (onHold) {
+          holdTimer.current = window.setTimeout(() => {
+            held.current = true;
+            onHold(p.pid);
+          }, 550);
+        }
+        onDragStart(e);
+      }}
+      onPointerMove={(e) => {
+        cancelHold();
+        onDragMove(e);
+      }}
+      onPointerUp={(e) => {
+        cancelHold();
+        onDragEnd(e);
+      }}
+      onPointerCancel={(e) => {
+        cancelHold();
+        onDragEnd(e);
+      }}
     >
       <div
         className={`seat-card${p.eliminated ? " dead" : ""}${p.left ? " gone" : ""}${dragging ? " dragging" : ""}${dropTarget ? " drop-target" : ""}`}

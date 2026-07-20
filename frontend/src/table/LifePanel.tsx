@@ -22,7 +22,20 @@ export default function LifePanel({
   const life = (me.life ?? state.room.startingLife) + pending;
   // your own commander can be turned against you, so you are on this list too
   const sources = state.players.filter((p) => !p.left);
-  const lethal = Object.values(me.cmdDamage).some((v) => v >= 21);
+  // a card may say otherwise, and the app can't see the battlefield — so once a
+  // player says they can't lose, it stops flagging thresholds for them
+  const lethalDamage = Object.values(me.cmdDamage).some((v) => v >= 21);
+  const atZero = (me.life ?? 0) <= 0;
+  const lethal = lethalDamage && !me.cantLose;
+  const threatened = (lethalDamage || atZero) && !me.eliminated;
+
+  async function setCantLose(value: boolean) {
+    try {
+      await api(`/rooms/${code}/cantlose`, { method: "POST", token, body: { value } });
+    } catch {
+      /* the next state push corrects it */
+    }
+  }
 
   async function cmd(attackerPid: number, delta: number) {
     await api(`/rooms/${code}/cmddmg`, { method: "POST", token, body: { attackerPid, delta } });
@@ -71,6 +84,26 @@ export default function LifePanel({
         <p className="error">
           <Icon name="warn" /> {t("life.lethalWarning")}
         </p>
+      )}
+
+      {me.cantLose ? (
+        <div className="cant-lose on">
+          <p>
+            <Icon name="check" /> {t("life.cantLoseOn")}
+          </p>
+          <p className="hint">{t("life.cantLoseWhy")}</p>
+          <button className="ghost" onClick={() => void setCantLose(false)}>
+            {t("life.cantLoseOff")}
+          </button>
+        </div>
+      ) : (
+        threatened && (
+          // offered only at a threshold: before that it is noise, and the whole
+          // point is that reaching zero no longer means what it usually does
+          <button className="ghost cant-lose-ask" onClick={() => void setCantLose(true)}>
+            <Icon name="heart" /> {t("life.cantLoseAsk")}
+          </button>
+        )
       )}
 
       <button

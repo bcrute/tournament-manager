@@ -17,6 +17,8 @@ export interface PlayerInfo {
   revealed: boolean;
   left: boolean;
   eliminated: boolean;
+  /** Declared unable to lose — thresholds stop being flagged for them. */
+  cantLose: boolean;
   isMe: boolean;
   life: number | null;
   cmdDamage: Record<string, number>;
@@ -70,6 +72,7 @@ export interface RoomState {
     isDisplay: boolean;
     /** Showing the table view on their own phone, while keeping their seat. */
     isTracker: boolean;
+    cantLose: boolean;
     revealed: boolean;
     eliminated: boolean;
     life: number | null;

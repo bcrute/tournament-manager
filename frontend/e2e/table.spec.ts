@@ -145,3 +145,34 @@ test.describe("the commander damage grid", () => {
     await expect(grid).not.toContainText(/[A-Za-z]/);
   });
 });
+
+test.describe("cards that say you can't lose", () => {
+  test("the offer appears only at a threshold, and silences it once taken", async ({
+    page,
+    isMobile,
+  }) => {
+    const code = await createRoom(page, "ada");
+    expect(code).toMatch(/^[A-Z0-9]{5}$/);
+    await page.getByRole("button", { name: /^start/i }).first().click();
+    await expect(page.getByRole("button", { name: /i.m dead/i })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // nothing on offer while the player is comfortably alive
+    await expect(page.getByRole("button", { name: /i.m alive/i })).toHaveCount(0);
+
+    // drop to zero — the app still doesn't kill anyone, it just stops nagging
+    for (let i = 0; i < 4; i++) await page.getByRole("button", { name: "−5" }).click();
+    await expect(page.getByRole("button", { name: /i.m alive/i })).toBeVisible({
+      timeout: 10_000,
+    });
+
+    await page.getByRole("button", { name: /i.m alive/i }).click();
+    await expect(page.getByText(/can.t lose the game/i).first()).toBeVisible({
+      timeout: 10_000,
+    });
+    // and it can be handed back when the card leaves the battlefield
+    await expect(page.getByRole("button", { name: /can lose again/i })).toBeVisible();
+    void isMobile;
+  });
+});

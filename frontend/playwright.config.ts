@@ -37,7 +37,13 @@ export default defineConfig({
           "TREACHERY_DB=$(mktemp -d)/e2e.db TABLE_RATELIMIT=off " +
           "python -m uvicorn app.main:app --host 127.0.0.1 --port 8099",
         url: "http://127.0.0.1:8099/api/health",
-        reuseExistingServer: !process.env.CI,
+        // Never reuse: a server left running from an earlier session keeps the
+        // code it started with, while the database on disk has since been
+        // migrated. That mismatch produced a backend TypeError I could not
+        // reproduce afterwards, because the next run started a fresh process.
+        // Testing against a stale process is the same class of mistake as
+        // testing against a stale bundle.
+        reuseExistingServer: false,
         timeout: 60_000,
       },
 });

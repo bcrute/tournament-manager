@@ -18,6 +18,7 @@ const player = (over: Partial<PlayerInfo> & { pid: number }): PlayerInfo => ({
   name: `p${over.pid}`,
   isHost: false,
   revealed: false,
+  cantLose: false,
   left: false,
   eliminated: false,
   isMe: false,

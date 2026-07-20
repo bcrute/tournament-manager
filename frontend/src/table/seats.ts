@@ -27,14 +27,16 @@ export interface SeatGrid {
 /**
  * The most seats the shared table view can show usefully.
  *
- * Measured rather than guessed: at eight the life totals are still large on a
- * phone, which is the number people actually read across a table. The
- * commander-damage squares are already small by seven and are the first thing
- * to become unreadable — but they are secondary, and tapping a card opens them
- * full size. Past eight the cards themselves get too short to read at a
- * distance, and the honest answer is for everyone to use their own phone.
+ * Measured rather than guessed. Life totals stay legible up to eight, but the
+ * commander-damage squares fall apart at seven — around ten pixels a number,
+ * which is unreadable from across a table. The cut is set by the point where
+ * the view stops being glanceable, not the point where it stops rendering:
+ * needing to tap a card to read damage means the shared screen has already
+ * failed at its job.
+ *
+ * Above this the answer is everyone on their own phone, which works unchanged.
  */
-export const MAX_TABLE_VIEW = 8;
+export const MAX_TABLE_VIEW = 6;
 
 export function seatGrid(n: number): SeatGrid {
   if (n <= 0) return { rows: 1, cols: 2, slots: [] };

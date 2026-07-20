@@ -41,7 +41,7 @@ async function table(page: Page, browser: import("@playwright/test").Browser, n:
   await expect(page.locator(".tracker-bar")).toBeVisible({ timeout: 10_000 });
 }
 
-for (const n of [2, 3, 5, 6, 7, 8]) {
+for (const n of [2, 3, 5, 6]) {
   test(`the damage grid holds up with ${n} players`, async ({ page, browser }, testInfo) => {
     test.skip(testInfo.project.name !== "mobile", "layout arithmetic; one viewport suffices");
     await table(page, browser, n);
@@ -69,12 +69,12 @@ for (const n of [2, 3, 5, 6, 7, 8]) {
   });
 }
 
-test("nine players falls back rather than showing an unreadable grid", async ({
+test("seven players falls back rather than showing an unreadable grid", async ({
   page,
   browser,
 }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile", "layout arithmetic; one viewport suffices");
-  await table(page, browser, 9);
+  await table(page, browser, 7);
 
   // no cards at all — this is a refusal, not a squeeze
   await expect(page.locator(".seat-card")).toHaveCount(0);
@@ -82,14 +82,14 @@ test("nine players falls back rather than showing an unreadable grid", async ({
   await expect(page.getByText(/too many for one screen/i)).toBeVisible();
 
   // but every player is still accounted for, with their life
-  await expect(page.locator(".display-compact li")).toHaveCount(9);
-  await page.screenshot({ path: "/tmp/players-9.png" });
+  await expect(page.locator(".display-compact li")).toHaveCount(7);
+  await page.screenshot({ path: "/tmp/players-7-refused.png" });
 });
 
-test("eight players still gets the full table view", async ({ page, browser }, testInfo) => {
+test("six players still gets the full table view", async ({ page, browser }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile", "layout arithmetic; one viewport suffices");
-  await table(page, browser, 8);
-  // the boundary is inclusive: eight is supported, nine is not
-  await expect(page.locator(".seat-card")).toHaveCount(8);
+  await table(page, browser, 6);
+  // the boundary is inclusive: six is supported, seven is not
+  await expect(page.locator(".seat-card")).toHaveCount(6);
   await expect(page.locator(".display-toomany")).toHaveCount(0);
 });

@@ -29,7 +29,8 @@ export default defineConfig({
           "TREACHERY_DB=$(mktemp -d)/shots.db TABLE_RATELIMIT=off " +
           "python -m uvicorn app.main:app --host 127.0.0.1 --port 8099",
         url: "http://127.0.0.1:8099/api/health",
-        reuseExistingServer: true,
+        // fresh process every run: see the note in playwright.config.ts
+        reuseExistingServer: false,
         timeout: 60_000,
       },
 });

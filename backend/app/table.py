@@ -345,6 +345,7 @@ def personalize(snap, me):
                 "revealed": bool(p["revealed"]),
                 "left": bool(p["left_game"]),
                 "eliminated": bool(p["eliminated"]),
+                "cantLose": bool(p["cant_lose"]),
                 "isMe": p["id"] == me["id"],
                 "life": p["life"],
                 "cmdDamage": cmd.get(p["id"], {}),
@@ -379,6 +380,7 @@ def personalize(snap, me):
             "isHost": bool(me["is_host"]),
             "isDisplay": bool(me["is_display"]),
             "isTracker": bool(me["is_tracker"]),
+            "cantLose": bool(me["cant_lose"]),
             "revealed": bool(me["revealed"]),
             "eliminated": bool(me["eliminated"]),
             "life": me["life"],
@@ -497,6 +499,10 @@ class CmdDamageBody(BaseModel):
 
 class EliminateBody(BaseModel):
     undo: bool = False
+    #: whose game to end. Omitted means the caller. Only the table display, or
+    #: a player keeping score, may name someone else — for the player whose
+    #: phone is across the table or out of battery.
+    playerPid: int | None = None
 
 
 class RenameBody(BaseModel):
@@ -843,8 +849,25 @@ async def eliminate(code: str, body: EliminateBody, x_player_token: str | None =
     player = get_player(code, x_player_token)
     if norm_status(room["status"]) != "playing":
         raise HTTPException(409, "no game in progress")
-    if player["is_display"]:
-        raise HTTPException(409, "displays can't be eliminated")
+    if body.playerPid is not None and body.playerPid != player["id"]:
+        if not (player["is_display"] or player["is_tracker"]):
+            raise HTTPException(
+                403, "only the table display, or a player keeping score, can do this "
+                     "for another player"
+            )
+        target = q(
+            "SELECT * FROM players WHERE room_code = ? AND id = ? AND is_display = 0 "
+            "AND left_game = 0",
+            (room["code"], body.playerPid),
+        ).fetchone()
+        if not target:
+            raise HTTPException(404, "player not found")
+    else:
+        if player["is_display"]:
+            raise HTTPException(409, "displays can't be eliminated — name a player")
+        target = player
+
+    player = target
     if body.undo:
         q("UPDATE players SET eliminated = 0, eliminated_at = NULL WHERE id = ?", (player["id"],))
         log_event(room["code"], f"{player['name']} is back in the game")
@@ -887,6 +910,61 @@ async def rename(code: str, body: RenameBody, x_player_token: str | None = Heade
 
 class TrackerBody(BaseModel):
     tracking: bool
+
+
+class CantLoseBody(BaseModel):
+    value: bool
+    #: the table display, or a player keeping score, may set it for someone else
+    playerPid: int | None = None
+
+
+@router.post("/rooms/{code}/cantlose")
+async def set_cant_lose(
+    code: str, body: CantLoseBody, x_player_token: str | None = Header(default=None)
+):
+    """Mark a player as unable to lose, or mortal again.
+
+    Some cards say you don't lose the game at zero life, or from commander
+    damage. The app can't know which card is on the battlefield, so it stops
+    asserting: the thresholds stop being highlighted for this player and only an
+    explicit "I'm dead" ends their game. It is a display decision, not a rules
+    engine.
+    """
+    room = get_room(code)
+    player = get_player(code, x_player_token)
+    if norm_status(room["status"]) != "playing":
+        raise HTTPException(409, "no game in progress")
+
+    if body.playerPid is not None and body.playerPid != player["id"]:
+        if not (player["is_display"] or player["is_tracker"]):
+            raise HTTPException(
+                403, "only the table display, or a player keeping score, can set this "
+                     "for another player"
+            )
+        target = q(
+            "SELECT * FROM players WHERE room_code = ? AND id = ? AND is_display = 0 "
+            "AND left_game = 0",
+            (room["code"], body.playerPid),
+        ).fetchone()
+        if not target:
+            raise HTTPException(404, "player not found")
+    else:
+        if player["is_display"]:
+            raise HTTPException(409, "a display has no life of its own — name a player")
+        target = player
+
+    if bool(target["cant_lose"]) == body.value:
+        return {"ok": True}
+    q("UPDATE players SET cant_lose = ? WHERE id = ?", (1 if body.value else 0, target["id"]))
+    log_event(
+        room["code"],
+        f"{target['name']} can't lose the game"
+        if body.value
+        else f"{target['name']} can lose the game again",
+    )
+    touch(room["code"])
+    await broadcast(room["code"])
+    return {"ok": True, "cantLose": body.value}
 
 
 @router.post("/rooms/{code}/tracker")

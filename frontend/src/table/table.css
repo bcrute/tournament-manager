@@ -2140,3 +2140,30 @@ button.ghost.danger {
   font-variant-numeric: tabular-nums;
   font-size: 1.15rem;
 }
+
+/* "I can't lose": offered only when a threshold is reached, and shown as a
+   standing state afterwards so nobody forgets it is on. */
+.cant-lose-ask {
+  margin-top: 0.5rem;
+}
+
+.cant-lose.on {
+  margin-top: 0.75rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid #3d6b4a;
+  border-radius: 10px;
+  background: rgba(80, 180, 120, 0.08);
+  text-align: left;
+}
+
+.cant-lose.on p {
+  margin: 0 0 0.35rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.cant-lose.on .hint {
+  display: block;
+  font-size: 0.82rem;
+}

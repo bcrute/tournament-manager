@@ -260,6 +260,10 @@ _ensure_column("players", "eliminated_at", "INTEGER")
 # this changes no game state: they keep their seat, life, card and host role.
 # It only grants the one capability the display has — adjusting other players.
 _ensure_column("players", "is_tracker", "INTEGER NOT NULL DEFAULT 0")
+# "I can't lose": Platinum Angel, Phyrexian Unlife, Gideon of the Trials and
+# friends. Zero life and 21 commander damage stop meaning anything for this
+# player, so the app stops flagging them — only an explicit "I'm dead" ends it.
+_ensure_column("players", "cant_lose", "INTEGER NOT NULL DEFAULT 0")
 # The id that appears in the address bar. The five-character code has to be
 # readable aloud across a table, which means it is short enough to guess; this
 # is 128 random bits, so a room URL can be shared, screenshotted or left in
