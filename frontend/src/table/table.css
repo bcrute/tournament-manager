@@ -1944,9 +1944,14 @@ button.ghost.danger {
 }
 
 /* ---------- the landing on a larger screen ----------
-   A phone gets one column, unchanged. Past 62rem the explainer sits beside the
-   form instead of the page being a narrow strip of buttons in a black field —
-   which is what made it read as a phone app on a laptop. */
+   A phone gets one column, unchanged. Past 62rem the explainer appears above
+   the form instead of the page being a narrow strip of buttons in a black
+   field — which is what made it read as a phone app on a laptop.
+
+   It sits *above* the form, not beside it: a side-by-side grid let the form
+   column size to its contents, so Create and Join — which hold different
+   fields — landed at different widths. Stacked, the form is one fixed-width
+   card in both modes. */
 
 .tr-explainer {
   display: none;
@@ -1958,20 +1963,14 @@ button.ghost.danger {
 
 @media (min-width: 62rem) {
   .tr-landing {
-    max-width: 60rem;
+    max-width: 34rem;
     margin-inline: auto;
-  }
-
-  .tr-columns {
-    display: grid;
-    grid-template-columns: minmax(18rem, 1.2fr) minmax(20rem, 1fr);
-    gap: 3rem;
-    align-items: start;
-    text-align: left;
   }
 
   .tr-explainer {
     display: block;
+    text-align: left;
+    margin-bottom: 1.75rem;
   }
 
   .tr-explainer h2 {
