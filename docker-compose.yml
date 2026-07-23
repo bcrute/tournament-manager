@@ -5,6 +5,14 @@ services:
     restart: unless-stopped
     environment:
       - TREACHERY_DB=/appdata/treachery.db
+    # Server secrets (TABLE_IP_SALT, and TABLE_ADMINS/TABLE_DEV_DOCS if ever
+    # wanted) live in mtg.env on the deployment, never in the repo. The deploy
+    # copies this compose file over the VPS copy but not mtg.env, so the salt
+    # stays stable across redeploys — which is what keeps bans from resetting.
+    # Optional so a local `docker compose up` without the file still works.
+    env_file:
+      - path: mtg.env
+        required: false
     volumes:
       - ./appdata:/appdata
     networks:

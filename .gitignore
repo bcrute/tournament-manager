@@ -4,6 +4,8 @@ __pycache__/
 *.pyc
 .venv/
 .env
+# server secrets live only on the deployment, never in the repo
+mtg.env
 
 # test artifacts
 .coverage

@@ -338,11 +338,17 @@ internal detail. It was reaching the client and coming back trusted.
    `current_account()` and silently downgrades the caller to non-organizer —
    which turns a genuine auth bug into what looks like a permissions decision.
    Fails closed, so it is not a vulnerability; it is a debugging trap.
-5. **Security headers are set by the app but unverified end-to-end.** `main.py`
-   sets a Permissions-Policy. CSP, HSTS, X-Content-Type-Options and
-   Referrer-Policy depend on Caddy, whose config is not in this repo, so the
-   served response has not been confirmed. Referrer-Policy matters directly for
-   the next item.
+5. **Security headers are app-owned and confirmed end-to-end.** `main.py` sets
+   the full set — CSP, HSTS, X-Content-Type-Options, X-Frame-Options,
+   Cross-Origin-Opener-Policy, Referrer-Policy (`no-referrer`) and
+   Permissions-Policy (`camera=(self)` for the QR scanner) — and the served
+   `mtg.skadoosh.dev` response was verified on 2026-07-23 to carry them.
+   Resolved that day: Caddy had *also* been setting Referrer-Policy and
+   Permissions-Policy, which silently won over the app (it forced `camera=()`,
+   breaking the QR scanner in production, and downgraded `no-referrer` to
+   `strict-origin-when-cross-origin`). Caddy now sets no security headers; its
+   config is versioned at [`deploy/Caddyfile`](../deploy/Caddyfile). One source
+   of truth, tested by `frontend/e2e/privacy.spec.ts`.
 6. **Entrant tokens ride in query strings**, so the reverse proxy must strip
    query parameters from access logs. That coupling is invisible from either
    file; a header would remove it. Tracked in `docs/ideas.md`.

@@ -20,9 +20,17 @@ not in it and never should be:
    system-wide. `npm ci` in `frontend/`, a venv from `backend/requirements*.txt`,
    and `npx playwright install chromium` for the browser tests.
 
-3. **Server environment variables**, which live on the deployment, not here:
-   `TABLE_ADMINS` (admin surface is absent without it), `TABLE_IP_SALT` (keeps
-   bans stable across redeploys), `TABLE_DEV_DOCS` (off in production).
+3. **Server environment variables**, which live on the deployment in
+   `/opt/apps/mtg/mtg.env` (mode 600, never in the repo; the deploy copies
+   `docker-compose.yml` over the VPS dir but not this file, and compose loads it
+   via an optional `env_file`): `TABLE_ADMINS` (admin surface is absent without
+   it — currently unset, so admin is off), `TABLE_IP_SALT` (set 2026-07-23, so
+   bans survive redeploys), `TABLE_DEV_DOCS` (unset → docs off in production).
+
+The reverse proxy is the other piece not shipped by the deploy: Caddy's config
+is versioned at [`deploy/Caddyfile`](deploy/Caddyfile) but applied to the VPS by
+hand. It is deliberately thin — the app owns every security header (see
+`docs/security.md` gap 5), so don't reintroduce header directives there.
 
 **Verifying a deploy:** compare the bundle hash the site serves against your
 local `frontend/dist/` build. Checking an API endpoint proves the server

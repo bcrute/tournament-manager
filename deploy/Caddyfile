@@ -1,0 +1,28 @@
+# Reverse proxy for mtg.skadoosh.dev, applied manually to the VPS at
+# /opt/caddy/Caddyfile (mounted into the caddy container). It is NOT shipped by
+# the deploy workflow — that only builds the image and restarts the compose
+# stack — so this copy is the reviewable source of truth. Keep the two in sync;
+# after editing here, copy it up and `docker exec caddy caddy reload`.
+#
+# Deliberately thin: the application owns every security header in
+# backend/app/main.py, where they are reviewable and covered by
+# frontend/e2e/privacy.spec.ts. Caddy used to set Referrer-Policy and
+# Permissions-Policy here too, which silently overrode the app — it forced
+# camera=() (breaking the in-app QR scanner, which needs camera=(self)) and
+# downgraded the app's no-referrer. Setting them in one place only is the fix.
+
+{
+	# don't advertise the server software
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+mtg.skadoosh.dev {
+	encode gzip
+
+	# The app owns its security headers; Caddy only strips its own Server banner.
+	header -Server
+
+	reverse_proxy mtg:8000
+}
