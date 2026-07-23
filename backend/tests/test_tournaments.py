@@ -80,6 +80,26 @@ class TestHosting:
         assert client.post(f"/api/tournament/{code}/entrants", json={"names": ["x"]}).status_code == 403
         assert client.get(f"/api/tournament/{code}").json()["isOrganizer"] is False
 
+    def test_a_denied_organizer_action_leaves_a_trace(self, client):
+        """The tournament layer produced five authorization defects; a sixth
+        being probed must not be invisible. A wrong-account 403 writes an
+        AUTHZ_DENY security event keyed to the username — never a secret."""
+        from app.audit import AUTHZ_DENY
+
+        organizer(client, "hostTrace")
+        code = host(client)
+        organizer(client, "intruderTrace")  # a real account, not the organizer
+        client.post(f"/api/tournament/{code}/entrants", json={"names": ["x"]})
+
+        rows = q(
+            "SELECT * FROM security_log WHERE kind = ? AND subject = ?",
+            (AUTHZ_DENY, "intruderTrace"),
+        ).fetchall()
+        assert rows, "a denied organizer action should be logged"
+        # keyed to who, and where — but the tournament code is not a secret and
+        # nothing token-shaped is recorded
+        assert any(code in (r["detail"] or "") for r in rows)
+
 
 class TestRosterAndClaims:
     def test_roster_is_public_so_players_can_claim(self, client):

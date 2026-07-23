@@ -22,6 +22,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from .accounts import require_account
+from .audit import AUTHZ_DENY, security_event
 from .db import q
 from .games import known_games, profile_for, structure_for
 from .pairing import Entrant as PairEntrant
@@ -148,6 +149,13 @@ def require_organizer(code: str, request: Request):
     acct = require_account(request)
     row = get_tournament(code)
     if row["organizer_account_id"] != acct["id"]:
+        # This is the whole tournament layer's authorization chokepoint — every
+        # organizer action routes through here. It is also the class the
+        # 2026-07-19 audit found five defects in, all from treating a client id
+        # as self-authorizing. An authenticated account reaching for a
+        # tournament it does not own is exactly the probe worth a trace; the
+        # subject is a username, never a secret.
+        security_event(AUTHZ_DENY, acct["username"], str(request.url.path))
         raise HTTPException(403, "only the organizer can do that")
     return row, acct
 

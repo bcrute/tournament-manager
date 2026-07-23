@@ -14,7 +14,9 @@ apply are marked not-applicable explicitly rather than deleted.
 
 Owner for everything below: Ben. Last reviewed 2026-07-19 (post-audit);
 re-checked against the code 2026-07-20, which closed the schema-endpoint and
-application-logging gaps and narrowed T10.
+application-logging gaps and narrowed T10. Updated 2026-07-22: the tournament
+layer's organizer-authority denials now log (`AUTHZ_DENY`), closing the last
+unlogged authorization chokepoint and lifting T10 to mitigated.
 
 ---
 
@@ -74,7 +76,7 @@ an open threat.
 | T7 | 5 | Enumerate usernames | Identical response text, and a throwaway scrypt verification when no account matches so timing matches too | Mitigated — `TestAuthTimingAndSessions` |
 | T8 | 5 | Reuse a stolen session cookie | httpOnly + Secure + SameSite; 90-day absolute expiry with a 30-day idle expiry that now actually updates | Mitigated |
 | T9 | 5 | Brute-force a password or recovery code | scrypt n=2^16; sensitive endpoints 20 per 10 min; escalating IP bans 1h→6h→24h→7d | Mitigated |
-| T10 | any | Probe the app without leaving a trace | `security_log` via `audit.py`: auth failures, unknown-user attempts, admin denials, rate-limit trips and bans, all keyed to a salted client id. 30-day retention, pruned on the hourly sweep | Partially mitigated — the tournament layer records nothing; see gaps |
+| T10 | any | Probe the app without leaving a trace | `security_log` via `audit.py`: auth failures, unknown-user attempts, admin denials, tournament organizer-authority denials (`AUTHZ_DENY`), rate-limit trips and bans, keyed to a salted client id or username. 30-day retention, pruned on the hourly sweep | Mitigated — the authorization chokepoints across all three surfaces now log; residual gap is narrow, see gaps |
 | T11 | 2 | Entrant token captured from a URL | Token travels as `?token=`; the reverse proxy must strip query strings from access logs | **Partially mitigated** — depends on proxy config not in this repo |
 | T12 | 1 | Denial of service by room or event creation | Per-client rate limits; rooms idle out at 3h, tournaments at 12h | Mitigated |
 | T18 | 1 | Enumerate room URLs to find live games | The address bar carries `rooms.url_id` — 128 random bits — not the five-character code. Pinned by `TestRoomUrlId` and a browser test | Mitigated |
@@ -199,7 +201,7 @@ on a single container is neither.
 | Audit immutability | Game events are append-only in practice but not enforced at the database level. Accepted. | The audit consumer is a player wondering who killed them, not a regulator. Hash chaining would be theatre here. |
 | Audit granularity | Game events record actor, action, target and timestamp. Result changes are versioned with source (`auto` vs `organizer`) and a note. | An organizer overriding a result is the one action with real consequences, so it keeps history rather than mutating. |
 | Audit retention | Tied to the room's lifetime; account history persists until the account is deleted. | |
-| Denial logging | Admin denials (`ADMIN_DENY`) and authentication failures are recorded. **Gap: the tournament layer records nothing** — `tournaments.py` does not import `audit` at all, so a 403 from the pod-authorization checks leaves no trace. | The layer that produced five authorization defects is the one that would not show a sixth being probed. |
+| Denial logging | Admin denials (`ADMIN_DENY`), authentication failures, and tournament organizer-authority denials (`AUTHZ_DENY`, at `require_organizer` — the single chokepoint all 13 organizer actions route through) are recorded. Residual: the two player-seat checks (`advance_turn`, `call_official`) still don't log, deliberately — they reject anonymous wrong-table callers, the same ordinary-friction class the table surface chooses not to log, and have no account username to key on. | The layer that produced five authorization defects — all in the organizer/pod authorization class — now shows a sixth being probed. Player-seat friction is noise, kept out for the same reason `join.unknown_room` is the table layer's only entry. |
 
 **Never logged:** tokens, passwords, recovery codes, or raw IP addresses.
 Rate limiting identifies clients by a salted HMAC of the IP (`limits.client_id`).
@@ -319,13 +321,16 @@ internal detail. It was reaching the client and coming back trusted.
    say the codes are the only way back in, but the longer an address is stored
    without the feature existing, the more it reads as a promise. Owner: Ben.
    Trigger: implement it or stop collecting it before the first outside user.
-3. **The tournament layer is unlogged.** The audit's "no application logging at
-   all" finding is largely closed — `security_log` now records auth failures,
-   admin denials, rate-limit trips and bans. `tournaments.py` is the exception:
-   it does not import `audit`, so every authorization denial it raises is
-   silent. That is precisely the layer the 2026-07-19 audit found five defects
-   in, so a sixth being probed would look like nothing at all. Owner: Ben.
-   Trigger: before the app is used for an event with stakes.
+3. **Tournament player-seat denials are unlogged.** The audit's "no application
+   logging at all" finding is closed. `tournaments.py` now records the class
+   that mattered: organizer-authority denials write `AUTHZ_DENY` at
+   `require_organizer`, the single chokepoint every organizer action routes
+   through, and the exact class the 2026-07-19 audit found five defects in. What
+   remains is narrow and deliberate — the two player-seat checks (`advance_turn`
+   and `call_official`) reject anonymous wrong-table callers without an account
+   to key on, the same ordinary friction the table surface leaves out. Owner:
+   Ben. Trigger: revisit only if a probe against a specific pod's seat checks
+   ever needs to be visible.
 4. **Failures are swallowed in three places.** `broadcast` (`table.py`) uses a
    bare `except Exception: pass`; so does the limiter's audit write, annotated
    and deliberate so logging cannot break the limiter. The third is the
