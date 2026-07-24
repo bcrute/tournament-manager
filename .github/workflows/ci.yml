@@ -1,0 +1,28 @@
+name: ci
+
+# Build + test mirror of the Gitea `deploy` workflow, minus the deploy.
+#
+# Gitea remains the sole deployer: it ships the image to the VPS and runs
+# `docker compose up -d`. Duplicating that here would race two pipelines to
+# deploy the same commit, so this stops at the image build.
+#
+# The build IS the test suite — see Dockerfile: the frontend stage runs vitest
+# and the production build, the backend-test stage runs pytest behind a 90%
+# coverage gate. A red build here means a red build there.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        # pinned to the v4.2.2 commit SHA (mutable tags are a supply-chain risk)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Build image (runs pytest + coverage gate + vitest + coverage gate)
+        run: docker build -t mtg:latest .

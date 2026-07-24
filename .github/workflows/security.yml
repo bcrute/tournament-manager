@@ -1,0 +1,38 @@
+name: security
+
+# Supply-chain scanning, moved off the deploy path.
+#
+# These check dependencies and patterns, which change when someone bumps a
+# package or a new advisory lands — not on every push. Running them per-commit
+# added minutes to every deploy to re-verify the same unchanged lockfiles.
+#
+# Weekly, plus on demand, plus whenever a dependency file actually changes.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+  push:
+    paths:
+      - "backend/requirements*.txt"
+      - "frontend/package-lock.json"
+      - ".github/workflows/security.yml"
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      # The Gitea copy shares the workspace with --volumes-from because its
+      # runner keeps the checkout in a docker volume. GitHub-hosted runners put
+      # it on the host filesystem, so a plain bind mount is enough. Tool images
+      # stay identical to Gitea's so both report the same findings.
+      - name: semgrep
+        run: docker run --rm -v "$PWD":"$PWD" -w "$PWD" semgrep/semgrep:latest semgrep scan --config p/ci --error --quiet .
+
+      - name: pip-audit
+        run: docker run --rm -v "$PWD":"$PWD" -w "$PWD" python:3.12-slim sh -c 'pip install -q pip-audit && pip-audit --strict -r backend/requirements.txt'
+
+      - name: npm audit
+        run: docker run --rm -v "$PWD":"$PWD" -w "$PWD/frontend" node:22-alpine sh -c 'npm ci --ignore-scripts --silent && npm audit --audit-level=high'
