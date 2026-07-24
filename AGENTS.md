@@ -5,28 +5,27 @@
 The repo is self-contained for *understanding* the project. Three things are
 not in it and never should be:
 
-1. **A Gitea SSH key to push.** Generate one, register it in Gitea (Settings →
-   SSH keys), and pin it *per host* so the agent's other keys aren't offered
-   first:
+1. **A GitHub SSH key to push.** Generate one, register it on the account
+   (Settings → SSH and GPG keys), and pin it *per host* so the agent's other
+   keys aren't offered first:
    ```
-   ssh-keygen -t ed25519 -f ~/.ssh/gitea_ed25519 -C "$(hostname)" -N ""
-   git remote set-url origin ssh://git@192.168.30.4:2222/ben/mtg.git
+   ssh-keygen -t ed25519 -f ~/.ssh/<machine>_github_ed25519 -C "$(hostname)" -N ""
+   git remote set-url origin git@github.com:bcrute/tournament-manager.git
    ```
    ```
    # ~/.ssh/config
-   Match host 192.168.30.4 user git
+   Host github.com
      IdentitiesOnly yes
-     IdentityFile ~/.ssh/gitea_ed25519
+     IdentityFile ~/.ssh/<machine>_github_ed25519
    ```
    Pin it here, not with `git config core.sshCommand`. That setting applies to
-   every remote in the clone, so once the `github` mirror exists it sends the
-   Gitea key to github.com as well — which authenticates if both keys are on
-   the same account, and quietly defeats having separate keys at all. The
-   `Match ... user git` form leaves the `root_unraid` alias (same host, port 22)
-   alone.
+   every remote in the clone regardless of host, so with more than one remote it
+   sends the same key everywhere — which still authenticates if the keys sit on
+   one account, and quietly defeats having separate keys at all.
 
-   Gitea's SSH is on **unraid:2222**. The `gitea.skadoosh.dev` name is only the
-   HTTPS front end — port 22 there is the host's own sshd, and will refuse you.
+   Note that an SSH key only authenticates git. Anything touching the GitHub
+   **API** — repository secrets, releases, the `gh` CLI — needs a personal
+   access token instead; the key cannot reach those endpoints.
 
 2. **A toolchain.** Nothing here assumes node or python are installed
    system-wide. `npm ci` in `frontend/`, a venv from `backend/requirements*.txt`,
@@ -49,16 +48,17 @@ local `frontend/dist/` build. Checking an API endpoint proves the server
 updated, not that any browser sees it — that distinction hid a day of invisible
 deploys once already.
 
-**Two remotes, one deployer.** `github` (`bcrute/tournament-manager`, public)
-builds and deploys, from [`.github/workflows/`](.github/workflows). `origin` is
-Gitea, which now only stores code: **Actions is switched off on that repo**, and
-that setting is the only thing keeping it from deploying. `.gitea/workflows/` is
-gone, and Gitea falls back to `.github/workflows/` when it is absent — so
-re-enabling Actions there would immediately give you two pipelines racing to
-deploy the same commit. If you ever want the home runner back, put a workflow in
-`.gitea/workflows/` *first*; its presence is what suppresses the fallback.
+**GitHub is the origin, and the only deployer.** `origin` is
+`bcrute/tournament-manager` (public); it builds and ships to the VPS from
+[`.github/workflows/`](.github/workflows).
 
-Push to both remotes; only the GitHub push ships to the VPS.
+The `gitea` remote is the pre-migration home, kept for history and no longer
+pushed to. Do not resume pushing to it without thought: `.gitea/workflows/` is
+gone, and Gitea falls back to `.github/workflows/` when that directory is
+absent, so a push there would hand its self-hosted runner the deploy job and put
+two pipelines on the same commit. Disabling Actions on the Gitea repo, or
+putting a workflow back in `.gitea/workflows/` to suppress the fallback, are the
+two ways to make it safe again.
 
 ## Security
 
