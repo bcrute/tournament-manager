@@ -6,13 +6,25 @@ The repo is self-contained for *understanding* the project. Three things are
 not in it and never should be:
 
 1. **A Gitea SSH key to push.** Generate one, register it in Gitea (Settings →
-   SSH keys), and pin it for this clone so the agent's other keys aren't
-   offered first:
+   SSH keys), and pin it *per host* so the agent's other keys aren't offered
+   first:
    ```
    ssh-keygen -t ed25519 -f ~/.ssh/gitea_ed25519 -C "$(hostname)" -N ""
    git remote set-url origin ssh://git@192.168.30.4:2222/ben/mtg.git
-   git config core.sshCommand 'ssh -i ~/.ssh/gitea_ed25519 -o IdentitiesOnly=yes'
    ```
+   ```
+   # ~/.ssh/config
+   Match host 192.168.30.4 user git
+     IdentitiesOnly yes
+     IdentityFile ~/.ssh/gitea_ed25519
+   ```
+   Pin it here, not with `git config core.sshCommand`. That setting applies to
+   every remote in the clone, so once the `github` mirror exists it sends the
+   Gitea key to github.com as well — which authenticates if both keys are on
+   the same account, and quietly defeats having separate keys at all. The
+   `Match ... user git` form leaves the `root_unraid` alias (same host, port 22)
+   alone.
+
    Gitea's SSH is on **unraid:2222**. The `gitea.skadoosh.dev` name is only the
    HTTPS front end — port 22 there is the host's own sshd, and will refuse you.
 
@@ -36,6 +48,13 @@ hand. It is deliberately thin — the app owns every security header (see
 local `frontend/dist/` build. Checking an API endpoint proves the server
 updated, not that any browser sees it — that distinction hid a day of invisible
 deploys once already.
+
+**Two remotes.** `origin` is Gitea and is the only thing that deploys. `github`
+(`bcrute/tournament-manager`, public) is a mirror that runs the same gates via
+[`.github/workflows/`](.github/workflows) and stops at the image build. Push to
+both; only the Gitea push ships to the VPS. Gitea ignores `.github/workflows/`
+because `.gitea/workflows/` exists and takes precedence — if you ever delete the
+latter, the former silently becomes live, deploy job and all.
 
 ## Security
 
