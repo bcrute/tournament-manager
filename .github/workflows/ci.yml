@@ -1,17 +1,15 @@
 name: ci
 
-# Build + test mirror of the Gitea `deploy` workflow, minus the deploy.
+# The gates, for commits that are not going to production.
 #
-# Gitea remains the sole deployer: it ships the image to the VPS and runs
-# `docker compose up -d`. Duplicating that here would race two pipelines to
-# deploy the same commit, so this stops at the image build.
+# Pushes to main are covered by deploy.yml, which runs this same build before
+# it ships anything — so this deliberately does not trigger on main. Adding it
+# there would build the identical image twice per push for one signal.
 #
 # The build IS the test suite — see Dockerfile: the frontend stage runs vitest
 # and the production build, the backend-test stage runs pytest behind a 90%
-# coverage gate. A red build here means a red build there.
+# coverage gate. A red build here means a deploy that would have failed.
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:

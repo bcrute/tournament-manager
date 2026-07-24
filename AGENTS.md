@@ -49,12 +49,16 @@ local `frontend/dist/` build. Checking an API endpoint proves the server
 updated, not that any browser sees it — that distinction hid a day of invisible
 deploys once already.
 
-**Two remotes.** `origin` is Gitea and is the only thing that deploys. `github`
-(`bcrute/tournament-manager`, public) is a mirror that runs the same gates via
-[`.github/workflows/`](.github/workflows) and stops at the image build. Push to
-both; only the Gitea push ships to the VPS. Gitea ignores `.github/workflows/`
-because `.gitea/workflows/` exists and takes precedence — if you ever delete the
-latter, the former silently becomes live, deploy job and all.
+**Two remotes, one deployer.** `github` (`bcrute/tournament-manager`, public)
+builds and deploys, from [`.github/workflows/`](.github/workflows). `origin` is
+Gitea, which now only stores code: **Actions is switched off on that repo**, and
+that setting is the only thing keeping it from deploying. `.gitea/workflows/` is
+gone, and Gitea falls back to `.github/workflows/` when it is absent — so
+re-enabling Actions there would immediately give you two pipelines racing to
+deploy the same commit. If you ever want the home runner back, put a workflow in
+`.gitea/workflows/` *first*; its presence is what suppresses the fallback.
+
+Push to both remotes; only the GitHub push ships to the VPS.
 
 ## Security
 
@@ -139,7 +143,7 @@ fail, the change is wrong until proven otherwise:
 
 - **Tests are a gate, not a courtesy.** The gate is `--cov-fail-under=90` in
   the **Dockerfile**, alongside `npm run test` and the thresholds in
-  `frontend/vite.config.ts` — not in `.gitea/workflows/`, which only builds the
+  `frontend/vite.config.ts` — not in `.github/workflows/`, which only builds the
   image. Looking only at the workflow would tell you no gate exists. Regression
   tests for user-reported bugs are expected — several exist precisely because a
   bug came back.
