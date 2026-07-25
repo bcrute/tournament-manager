@@ -281,7 +281,8 @@ def tournament_context(room_code: str):
     looking at. One query, and None for an ordinary room.
     """
     row = q(
-        "SELECT p.id AS pod_id, p.number AS table_no, p.turns_remaining, p.extension_seconds, "
+        "SELECT p.id AS pod_id, p.number AS table_no, p.label AS table_name, "
+        "p.turns_remaining, p.extension_seconds, "
         "r.number AS round_no, r.status AS round_status, r.ends_at, r.paused_at, "
         "t.code AS tournament_code, t.name AS tournament_name "
         "FROM pods p JOIN trounds r ON r.id = p.round_id "
@@ -299,6 +300,7 @@ def tournament_context(room_code: str):
         "name": row["tournament_name"],
         "podId": row["pod_id"],
         "table": row["table_no"],
+        "tableName": row["table_name"],   # null unless the organizer named it
         "round": row["round_no"],
         "roundStatus": row["round_status"],
         "endsAt": ends_at,

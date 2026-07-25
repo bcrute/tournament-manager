@@ -249,6 +249,10 @@ _ensure_column("entrants", "external_ref", "TEXT")
 _ensure_column("tournaments", "game", "TEXT NOT NULL DEFAULT 'mtg'")
 # extra turns left after time was called; NULL means time hasn't been called
 _ensure_column("pods", "turns_remaining", "INTEGER")
+# An organizer's name for the table ("Feature", "Bar side"). NULL means the pod
+# is known by its number, which stays its identity either way — a name is a
+# label people call across a hall, never a key anything looks up.
+_ensure_column("pods", "label", "TEXT")
 # The id shown to clients. The integer primary key stays internal: it is
 # sequential, and the roster is public to anyone holding a tournament code, so
 # exposing it would disclose roughly how many entrants have ever been created.

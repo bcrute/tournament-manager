@@ -142,7 +142,8 @@ def seat_pods(
     this is a fairness setting rather than cosmetics:
       random       — shuffled (default)
       by_standings — highest points seated first
-      manual       — left as-is for the organizer to arrange
+      manual       — left as-is for the organizer to arrange, which they do
+                     through POST /pods/{id}/seats once the round is open
     """
     if mode == "manual":
         return pods

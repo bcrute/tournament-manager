@@ -128,7 +128,7 @@ Optional `?token=` (entrant). Organizer recognized by cookie.
 { "tournament": { "code", "name", "mode", "status", "settings", "roundCount" },
   "round": { "number", "status", "endsAt", "pausedAt",
              "now": 1784500123 },      // server clock; clients derive an offset
-  "pods": [ { "podId", "table", "status", "roomCode", "extensionSeconds",
+  "pods": [ { "podId", "table", "name", "status", "roomCode", "extensionSeconds",
               "endsAt",                  // round.endsAt + this pod's extension
               "seats": [ {"seat", "entrantId", "name", "place", "points"} ] } ],
   "myPod": { /* same shape, plus: */ "roomToken": "…", "mySeat": 2 },
@@ -151,6 +151,10 @@ was extended, not so the client can do the addition itself.
 
 `standings` is always present and always fully sorted (points, then opponents'
 points, then name). Ranks are dense positions after sorting, 1-based.
+
+`pods[].name` is the organizer's label for the table (§3, *seating overrides*)
+and is `null` until one is set. `table` is the number and stays the pod's
+identity either way — clients show the name and keep the number beside it.
 
 ### `GET /api/tournament/{code}/rounds/{n}`
 One round as it was — its pairings, pods, seats and results. The snapshot above
@@ -363,6 +367,89 @@ computed and persisted before the round is announced, so opening a round is a
 broadcast of settled state rather than work done while clients poll.
 
 Pod sizes never fall below 3 — remainders of 1–2 are absorbed into neighbours.
+
+### Seating overrides  *(organizer)*
+
+The pairer seats the round; these three endpoints are the organizer's override
+over it, for the late registration, the obvious mis-seat, and the table that is
+being streamed and wants a name.
+
+**They all stop at the same line: a recorded result.** A pod's result is a
+ruling about a specific set of players, so moving anyone in or out of a decided
+pod is **409** — their points would follow them to a table they never played
+at, and `met_history` would claim they faced people they never sat with. The
+route after a result is to correct the result (versioned, auditable), not to
+re-pair around it. Before a result there is nothing to rewrite: `met_history`
+and `standings` are both *derived* from `pod_seats`, so whoever is sitting at
+the table when it is decided is who played there, and a move needs no repair.
+
+Every one of them also requires the pod to be in the **open** round; a closed
+round is **409** (`"no round is open"` / `"that table belongs to a round that is
+no longer open"`).
+
+#### `POST /api/tournament/{code}/pods/{pod_id}/move`
+```jsonc
+{ "entrantId": "kQ7…" }
+→ { "ok": true, "moved": true, "from": 1, "to": 3, "seat": 5 }
+```
+The pod in the path is the **destination** — "seat them here". The table they
+came from is derived from the open round, so an entrant with **no** seat in it
+(someone who registered after pairing) is seated rather than moved and `from`
+is `null`. Moving someone to the table they are already at returns
+`moved: false` rather than an error: a double-tap is not a mistake.
+
+The seat and the room token move with them:
+
+- the room behind the old pod retires their player row exactly as `leave` does
+  — deleted in the lobby, `left_game` mid-game with the Treachery identity
+  revealed (CR 907.13) — so **the token their phone is holding stops working
+  there**, and host passes to the next seat if they were hosting;
+- a fresh token is issued in the new pod's room, which they pick up from their
+  own `GET /{code}?token=` poll (`myPod.roomToken`). Nothing is typed at the
+  table. A room token is scoped to one room; it is never carried across;
+- the seats they left are renumbered 1..n so turn order has no hole in it;
+- arriving into a game already under way, they start on the room's resource
+  total. Nothing can deal a Treachery identity mid-game, and the room's log
+  says so at the table rather than leaving them silently card-less;
+- if taking them out leaves one player alone in a live game, that game ends and
+  reports itself, the same as if they had left.
+
+Size limits still apply, both ends:
+
+| Refused | Because |
+|---|---|
+| destination would exceed `podSize + 1` | the pairer's own ceiling — `pod_sizes()` grows a pod by one to absorb a remainder and never further |
+| source would drop below 3 | pod sizes never fall below 3 anywhere else either; move somebody in first |
+| entrant has dropped | undrop them first |
+
+#### `POST /api/tournament/{code}/pods/{pod_id}/seats`
+```jsonc
+{ "entrantIds": ["kQ7…", "b2R…", "…"] }   // seat 1 first
+→ { "ok": true, "seats": [ … ] }
+```
+Sets turn order at one table, and mirrors it onto the room's seats so a table
+is never shown two different orders. The list must name every player at that
+pod **exactly once** — a partial order would leave duplicate or missing seat
+numbers, so it is **400** and nothing changes.
+
+This is the arranging half of `settings.seatAssignment: "manual"`; without it
+that mode only ever meant "leave the pairer's order alone". Seat 1 takes the
+first turn, which is a real advantage in multiplayer — this is a fairness
+control, not cosmetics.
+
+#### `POST /api/tournament/{code}/pods/{pod_id}/name`
+```jsonc
+{ "name": "Feature" }        // null or blank clears it
+→ { "ok": true, "podId": 12, "table": 3, "name": "Feature" }
+```
+Pods are numbered, and the number stays the pod's identity — the name is a
+label ("Feature", "Bar side"), never something anything looks up by. Max 40
+characters. Two tables in one round answering to the same name (case-insensitive)
+is **409**: somebody would be sent to the wrong one. The name reaches the
+players through their room's tournament block as `tableName`, beside `table`.
+
+Unlike the other two, naming is allowed on a pod in any round — it changes no
+state a result depends on.
 
 ### `POST /api/tournament/{code}/rounds/time`  *(organizer)*
 Call time on the round. Every pod without a result is decided by
@@ -581,10 +668,17 @@ update-settings endpoint, so an event's settings are fixed once it exists.
 Every key below is read by code. That is the standard: **this table and the
 defaults dict must agree, and a key appears here only once something reads it.**
 
-Two keys are *validated* rather than merely filtered, and a bad value is a
-**400** rather than a silent default: `timeCalledPolicy` must be one the game
-profile offers, and `collectSanctioningId` must be `off | optional | required`
-and may only be non-`off` for a game whose profile has a `sanctioning_account`.
+Three keys are *validated* rather than merely filtered, because falling through
+to a default silently would change the event; a bad value is a **400**, never a
+quiet default:
+
+- `timeCalledPolicy` must be one the game profile offers;
+- `seatAssignment` must be what `seat_pods()` implements (`random`,
+  `by_standings`, `manual`) — a misspelling there would seat the field randomly
+  when the organizer asked for something else, invisibly;
+- `collectSanctioningId` must be `off | optional | required`, and may only be
+  non-`off` for a game whose profile has a `sanctioning_account`.
+
 One deprecated spelling survives the filter by being rewritten to its current
 name before it: `collectWizardsEmail` → `collectSanctioningId`.
 
@@ -592,7 +686,7 @@ name before it: `collectWizardsEmail` → `collectSanctioningId`.
 |---|---|
 | `scoring`, `winPoints`, `drawPoints`, `lossPoints`, `placementPoints`, `byeScoring` | `points_for`, at result-decision time |
 | `podSize` | `pair_round(preferred_size=…)`, and the recommended structure |
-| `seatAssignment` | `seat_pods(mode=…)` |
+| `seatAssignment` | `seat_pods(mode=…)`, and `pods/{id}/seats` is how `manual` is arranged |
 | `structure` | `structure_for(…)` |
 | `roundMinutes` | `timer` `start` when no `minutes` given |
 | `timeCalledPolicy` | `rounds/time`, and pod resolution when extra turns run out |
@@ -620,7 +714,7 @@ filtering makes it invisible from the outside rather than merely inert.
 | `WS /{code}/ws` | not built | the room WebSocket carries tournament clock pushes to the players who need them; a second channel earned nothing |
 | organizer secret returned once | account session + email | recoverable; a lost secret mid-event is unrecoverable |
 | anonymous official calls allowed | seated entrant token required | resolving a call grants time; anonymous let a stranger aim it at any table |
-| organizer-named pods, drag-to-assign | neither built | automated pairing landed first and covered the need; pods are numbered |
+| organizer-named pods, drag-to-assign | both built server-side; no drag UI yet | automated pairing landed first, but a late registration and a mis-seat both need an override — §3 *seating overrides*. The organizer UI still has no drag-to-assign control |
 | — | `POST /rounds/close` | the design had no way to end a round |
 | — | `entrants/{id}/release`, `/drop`, `/undrop` | mis-taps and departures both happen constantly |
 | — | `GET /mine`, `GET /{code}/plan` | an organizer needs to find their own events, and to see what a field this size is usually run as |
@@ -735,9 +829,10 @@ that adding one later doesn't require a migration of live event data.
   cut from the game profile's bracket, but nothing performs one — there is no
   single-elimination path and `open_round` always pairs Swiss. This is the
   largest remaining gap for running a full competitive event.
-- **No manual pod assignment.** An organizer cannot move an entrant between
-  pods or name a table; the only route into a pod is the pairer. Re-roll
-  exists in the API but has no UI control.
+- **Manual pod assignment has no UI.** The API is complete — move, seat order,
+  table name (§3 *seating overrides*) — but the organizer screen offers none of
+  it, so today it is reachable only by a client that calls the endpoints
+  directly. Re-roll is in the same position: in the API, no UI control.
 - **The recovery email recovers nothing yet.** Hosting is gated on a stored
   address (§6), but there is no mail-sending code in the server: the only
   working recovery path is a one-time code. An organizer who loses both their
