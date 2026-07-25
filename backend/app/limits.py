@@ -211,6 +211,11 @@ SENSITIVE_SUFFIXES = (
     "/recover",
     "/password",
     "/recovery-codes",
+    # changing the recovery address and deleting the account are the two writes
+    # that take an account away from its owner, and both are session-gated
+    # one-offs — nobody legitimately does either twenty times in ten minutes.
+    "/email",
+    "/delete",
 )
 
 

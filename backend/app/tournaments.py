@@ -324,12 +324,21 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
 
     my_pod = None
     pod_views = []
+    round_ends_at = latest["ends_at"] if latest else None
     for p in pods:
         members = by_pod.get(p["id"], [])
         view = {
             "podId": p["id"],
             "table": p["number"],
             "status": p["status"],
+            # The deadline *this table* is playing to. An extension is added on
+            # read, exactly as the room view does it (table.py), so a judge
+            # extending one table moves only that table and `round.endsAt`
+            # stays the round's own deadline. Clients count down against this,
+            # never against round.endsAt + extensionSeconds computed by hand.
+            "endsAt": (
+                round_ends_at + p["extension_seconds"] if round_ends_at is not None else None
+            ),
             # A room code lets its holder take a seat in that room, so it is a
             # credential, not a label. Only the organizer and the players at
             # that table get it; it is added to `my_pod` below.
