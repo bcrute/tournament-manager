@@ -99,9 +99,10 @@ session required; scoped to the caller, never to all events.
 ### `GET /api/tournament/{code}/plan`
 Advisory only. Returns the structure recommended for the current field —
 round count and, where the game profile defines a bracket, a suggested cut.
-**Nothing acts on it**: `open_round` always runs Swiss, and no setting stores
-the answer. It exists so an organizer can see what a field of this size would
-usually be run as, not to configure the event.
+**It configures nothing**: rounds are opened one at a time by the organizer,
+and no setting stores the answer. It exists so an organizer can see what a
+field of this size would usually be run as. The one place it is *acted* on is
+`POST /{code}/cut` with no size, which runs the cut it recommends.
 
 ### `GET /api/tournament/{code}`
 The single snapshot every client polls. Personalized in memory from one query
@@ -111,7 +112,8 @@ Optional `?token=` (entrant). Organizer recognized by cookie.
 
 ```jsonc
 { "tournament": { "code", "name", "mode", "status", "settings", "roundCount" },
-  "round": { "number", "status", "endsAt", "pausedAt",
+  "round": { "number", "status", "kind": "swiss",   // swiss | elimination
+             "endsAt", "pausedAt",
              "now": 1784500123 },      // server clock; clients derive an offset
   "pods": [ { "podId", "table", "status", "roomCode", "extensionSeconds",
               "seats": [ {"seat", "entrantId", "name", "place", "points"} ] } ],
@@ -119,6 +121,8 @@ Optional `?token=` (entrant). Organizer recognized by cookie.
   "me": { "entrantId", "name" },       // null when anonymous
   "standings": [ {"entrantId","name","points","opponentPoints",
                   "podsPlayed","claimed","dropped","rank"} ],
+  "cut": { "cutTo": 8, "rounds": 2, "champion": null,   // null until a cut
+           "seeds": [ {"entrantId","name","seed":1,"alive":true} ] },
   "calls": [ … ],                      // organizer only; [] for everyone else
   "isOrganizer": false }
 ```
@@ -128,7 +132,11 @@ time would otherwise show a wrong round timer. Clients compute
 `offset = now*1000 - Date.now()` once per poll.
 
 `standings` is always present and always fully sorted (points, then opponents'
-points, then name). Ranks are dense positions after sorting, 1-based.
+points, then name). Ranks are dense positions after sorting, 1-based. **A cut
+does not re-order them** — points are what they measure, and a bracket is not
+decided on points; who is still in it, and who won it, are in `cut`.
+`cut.champion` is set only once the last bracket round is closed with one
+player left standing.
 
 ### `GET /api/tournament/{code}/roster`
 **Public and unauthenticated by design** — a player scans a code and needs the
@@ -212,19 +220,67 @@ this, opening a round is **409**.
 Pair, seat, and create one room per pod.
 
 ```jsonc
-{ "reroll": false }  → { "round": 2, "pods": 3 }
+{ "reroll": false }  → { "round": 2, "kind": "swiss", "pods": 3 }
 ```
 
 - `reroll: false` with a round already active → **409**.
 - `reroll: true` discards the current round's pods and re-pairs with an
   incremented seed. Only sane before play starts; the API does not stop you.
 - No undropped entrants → **400**.
+- **After a cut this opens the next bracket round instead** (`kind:
+  "elimination"`), paired from the bracket rather than the standings. Re-roll
+  in a bracket is **409**: the pairing is the seeding, so it would come back
+  identical.
 
 Pairing is deterministic given `(field, points, met, seed)`. Everything is
 computed and persisted before the round is announced, so opening a round is a
 broadcast of settled state rather than work done while clients poll.
 
 Pod sizes never fall below 3 — remainders of 1–2 are absorbed into neighbours.
+The one pod of one is a bracket bye (below): it has no room and its result is
+written the moment the bracket is drawn.
+
+### `POST /api/tournament/{code}/cut`  *(organizer)*
+Cut the field to the top N and open the first single-elimination round.
+
+```jsonc
+{ "size": 8 }        // omit to use the size GET /{code}/plan recommends
+→ { "ok": true, "cutTo": 8, "round": 6, "kind": "elimination",
+    "pods": 4, "byes": 0, "remaining": 8,
+    "seeds": [ {"entrantId": "…", "name": "…", "seed": 1, "points": 15} ] }
+```
+
+- **Seeding is the Swiss standings** as they stand (points, opponents' points,
+  name) — the order the standings have shown all day.
+- **A dropped entrant is skipped** and everyone below moves up a seat. Nobody
+  is cut into a bracket they have gone home from.
+- Requires a closed round to seed from → **409**; refuses over an open round →
+  **409**; `size < 2` → **400**; `size` larger than the field takes the whole
+  field. A structure that recommends no cut needs an explicit size → **409**.
+- **Re-drawable until someone plays** (a bye is not playing): a second `cut`
+  re-seeds the same round. Once a bracket pod has a result → **409**.
+
+**Bracket rounds.** Each round pairs the survivors into pods and only the
+winner of each pod goes on, so the field shrinks by a factor of about
+`podSize` per round — halving it at 1v1, quartering it at four to a table.
+The bracket is **fixed, not re-seeded**: pods snake across the ordered field
+(1 with 8, 2 with 7, …), and after the first round the field is ordered by the
+pod each player came out of, so the 1v8 winner meets the 4v5 winner whoever
+those turn out to be. A remainder becomes **byes off the top** — a pod of one,
+no room, `kind: "bye"`, complete on creation, scored by `settings.byeScoring`.
+
+A pod that ends with two players sharing first has produced nobody to advance:
+the next `POST /rounds` is **409** naming the table. Opening a round when one
+player is left is **409** — the cut is decided; end the event.
+
+State: `entrants.cut_seed` (bracket seed, NULL = not in the cut) and
+`trounds.kind` (`swiss` | `elimination`). Everything else about the bracket is
+derived from the pod results that already exist.
+
+**Matches are a single game**, in a bracket exactly as in Swiss. A pod is one
+result; there is no best-of-three model anywhere in this system and the cut
+does not quietly introduce one. Running a Premier-level MTG playoff by the book
+would need one, and that is an open decision, not an oversight.
 
 ### `POST /api/tournament/{code}/rounds/time`  *(organizer)*
 Call time on the round. Every pod without a result is decided by
@@ -249,6 +305,16 @@ named for what they are rather than presented as official.
 
 Eliminated players never outrank survivors, whatever their life total was when
 they died.
+
+**In a bracket round the setting does not apply.** MTR 2.4's other half: a
+single-elimination match may not end in a draw, so after the additional turns
+the highest life total wins. `draw_all` has no legal outcome to produce there,
+so the pod is decided by the game profile's `eliminationTimePolicy`
+(`highest_life` for MTG) — official behaviour in a cut, a house rule in Swiss,
+which is why it is a profile fact and not a settings key. Two exceptions, both
+landing on `awaiting_result`: an organizer who chose `organizer_decides` still
+rules every pod themselves, and a bracket pod **level at the top** is not
+broken by seed, seat or anything else we could invent.
 
 **Time called does not decide the pod.** MTR 2.4: the current turn is finished
 and five additional turns are played, and only an incomplete game *after* them
@@ -436,7 +502,10 @@ defaults dict must agree, and a key appears here only once something reads it.**
 posting a setting this server does not implement gets **200** and no effect.
 `tournament-api-design.md` §7 describes several that were designed and never
 built (`topCutSize`, `topCutPolicy`, `turnExtensionMinutes`, `organizerAuth`,
-`spectatorView`, `staffRoles`, `rounds`); they are marked there. Anything added
+`spectatorView`, `staffRoles`, `rounds`); they are marked there. The cut is now
+built and still not a setting: its size is an argument to `POST /{code}/cut`
+(defaulting to the structure's) and its time-called ruling is a game-profile
+fact, because neither is a knob an organizer sets once at creation. Anything added
 to the defaults dict must be read by something in the same change — a settings
 key with no code behind it is the failure mode `AGENTS.md` names, and silent
 filtering makes it invisible from the outside rather than merely inert.
@@ -455,6 +524,7 @@ filtering makes it invisible from the outside rather than merely inert.
 | — | `POST /rounds/close` | the design had no way to end a round |
 | — | `entrants/{id}/release`, `/drop`, `/undrop` | mis-taps and departures both happen constantly |
 | — | `GET /mine`, `GET /{code}/plan` | an organizer needs to find their own events, and to see what a field this size is usually run as |
+| `structure: swiss_top_cut` as a setting | `POST /{code}/cut` | a cut is an action taken on the day with the standings in front of you, not a mode chosen before anyone has arrived |
 
 ---
 
@@ -474,6 +544,7 @@ What varies by game lives in `games.py` as a `GameProfile`:
 | `resource`, `resource_start`, `resource_direction`, `resource_goal` | what players track and which way it moves: MTG counts life *down* from 40 to 0; a game like Lorcana counts lore *up* to a target |
 | `modes` | room modes valid for this game; empty means no live table state, scored by hand |
 | `time_called_policies` | offered policies, first is the default |
+| `elimination_time_policy` | how an unfinished *bracket* pod is decided at time, where a draw is not a legal outcome. Not the organizer's choice, so not a setting; `None` means the game publishes no such rule and the organizer rules |
 | `sanctioning_account` | label for the publisher account email, or `None` |
 
 ### `GET /api/tournament/games`
@@ -481,7 +552,8 @@ What varies by game lives in `games.py` as a `GameProfile`:
 { "games": [ { "key": "mtg", "name": "Magic: The Gathering",
                "publisher": "Wizards of the Coast", "defaultPodSize": 4,
                "modes": ["life", "treachery"], "resource": "life",
-               "timeCalledPolicies": [ … ], "sanctioningAccount": "Wizards account email" } ] }
+               "timeCalledPolicies": [ … ], "eliminationTimePolicy": "highest_life",
+               "sanctioningAccount": "Wizards account email" } ] }
 ```
 
 `POST /api/tournament` takes `game` (default `"mtg"`) and validates `mode` and
@@ -534,7 +606,7 @@ adapter is a field rename rather than a translation layer:
 |---|---|---|
 | `winner_id: "Draw"` | map to `kind: "draw"` | a magic string in an id field forces every client to special-case it |
 | `winner` name beside `winner_id` | discard the name | results denormalized onto display names, which change |
-| `round: "Top 8"` | map to an integer + a cut flag | union-typed fields via magic values |
+| `round: "Top 8"` | map to `trounds.number` (integer) + `trounds.kind = "elimination"` | union-typed fields via magic values |
 | `table: "Byes"` | map to `kind: "bye"` | same |
 | single `winner` per pod | expand to `places[]` | can't express placement, survival points, or a time-called draw |
 
@@ -556,10 +628,17 @@ that adding one later doesn't require a migration of live event data.
   30 s hidden), so standings and roster changes lag by up to one poll. Clock
   changes do not: they are pushed over each pod room's existing socket,
   because a pause a player cannot see is a timer that visibly keeps running.
-- **No top cut / playoff re-podding.** `GET /{code}/plan` will *recommend* a
-  cut from the game profile's bracket, but nothing performs one — there is no
-  single-elimination path and `open_round` always pairs Swiss. This is the
-  largest remaining gap for running a full competitive event.
+- **The top cut has no UI.** `POST /{code}/cut` runs the cut, seeds the
+  bracket and pairs single-elimination rounds (§3), but the organizer page has
+  no button for it and still says the cut is not automated. Until that lands
+  the feature is API-only, and no bracket is drawn on anyone's phone.
+- **A bracket match is one game, not best-of-three.** Every pod in this system
+  is a single result. An MTR-faithful playoff is a match of three games with
+  sideboarding; modelling that is an open decision nobody has taken, and the
+  cut deliberately does not fake it.
+- **Final standings ignore the bracket.** `standings` stays in Swiss order
+  after a cut; who won the playoff is in `cut.champion`, not at the top of the
+  table. An organizer reading out final placings has to read both.
 - **No manual pod assignment.** An organizer cannot move an entrant between
   pods or name a table; the only route into a pod is the pairer. Re-roll
   exists in the API but has no UI control.

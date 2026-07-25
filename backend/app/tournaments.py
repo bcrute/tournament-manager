@@ -26,7 +26,7 @@ from .audit import AUTHZ_DENY, security_event
 from .db import q
 from .games import known_games, profile_for, structure_for
 from .pairing import Entrant as PairEntrant
-from .pairing import pair_round, seat_pods
+from .pairing import bracket_pods, pair_round, seat_pods
 
 router = APIRouter()
 
@@ -263,6 +263,130 @@ def met_history(code: str) -> dict[int, list[int]]:
     return met
 
 
+# ---- top cut ----
+#
+# A cut is stored as two facts and nothing else: `entrants.cut_seed` says who
+# advanced and in what order, and `trounds.kind` says which rounds are bracket
+# rounds. Everything else about the bracket — who is still alive, whose turn it
+# is to play whom, whether it is over — is derived from the pod results that
+# already exist, so there is no second copy of the standings to fall out of
+# step with the first.
+
+
+def cut_seeds(code: str) -> dict[int, int]:
+    """Entrant id to bracket seed. Empty when no cut has been made."""
+    return {
+        r["id"]: r["cut_seed"]
+        for r in q(
+            "SELECT id, cut_seed FROM entrants WHERE tournament_code = ? AND cut_seed IS NOT NULL",
+            (code,),
+        ).fetchall()
+    }
+
+
+def last_bracket_round(code: str, closed_only: bool = False):
+    status = " AND status = 'closed'" if closed_only else ""
+    return q(
+        "SELECT * FROM trounds WHERE tournament_code = ? AND kind = 'elimination'"
+        + status
+        + " ORDER BY number DESC LIMIT 1",
+        (code,),
+    ).fetchone()
+
+
+def _dropped_ids(code: str) -> set:
+    return {
+        r["id"]
+        for r in q(
+            "SELECT id FROM entrants WHERE tournament_code = ? AND dropped_at IS NOT NULL",
+            (code,),
+        ).fetchall()
+    }
+
+
+def bracket_survivors(code: str) -> list[int]:
+    """Who is still in the cut, in bracket order.
+
+    Read from the last *closed* bracket round, so this answers the same
+    question before and during a round: the players who won their way into the
+    round now being played are the players still alive. A dropped entrant is
+    out of the bracket whatever their result was — a cut is a commitment to
+    keep playing, and their pod-mates advance rather than waiting for someone
+    who has gone home.
+    """
+    seeds = cut_seeds(code)
+    if not seeds:
+        return []
+    dropped = _dropped_ids(code)
+    last = last_bracket_round(code, closed_only=True)
+    if not last:
+        return [e for e in sorted(seeds, key=lambda eid: seeds[eid]) if e not in dropped]
+    rows = q(
+        "SELECT p.number, s.entrant_id, s.place FROM pods p "
+        "JOIN pod_seats s ON s.pod_id = p.id WHERE p.round_id = ? ORDER BY p.number, s.seat",
+        (last["id"],),
+    ).fetchall()
+    return [r["entrant_id"] for r in rows if r["place"] == 1 and r["entrant_id"] not in dropped]
+
+
+def bracket_blocker(code: str) -> str | None:
+    """Why the bracket cannot advance, if it cannot.
+
+    Single elimination has no draw to fall back on: a pod that ends with two
+    players sharing first has not produced anyone to advance, and the app will
+    not pick between them. The organizer rules and the bracket moves on.
+    """
+    last = last_bracket_round(code, closed_only=True)
+    if not last:
+        return None
+    rows = q(
+        "SELECT p.number, s.place FROM pods p JOIN pod_seats s ON s.pod_id = p.id "
+        "WHERE p.round_id = ?",
+        (last["id"],),
+    ).fetchall()
+    winners: dict[int, int] = {}
+    for r in rows:
+        winners[r["number"]] = winners.get(r["number"], 0) + (1 if r["place"] == 1 else 0)
+    bad = sorted(n for n, count in winners.items() if count != 1)
+    if bad:
+        return (
+            f"table {bad[0]} has no single winner — single elimination cannot end in a "
+            "draw, so record a result that ranks it"
+        )
+    return None
+
+
+def bracket_view(code: str) -> dict | None:
+    """The cut as clients see it. None until a cut has been made."""
+    seeded = q(
+        "SELECT id, public_id, name, cut_seed FROM entrants "
+        "WHERE tournament_code = ? AND cut_seed IS NOT NULL ORDER BY cut_seed",
+        (code,),
+    ).fetchall()
+    if not seeded:
+        return None
+    alive = set(bracket_survivors(code))
+    rounds = q(
+        "SELECT COUNT(*) c FROM trounds WHERE tournament_code = ? AND kind = 'elimination'",
+        (code,),
+    ).fetchone()["c"]
+    champion = next(
+        (r["public_id"] for r in seeded if len(alive) == 1 and r["id"] in alive),
+        None,
+    )
+    return {
+        "cutTo": len(seeded),
+        "rounds": rounds,
+        "seeds": [
+            {"entrantId": r["public_id"], "name": r["name"], "seed": r["cut_seed"],
+             "alive": r["id"] in alive}
+            for r in seeded
+        ],
+        # only once the final round is closed does one survivor mean a winner
+        "champion": champion if last_bracket_round(code, closed_only=True) else None,
+    }
+
+
 def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
     """One snapshot for every client. Single query set, personalized in memory."""
     t = get_tournament(code)
@@ -345,6 +469,9 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
             {
                 "number": latest["number"],
                 "status": latest["status"],
+                # swiss | elimination: a bracket round is paired and adjudicated
+                # differently, and players need to know which one they are in
+                "kind": latest["kind"] if "kind" in latest.keys() else "swiss",
                 "endsAt": latest["ends_at"],
                 "pausedAt": latest["paused_at"],
                 "now": int(time.time()),  # clients derive an offset, never trust local clocks
@@ -366,6 +493,10 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
              "entrantId": row["publicId"]}
             for row in standings_rows(t["code"])
         ],
+        # null until a cut has been made; the standings above stay in Swiss
+        # order, because points are what they measure and a bracket is not
+        # decided on points
+        "cut": bracket_view(t["code"]),
         "calls": calls,
         "isOrganizer": organizer,
     }
@@ -394,6 +525,11 @@ class ClaimBody(BaseModel):
 
 class RoundBody(BaseModel):
     reroll: bool = False
+
+
+class CutBody(BaseModel):
+    #: how many advance. None takes the number the structure recommends.
+    size: int | None = None
 
 
 class ResultBody(BaseModel):
@@ -698,11 +834,106 @@ def _make_room_for_pod(t, cfg, pod_id: int, seats: list[tuple[int, str]]) -> str
     return room_code
 
 
+def _persist_pods(t, cfg, round_id: int, pods, names: dict) -> int:
+    """Write a paired round to the database, one room per pod.
+
+    A pod of one is a bye: it gets no room — there is no game to play — and its
+    result is written straight away, so the round can close and, in a bracket,
+    the entrant advances without having to be ruled on.
+    """
+    for i, pod in enumerate(pods, 1):
+        bye = len(pod.seats) == 1
+        cur = q(
+            "INSERT INTO pods (round_id, number, status) VALUES (?, ?, ?)",
+            (round_id, i, "pending" if bye else "active"),
+        )
+        pod_id = cur.lastrowid
+        for seat_no, entrant_id in enumerate(pod.seats, 1):
+            q(
+                "INSERT INTO pod_seats (pod_id, entrant_id, seat) VALUES (?, ?, ?)",
+                (pod_id, entrant_id, seat_no),
+            )
+        if bye:
+            row = q("SELECT * FROM pods WHERE id = ?", (pod_id,)).fetchone()
+            _write_result(t, row, "bye", [{"entrantId": pod.seats[0], "place": 1}], "auto", "bye")
+            continue
+        room = _make_room_for_pod(t, cfg, pod_id, [(eid, names[eid]) for eid in pod.seats])
+        q("UPDATE pods SET room_code = ?, game_no = 0 WHERE id = ?", (room, pod_id))
+    return len(pods)
+
+
+def _open_bracket_round(t, cfg, reuse=None) -> dict:
+    """Pair the next single-elimination round from the bracket.
+
+    No pairer runs here: a bracket is not a pairing problem, it is an ordering
+    one, and the order was fixed by the standings at the cut. Seating inside a
+    pod is still the tournament's seating setting — who takes the first turn is
+    a fairness question in any round.
+    """
+    code = t["code"]
+    blocker = bracket_blocker(code)
+    if blocker:
+        raise HTTPException(409, blocker)
+    order = bracket_survivors(code)
+    if len(order) < 2:
+        raise HTTPException(
+            409,
+            "the top cut is already decided — end the tournament"
+            if order
+            else "nobody is left in the cut",
+        )
+
+    if reuse is not None:
+        q("DELETE FROM pods WHERE round_id = ?", (reuse["id"],))
+        round_id, number, seed = reuse["id"], reuse["number"], reuse["seed"] + 1
+        q(
+            "UPDATE trounds SET seed = ?, kind = 'elimination', status = 'active' WHERE id = ?",
+            (seed, round_id),
+        )
+    else:
+        prior = q(
+            "SELECT COALESCE(MAX(number), 0) AS n, COALESCE(MAX(seed), 0) AS s "
+            "FROM trounds WHERE tournament_code = ?",
+            (code,),
+        ).fetchone()
+        number, seed = prior["n"] + 1, prior["s"] + 1
+        cur = q(
+            "INSERT INTO trounds (tournament_code, number, status, seed, kind) "
+            "VALUES (?, ?, 'active', ?, 'elimination')",
+            (code, number, seed),
+        )
+        round_id = cur.lastrowid
+
+    names = {
+        r["id"]: r["name"]
+        for r in q("SELECT id, name FROM entrants WHERE tournament_code = ?", (code,)).fetchall()
+    }
+    points = {r["entrantId"]: r["points"] for r in standings_rows(code)}
+    seat_input = [PairEntrant(id=eid, points=points.get(eid, 0)) for eid in order]
+    pods = bracket_pods(order, pod_size=cfg["podSize"])
+    pods = seat_pods(pods, seat_input, mode=cfg["seatAssignment"], seed=seed)
+    _persist_pods(t, cfg, round_id, pods, names)
+
+    q("UPDATE tournaments SET status = 'running' WHERE code = ?", (code,))
+    touch(code)
+    return {
+        "round": number,
+        "kind": "elimination",
+        "pods": len(pods),
+        "byes": sum(1 for p in pods if len(p.seats) == 1),
+        "remaining": len(order),
+    }
+
+
 @router.post("/{code}/rounds")
 def open_round(code: str, body: RoundBody, request: Request):
     """Pair, seat, and create a room per pod. Pairing is computed and persisted
     before anything is announced, so the round opening is a broadcast of settled
-    state rather than work done under load."""
+    state rather than work done under load.
+
+    Once a cut has been made this opens the next bracket round instead: after a
+    cut there is no Swiss left to pair, and the field is whoever is still in.
+    """
     t, _ = require_organizer(code, request)
     cfg = settings_of(t)
     if t["status"] == "ended":
@@ -713,6 +944,13 @@ def open_round(code: str, body: RoundBody, request: Request):
     ).fetchone()
     if active and not body.reroll:
         raise HTTPException(409, "close the current round first")
+
+    if cut_seeds(t["code"]):
+        if body.reroll:
+            # There is nothing to re-roll: the bracket pairing is the seeding,
+            # so it would come back identical. Re-cutting is the real remedy.
+            raise HTTPException(409, "a bracket is seeded, not paired — it cannot be re-rolled")
+        return _open_bracket_round(t, cfg)
 
     prior = q(
         "SELECT COALESCE(MAX(number), 0) AS n, COALESCE(MAX(seed), 0) AS s "
@@ -750,20 +988,95 @@ def open_round(code: str, body: RoundBody, request: Request):
     pods = pair_round(pair_input, preferred_size=cfg["podSize"], seed=seed)
     pods = seat_pods(pods, pair_input, mode=cfg["seatAssignment"], seed=seed)
 
-    for i, pod in enumerate(pods, 1):
-        cur = q("INSERT INTO pods (round_id, number, status) VALUES (?, ?, 'active')", (round_id, i))
-        pod_id = cur.lastrowid
-        for seat_no, entrant_id in enumerate(pod.seats, 1):
-            q(
-                "INSERT INTO pod_seats (pod_id, entrant_id, seat) VALUES (?, ?, ?)",
-                (pod_id, entrant_id, seat_no),
-            )
-        room = _make_room_for_pod(t, cfg, pod_id, [(eid, names[eid]) for eid in pod.seats])
-        q("UPDATE pods SET room_code = ?, game_no = 0 WHERE id = ?", (room, pod_id))
+    _persist_pods(t, cfg, round_id, pods, names)
 
     q("UPDATE tournaments SET status = 'running' WHERE code = ?", (t["code"],))
     touch(t["code"])
-    return {"round": number, "pods": len(pods)}
+    return {"round": number, "kind": "swiss", "pods": len(pods)}
+
+
+@router.post("/{code}/cut")
+def make_cut(code: str, body: CutBody, request: Request):
+    """Cut the field to the top N and open the first single-elimination round.
+
+    Seeding is the Swiss standings as they stand: points, then opponents'
+    points, then name — the same order the standings have shown all day, so an
+    organizer can read the bracket off the screen everyone was already looking
+    at. Nobody is cut *into* a bracket they cannot play, so a dropped entrant
+    is skipped and the next player up takes the slot; that is the only place
+    the seeding departs from the standings.
+
+    Size comes from the game profile's structure when it is not given, which is
+    the same number `GET /{code}/plan` has been recommending. A structure that
+    recommends no cut needs an explicit size — running one anyway is a
+    legitimate organizer decision, guessing on their behalf is not.
+    """
+    t, _ = require_organizer(code, request)
+    cfg = settings_of(t)
+    if t["status"] == "ended":
+        raise HTTPException(409, "this tournament has ended")
+
+    # A mis-typed size is worth undoing, a played bracket is not: re-seeding
+    # from Swiss standings after a round of the cut has been played would
+    # resurrect the people it eliminated.
+    existing = last_bracket_round(t["code"])
+    if existing:
+        drawn = q(
+            "SELECT COUNT(*) c FROM trounds WHERE tournament_code = ? AND kind = 'elimination'",
+            (t["code"],),
+        ).fetchone()["c"]
+        # a bye is written the moment the bracket is drawn, so it is not
+        # evidence that anybody has played
+        played = q(
+            "SELECT COUNT(*) c FROM pod_results pr JOIN pods p ON p.id = pr.pod_id "
+            "WHERE p.round_id = ? AND pr.kind != 'bye'",
+            (existing["id"],),
+        ).fetchone()["c"]
+        if played or drawn > 1 or existing["status"] != "active":
+            raise HTTPException(409, "the cut has already been played — it cannot be re-drawn")
+
+    active = q(
+        "SELECT * FROM trounds WHERE tournament_code = ? AND status = 'active'", (t["code"],)
+    ).fetchone()
+    if active and not (existing and active["id"] == existing["id"]):
+        raise HTTPException(409, "close the current round before cutting")
+    closed = q(
+        "SELECT COUNT(*) c FROM trounds WHERE tournament_code = ? AND status = 'closed'",
+        (t["code"],),
+    ).fetchone()["c"]
+    if not closed:
+        raise HTTPException(409, "play a round first — a bracket is seeded from the standings")
+
+    field = [r for r in standings_rows(t["code"]) if not r["dropped"]]
+    if len(field) < 2:
+        raise HTTPException(409, "not enough entrants left to cut")
+
+    size = body.size
+    if size is None:
+        game = t["game"] if "game" in t.keys() else None
+        struct = structure_for(game, cfg.get("structure"), cfg.get("podSize"))
+        size = struct.plan(len(field))["cutTo"] if struct else 0
+        if not size:
+            raise HTTPException(409, "this structure recommends no cut — name a size to run one")
+    if size < 2:
+        raise HTTPException(400, "a cut is at least two entrants")
+    size = min(size, len(field))
+
+    q("UPDATE entrants SET cut_seed = NULL WHERE tournament_code = ?", (t["code"],))
+    seeded = field[:size]
+    for seed, row in enumerate(seeded, 1):
+        q("UPDATE entrants SET cut_seed = ? WHERE id = ?", (seed, row["entrantId"]))
+
+    opened = _open_bracket_round(t, cfg, reuse=existing)
+    return {
+        "ok": True,
+        "cutTo": size,
+        "seeds": [
+            {"entrantId": r["publicId"], "name": r["name"], "seed": i, "points": r["points"]}
+            for i, r in enumerate(seeded, 1)
+        ],
+        **opened,
+    }
 
 
 @router.post("/{code}/rounds/close")
@@ -905,6 +1218,11 @@ async def push_to_pods(round_id: int | None = None, room_codes=None):
         await table_mod.broadcast(code)
 
 
+def pod_is_elimination(pod) -> bool:
+    row = q("SELECT kind FROM trounds WHERE id = ?", (pod["round_id"],)).fetchone()
+    return bool(row) and row["kind"] == "elimination"
+
+
 def resolve_pod_at_time(t, cfg, pod):
     """Decide one unfinished pod when time is called.
 
@@ -912,8 +1230,20 @@ def resolve_pod_at_time(t, cfg, pod):
     outside single elimination. That is the default. The other policies are
     house rules that leagues genuinely run, so they are opt-in and named
     honestly rather than presented as official.
+
+    Inside the cut the same section says the opposite, and the tournament's
+    setting stops applying: a single-elimination match may not end in a draw,
+    so the game profile's `elimination_time_policy` decides instead. That is
+    not an override of the organizer's choice — `draw_all` simply has no legal
+    outcome to produce here. A game that publishes no such rule, and an
+    organizer who asked to rule every pod themselves, both land on the same
+    honest answer: the pod waits for a person.
     """
     policy = cfg["timeCalledPolicy"]
+    elimination = pod_is_elimination(pod)
+    if elimination and policy != "organizer_decides":
+        profile = profile_for(t["game"] if "game" in t.keys() else None)
+        policy = profile.elimination_time_policy or "organizer_decides"
     if policy == "organizer_decides":
         q("UPDATE pods SET status = 'awaiting_result' WHERE id = ?", (pod["id"],))
         return None
@@ -923,6 +1253,11 @@ def resolve_pod_at_time(t, cfg, pod):
         (pod["id"],),
     ).fetchall()
     if policy == "draw_all" or not pod["room_code"]:
+        if elimination:
+            # a bracket pod with no live state to read: there is nothing to rank
+            # it on and a draw is not available, so it waits for the organizer
+            q("UPDATE pods SET status = 'awaiting_result' WHERE id = ?", (pod["id"],))
+            return None
         places = [{"entrantId": s["entrant_id"], "place": 1} for s in seats]
         return _write_result(t, pod, "draw", places, "auto", "time called")
 
@@ -954,6 +1289,12 @@ def resolve_pod_at_time(t, cfg, pod):
                 places[i]["place"] = places[i - 1]["place"]
         start = (places[-1]["place"] + 1) if places else 1
         places += [{"entrantId": eid, "place": start + i} for i, eid in enumerate(tail)]
+        if elimination and len(places) > 1 and places[1]["place"] == places[0]["place"]:
+            # dead level at the top of a bracket pod. The resource ran out of
+            # things to say, and picking between them on seed or seat would be
+            # us adjudicating a game we do not adjudicate. A person rules it.
+            q("UPDATE pods SET status = 'awaiting_result' WHERE id = ?", (pod["id"],))
+            return None
         return _write_result(t, pod, "placement", places, "auto", "time called — ranked on life")
 
     # draw_survivors: everyone still alive draws; the dead keep their order below
