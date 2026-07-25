@@ -15,6 +15,9 @@ COPY data ./data
 RUN python -m pytest tests -q --cov=app --cov-report=term --cov-fail-under=90 && touch /tests-passed
 
 FROM python:3.12-slim
+# Scopes the deploy's `docker image prune --filter label=app=mtg`: the VPS
+# hosts other apps' images, which are not ours to collect.
+LABEL app=mtg
 WORKDIR /app
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

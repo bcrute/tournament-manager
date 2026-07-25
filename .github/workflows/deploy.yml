@@ -54,4 +54,29 @@ jobs:
           ssh vps 'mkdir -p /opt/apps/mtg'
           scp docker-compose.yml vps:/opt/apps/mtg/docker-compose.yml
           ssh vps 'cd /opt/apps/mtg && docker compose up -d'
-          ssh vps 'docker image prune -f'
+
+      # The VPS Caddy fronts every app on the host (social.skadoosh.dev too).
+      # This repo ships ONLY its own vhost file; the root Caddyfile and other
+      # apps' sites/*.caddy are never written from here. Validation runs against
+      # the merged config, so a bad mtg.caddy fails the deploy rather than the
+      # other sites; reload is graceful, so on any failure Caddy keeps serving
+      # the old config. Layout and one-time migration: deploy/README.md.
+      - name: Ship Caddy vhost (mtg only)
+        run: |
+          if ! ssh vps 'test -d /opt/caddy/sites'; then
+            echo "::warning::/opt/caddy/sites missing — per-site Caddy layout not migrated yet (see deploy/README.md); skipping vhost ship"
+            exit 0
+          fi
+          ssh vps 'cp /opt/caddy/sites/mtg.caddy /opt/caddy/mtg.caddy.prev 2>/dev/null || true'
+          scp deploy/caddy/sites/mtg.caddy vps:/opt/caddy/sites/mtg.caddy
+          if ! ssh vps 'docker exec caddy caddy validate --config /etc/caddy/Caddyfile'; then
+            echo 'vhost failed validation; restoring previous file, running Caddy untouched'
+            ssh vps 'mv /opt/caddy/mtg.caddy.prev /opt/caddy/sites/mtg.caddy || rm -f /opt/caddy/sites/mtg.caddy'
+            exit 1
+          fi
+          ssh vps 'docker exec caddy caddy reload --config /etc/caddy/Caddyfile && rm -f /opt/caddy/mtg.caddy.prev'
+
+      # Label-scoped: other apps deploy to this host the same way, and a bare
+      # prune would collect their images too.
+      - name: Prune old mtg images
+        run: ssh vps 'docker image prune -f --filter label=app=mtg'

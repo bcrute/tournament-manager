@@ -1,0 +1,17 @@
+# Root Caddy config for the VPS, at /opt/caddy/Caddyfile. Reference copy only:
+# the deploy workflow never ships this file — it changes rarely, and it is
+# shared ground between every app on the host, so it is applied by hand
+# (deploy/README.md has the runbook).
+#
+# Each app's vhost lives in its own sites/*.caddy file, owned and shipped by
+# that app's repo. This repo owns sites/mtg.caddy and nothing else;
+# sites/social.caddy belongs to the social app. The split is what lets either
+# app deploy without being able to clobber the other's routing.
+{
+	# don't advertise the server software
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+import sites/*.caddy

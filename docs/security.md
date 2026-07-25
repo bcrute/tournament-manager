@@ -346,8 +346,9 @@ internal detail. It was reaching the client and coming back trusted.
    Resolved that day: Caddy had *also* been setting Referrer-Policy and
    Permissions-Policy, which silently won over the app (it forced `camera=()`,
    breaking the QR scanner in production, and downgraded `no-referrer` to
-   `strict-origin-when-cross-origin`). Caddy now sets no security headers; its
-   config is versioned at [`deploy/Caddyfile`](../deploy/Caddyfile). One source
+   `strict-origin-when-cross-origin`). Caddy now sets no security headers; this
+   app's vhost is versioned at
+   [`deploy/caddy/sites/mtg.caddy`](../deploy/caddy/sites/mtg.caddy). One source
    of truth, tested by `frontend/e2e/privacy.spec.ts`.
 6. **Entrant tokens ride in query strings**, so the reverse proxy must strip
    query parameters from access logs. That coupling is invisible from either

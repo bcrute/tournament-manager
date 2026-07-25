@@ -2,7 +2,7 @@
 
 ## Setting up on a new machine
 
-The repo is self-contained for *understanding* the project. Three things are
+The repo is self-contained for *understanding* the project. Four things are
 not in it and never should be:
 
 1. **A GitHub SSH key to push.** Generate one, register it on the account
@@ -38,10 +38,27 @@ not in it and never should be:
    it — currently unset, so admin is off), `TABLE_IP_SALT` (set 2026-07-23, so
    bans survive redeploys), `TABLE_DEV_DOCS` (unset → docs off in production).
 
-The reverse proxy is the other piece not shipped by the deploy: Caddy's config
-is versioned at [`deploy/Caddyfile`](deploy/Caddyfile) but applied to the VPS by
-hand. It is deliberately thin — the app owns every security header (see
-`docs/security.md` gap 5), so don't reintroduce header directives there.
+4. **VPS SSH access — only for manual host operations.** Routine deploys never
+   need it: the workflow has its own key in the repo's Actions secrets
+   (`VPS_SSH_KEY`, base64-encoded). What does need it: editing the root
+   Caddyfile, `mtg.env`, or anything in `deploy/README.md`'s runbook. Access is
+   `root@74.208.222.65`, host key pinned in `deploy.yml`. Keys are per-machine
+   and named for what they are (e.g. `~/.ssh/social_vps_ed25519`); to work from
+   a new machine, generate one and append its `.pub` to the VPS's
+   `/root/.ssh/authorized_keys` from a machine that already has access — don't
+   copy private keys between machines. The VPS is shared with
+   social.skadoosh.dev: stay inside this app's namespace (`/opt/apps/mtg`,
+   `/opt/caddy/sites/mtg.caddy`) unless the task is explicitly cross-app.
+
+The reverse proxy is shared ground: one Caddy on the VPS fronts every app on
+the host — social.skadoosh.dev is an independent app living behind the same
+proxy. Each app owns one `sites/*.caddy` vhost file; this repo's is
+[`deploy/caddy/sites/mtg.caddy`](deploy/caddy/sites/mtg.caddy), shipped by the
+deploy (validated against the merged config, then a graceful reload — see
+[`deploy/README.md`](deploy/README.md)). The root Caddyfile stays manual, and
+nothing in this repo may write any other app's vhost. The vhost is deliberately
+thin — the app owns every security header (see `docs/security.md` gap 5), so
+don't reintroduce header directives there.
 
 **Verifying a deploy:** compare the bundle hash the site serves against your
 local `frontend/dist/` build. Checking an API endpoint proves the server
