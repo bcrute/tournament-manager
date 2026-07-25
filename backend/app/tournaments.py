@@ -44,12 +44,23 @@ GENERIC_SETTINGS = {
     "byeScoring": "win",
     "seatAssignment": "random",       # random | by_standings | manual
     "allowOfficialCalls": True,
-    "collectWizardsEmail": "off",     # off | optional | required (publisher account)
+    # off | optional | required. *What* is collected is the game's business:
+    # the profile's `sanctioning_account` is the label, and a game with no
+    # sanctioning body (None) cannot turn this on at all — see create.
+    "collectSanctioningId": "off",
     # measure the disruption a judge call caused and give that table the time
     # back automatically. The judge can still override or decline per call.
     "autoExtendOnCall": True,
     "structure": None,                # a game profile's structure key; None = first
 }
+
+SANCTIONING_MODES = ("off", "optional", "required")
+
+# Settings keys renamed after clients had already shipped. The old name is
+# accepted on create and rewritten to the new one, so a build of the app that
+# is already in someone's pocket keeps working; nothing is stored under the
+# old key, so there is only ever one name in the database.
+DEPRECATED_SETTING_KEYS = {"collectWizardsEmail": "collectSanctioningId"}
 
 
 def defaults_for(game: str | None) -> dict:
@@ -132,6 +143,17 @@ def public_ids(code: str) -> dict:
 def settings_of(row) -> dict:
     game = row["game"] if "game" in row.keys() else None
     return {**defaults_for(game), **json.loads(row["settings"] or "{}")}
+
+
+def sanctioning_label(row) -> str | None:
+    """What this event's game calls the id it collects, or None if it has none.
+
+    Every word the server says about the collected id comes from here. Hardcoding
+    "Wizards" made the message a lie for any second game, and made it impossible
+    to tell a game that has no sanctioning concept from one that does.
+    """
+    game = row["game"] if "game" in row.keys() else None
+    return profile_for(game).sanctioning_account
 
 
 def touch(code: str):
@@ -389,6 +411,9 @@ class EntrantsBody(BaseModel):
 
 class ClaimBody(BaseModel):
     entrantId: str
+    sanctioningId: str | None = None
+    #: deprecated: what `sanctioningId` was called when MTG was the only game.
+    #: Clients already in the wild still send it, so it is still read.
     wizardsEmail: str | None = None
 
 
@@ -470,9 +495,26 @@ def create_tournament(body: CreateBody, request: Request):
 
     code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(5))
     allowed = defaults_for(body.game)
-    cfg = {k: v for k, v in body.settings.items() if k in allowed}
+    submitted = {DEPRECATED_SETTING_KEYS.get(k, k): v for k, v in body.settings.items()}
+    # an explicit new key wins over its deprecated alias, whatever the dict order
+    submitted.update({k: v for k, v in body.settings.items() if k in allowed})
+    cfg = {k: v for k, v in submitted.items() if k in allowed}
     if "timeCalledPolicy" in cfg and cfg["timeCalledPolicy"] not in profile.time_called_policies:
         raise HTTPException(400, f"{profile.name} does not offer that time-called policy")
+    if "collectSanctioningId" in cfg:
+        want = cfg["collectSanctioningId"]
+        if want not in SANCTIONING_MODES:
+            raise HTTPException(
+                400, f"collectSanctioningId must be one of {', '.join(SANCTIONING_MODES)}"
+            )
+        # A game with no sanctioning body has nothing to collect and no word for
+        # it. Accepting "required" here produced an event that blocked every
+        # claim on an id the player could not possibly hold, behind a prompt
+        # with no label — so it is refused at the only place settings are set.
+        if want != "off" and not profile.sanctioning_account:
+            raise HTTPException(
+                400, f"{profile.name} has no sanctioning account, so there is no id to collect"
+            )
     q(
         "INSERT INTO tournaments (code, name, organizer_account_id, game, mode, settings, last_active) "
         "VALUES (?, ?, ?, ?, ?, ?, unixepoch())",
@@ -575,9 +617,16 @@ def roster(code: str):
         "WHERE tournament_code = ? ORDER BY name COLLATE NOCASE",
         (t["code"],),
     ).fetchall()
+    # The claim form is drawn from this response — the player has no credential
+    # yet, so this is the only place they can learn whether an id is wanted and
+    # what to call it. The label is the profile's, never a word from this module.
+    cfg = settings_of(t)
+    label = sanctioning_label(t)
+    collect = cfg["collectSanctioningId"] if label else "off"
     return {
         "name": t["name"],
         "status": t["status"],
+        "sanctioning": {"collect": collect, "label": label if collect != "off" else None},
         "entrants": [
             {"entrantId": r["public_id"], "name": r["name"], "claimed": bool(r["claimed"]),
              "dropped": r["dropped_at"] is not None}
@@ -598,21 +647,24 @@ def claim(code: str, body: ClaimBody):
         raise HTTPException(409, "that name is already claimed — ask the organizer to release it")
 
     # Only collected when the organizer turns it on, because a sanctioned event
-    # has to report to Wizards. Never collected by default, never shown to other
-    # players, and never used for anything else.
+    # has to report the field to whoever sanctions it. Never collected by
+    # default, never shown to other players, never used for anything else.
     cfg = settings_of(t)
-    wiz = (body.wizardsEmail or "").strip() or None
-    if cfg["collectWizardsEmail"] == "off":
-        wiz = None
-    elif cfg["collectWizardsEmail"] == "required" and not wiz:
-        raise HTTPException(
-            422, "this event reports to Wizards, so it needs the email on your Wizards account"
-        )
+    label = sanctioning_label(t)
+    sid = (body.sanctioningId or body.wizardsEmail or "").strip() or None
+    # No label means this game has no sanctioning body. Create refuses to turn
+    # collection on for such a game, but a row written before that check existed
+    # (or by a build that still knew a game this one doesn't) must not strand a
+    # player behind a prompt the server cannot even name.
+    if cfg["collectSanctioningId"] == "off" or not label:
+        sid = None
+    elif cfg["collectSanctioningId"] == "required" and not sid:
+        raise HTTPException(422, f"this event is sanctioned, so it needs your {label}")
 
     token = secrets.token_urlsafe(24)
     q(
         "UPDATE entrants SET token = ?, wizards_email = COALESCE(?, wizards_email) WHERE id = ?",
-        (token, wiz, row["id"]),
+        (token, sid, row["id"]),
     )
     touch(t["code"])
     return {"entrantToken": token, "entrantId": row["public_id"], "name": row["name"]}

@@ -45,8 +45,11 @@ class GameProfile:
     #: resource is comparable between players.
     time_called_policies: tuple[str, ...] = ("draw_all",)
 
-    #: label for the optional publisher-account email an organizer may need to
-    #: collect for sanctioned play. None means the game has no such concept.
+    #: label for the id an organizer may need to collect for sanctioned play —
+    #: an account email for one publisher, a membership number for another. It
+    #: is the only wording the server uses when it asks for or refuses that id.
+    #: None means the game has no sanctioning body, and collection cannot be
+    #: turned on at all: there would be nothing to ask for and no name for it.
     sanctioning_account: str | None = None
 
     #: turns played after time is called before the game is decided. The app

@@ -136,11 +136,18 @@ name list before they have any credential.
 
 ```jsonc
 { "name": "Friday Night Commander", "status": "running",
+  "sanctioning": { "collect": "required", "label": "Wizards account email" },
   "entrants": [ {"entrantId", "name", "claimed", "dropped"} ] }
 ```
 
 Exposes display names and claim state only. No tokens, no email, no counts that
 aren't already visible in the room.
+
+`sanctioning` is what the claim form needs and the only place it can get it: the
+player has no credential yet. `collect` is the event's `collectSanctioningId`,
+and `label` is the game profile's `sanctioning_account` — the wording to put on
+the field. `collect` is `"off"` and `label` is `null` for a game with no
+sanctioning body, whatever the stored setting says.
 
 ### `POST /api/tournament/{code}/claim`
 Claim a seat. No auth — possession of the tournament code is the only gate.
@@ -160,16 +167,30 @@ tournament does not resolve. Pinned by `TestEntrantIdsAreOpaque`.
 By **id, not name**: names legitimately repeat, ids don't. First claim wins;
 a second returns **409**. The organizer can `release` a mis-tap.
 
-`wizardsEmail` is governed by `settings.collectWizardsEmail`:
+`sanctioningId` is governed by `settings.collectSanctioningId`:
 
 | Setting | Behaviour |
 |---|---|
-| `off` *(default)* | any submitted address is **discarded**, not stored |
+| `off` *(default)* | any submitted id is **discarded**, not stored |
 | `optional` | stored if given |
 | `required` | claim fails with **422** without one |
 
-Only sanctioned events reporting to Wizards need this, so it is off by default.
-The address is never returned by any endpoint, including the public roster.
+Only a sanctioned event needs this, so it is off by default. The id is never
+returned by any endpoint, including the public roster.
+
+**Every word the server says about the id comes from the game profile's
+`sanctioning_account`** — the 422 reads "this event is sanctioned, so it needs
+your {label}". A profile whose `sanctioning_account` is `None` has no such
+concept: `POST /api/tournament` **rejects** `collectSanctioningId` of `optional`
+or `required` for that game with **400**, and if a row somehow carries one
+anyway the claim treats it as `off` rather than demanding an id the server
+cannot even name. Any value other than `off | optional | required` is a **400**
+on create, not a silent "not off".
+
+*Deprecated, still accepted:* the body field `wizardsEmail` and the settings key
+`collectWizardsEmail`, which is rewritten to `collectSanctioningId` on create
+(the new key wins if both are sent, and only the new one is stored). Shipped
+clients still send both spellings.
 
 ### `POST /api/tournament/{code}/entrants`  *(organizer)*
 ```jsonc
@@ -418,16 +439,23 @@ update-settings endpoint, so an event's settings are fixed once it exists.
 Every key below is read by code. That is the standard: **this table and the
 defaults dict must agree, and a key appears here only once something reads it.**
 
+Two keys are *validated* rather than merely filtered, and a bad value is a
+**400** rather than a silent default: `timeCalledPolicy` must be one the game
+profile offers, and `collectSanctioningId` must be `off | optional | required`
+and may only be non-`off` for a game whose profile has a `sanctioning_account`.
+One deprecated spelling survives the filter by being rewritten to its current
+name before it: `collectWizardsEmail` → `collectSanctioningId`.
+
 | Key | Read by |
 |---|---|
-| `scoring`, `drawPoints`, `byeScoring` | `points_for`, at result-decision time |
+| `scoring`, `winPoints`, `drawPoints`, `lossPoints`, `placementPoints`, `byeScoring` | `points_for`, at result-decision time |
 | `podSize` | `pair_round(preferred_size=…)`, and the recommended structure |
 | `seatAssignment` | `seat_pods(mode=…)` |
 | `structure` | `structure_for(…)` |
 | `roundMinutes` | `timer` `start` when no `minutes` given |
 | `timeCalledPolicy` | `rounds/time`, and pod resolution when extra turns run out |
 | `extraTurns` | `rounds/time`, drives the countdown and `extra_turns` status |
-| `collectWizardsEmail` | `claim` |
+| `collectSanctioningId` | `claim`, and `roster` to advertise the label |
 | `allowOfficialCalls` | the call endpoint, and the player UI |
 | `autoExtendOnCall` | `calls/{id}/resolve` |
 | `startingLife` | creating each pod's room. Read it as "the profile's resource start" |
@@ -474,7 +502,7 @@ What varies by game lives in `games.py` as a `GameProfile`:
 | `resource`, `resource_start`, `resource_direction`, `resource_goal` | what players track and which way it moves: MTG counts life *down* from 40 to 0; a game like Lorcana counts lore *up* to a target |
 | `modes` | room modes valid for this game; empty means no live table state, scored by hand |
 | `time_called_policies` | offered policies, first is the default |
-| `sanctioning_account` | label for the publisher account email, or `None` |
+| `sanctioning_account` | label for the id a sanctioned event collects, and the only wording the server uses for it. `None` means the game has no sanctioning body, and `collectSanctioningId` cannot be turned on |
 
 ### `GET /api/tournament/games`
 ```jsonc
@@ -506,10 +534,10 @@ supplies defaults and vocabulary; it never adjudicates a game.
 
 **Known MTG leakage still to clean up:** the settings key `startingLife` keeps
 its name because the room API already speaks it and renaming a live key buys
-nothing today — read it as "the profile's resource start". Likewise
-`collectWizardsEmail` is really "publisher account email", and the
-`highest_life` policy is really "highest resource". Rename them together when a
-second game lands, not before.
+nothing today — read it as "the profile's resource start"; likewise the
+`highest_life` policy is really "highest resource". The `entrants` column behind
+`collectSanctioningId` is still called `wizards_email`; it is internal, never
+served, and its rename is pending only because a test reads it by name.
 
 ---
 
