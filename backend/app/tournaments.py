@@ -345,17 +345,19 @@ def met_history(code: str) -> dict[int, list[int]]:
     return met
 
 
-def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
-    """One snapshot for every client. Single query set, personalized in memory."""
-    t = get_tournament(code)
-    cfg = settings_of(t)
-    rounds = q(
-        "SELECT * FROM trounds WHERE tournament_code = ? ORDER BY number", (t["code"],)
-    ).fetchall()
-    latest = rounds[-1] if rounds else None
+def pod_views_for(round_row, viewer_entrant=None, organizer: bool = False):
+    """The pods of one round, seen by one viewer: `(pods, myPod)`.
+
+    Every rule about who may see what in a pod lives here and nowhere else, so
+    the live snapshot and the historical round view cannot drift apart — the
+    room code is a credential, the room token belongs to one seat, and the
+    entrant id on the wire is always the public one.
+    """
     pods, seats = [], []
-    if latest:
-        pods = q("SELECT * FROM pods WHERE round_id = ? ORDER BY number", (latest["id"],)).fetchall()
+    if round_row:
+        pods = q(
+            "SELECT * FROM pods WHERE round_id = ? ORDER BY number", (round_row["id"],)
+        ).fetchall()
         if pods:
             marks = ",".join("?" * len(pods))
             seats = q(
@@ -369,7 +371,7 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
 
     my_pod = None
     pod_views = []
-    round_ends_at = latest["ends_at"] if latest else None
+    round_ends_at = round_row["ends_at"] if round_row else None
     for p in pods:
         members = by_pod.get(p["id"], [])
         view = {
@@ -407,6 +409,18 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
                 "roomToken": mine["room_token"],
                 "mySeat": mine["seat"],
             }
+    return pod_views, my_pod
+
+
+def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
+    """One snapshot for every client. Single query set, personalized in memory."""
+    t = get_tournament(code)
+    cfg = settings_of(t)
+    rounds = q(
+        "SELECT * FROM trounds WHERE tournament_code = ? ORDER BY number", (t["code"],)
+    ).fetchall()
+    latest = rounds[-1] if rounds else None
+    pod_views, my_pod = pod_views_for(latest, viewer_entrant, organizer)
 
     calls = []
     if organizer:
@@ -645,18 +659,88 @@ def plan(code: str, request: Request, players: int | None = None):
     return out
 
 
-@router.get("/{code}")
-def get_state(code: str, request: Request, token: str | None = None):
-    t = get_tournament(code)
-    acct = None
+def viewing_as_organizer(t, request: Request) -> bool:
+    """Is this reader the organizer? A missing or foreign session is not an
+    error on a read path — it just means a plainer view, so this never raises.
+    """
     try:
         from .accounts import current_account
 
         acct = current_account(request)
     except Exception:
         acct = None
-    organizer = bool(acct and acct["id"] == t["organizer_account_id"])
+    return bool(acct and acct["id"] == t["organizer_account_id"])
+
+
+@router.get("/{code}")
+def get_state(code: str, request: Request, token: str | None = None):
+    t = get_tournament(code)
+    organizer = viewing_as_organizer(t, request)
     return tournament_state(t["code"], entrant_from_token(t["code"], token), organizer)
+
+
+@router.get("/{code}/rounds/{number}")
+def get_round(code: str, number: int, request: Request, token: str | None = None):
+    """One round as it was: its pairings, pods, seats and results.
+
+    The live snapshot deliberately carries only the latest round, so a player
+    asking "who did I play in round 1, and what did we end up with?" had no
+    answer once round 2 opened. Readable by exactly whoever may read
+    `GET /{code}` — possession of the code is the gate there and a past round
+    exposes nothing the round did not already show while it was live — and it
+    reuses the same pod view, so the room code stays organizer-only and a room
+    token still reaches one seat and one caller.
+    """
+    t = get_tournament(code)
+    organizer = viewing_as_organizer(t, request)
+    viewer = entrant_from_token(t["code"], token)
+    rnd = q(
+        "SELECT * FROM trounds WHERE tournament_code = ? AND number = ?", (t["code"], number)
+    ).fetchone()
+    if not rnd:
+        raise HTTPException(404, "no such round")
+
+    pod_views, my_pod = pod_views_for(rnd, viewer, organizer)
+
+    # What the pod was ruled, not just the seat placings: a draw awards every
+    # seat place 1, so placings alone cannot tell a drawn pod from a four-way
+    # tie for the win. An override appends a version rather than mutating, so
+    # the latest version is the standing decision. The organizer's note is the
+    # one part kept back — it is a ruling written for staff, and the design
+    # never showed it to the table.
+    results = {}
+    if pod_views:
+        marks = ",".join("?" * len(pod_views))
+        for r in q(
+            f"SELECT * FROM pod_results pr WHERE pr.pod_id IN ({marks}) "
+            f"AND pr.version = (SELECT MAX(v2.version) FROM pod_results v2 WHERE v2.pod_id = pr.pod_id)",
+            tuple(p["podId"] for p in pod_views),
+        ).fetchall():
+            results[r["pod_id"]] = {
+                "kind": r["kind"],
+                "source": r["source"],
+                "version": r["version"],
+                "decidedAt": r["decided_at"],
+                **({"note": r["note"]} if organizer else {}),
+            }
+    for view in pod_views:
+        view["result"] = results.get(view["podId"])
+    if my_pod:
+        my_pod["result"] = results.get(my_pod["podId"])
+
+    return {
+        "round": {
+            "number": rnd["number"],
+            "status": rnd["status"],
+            "endsAt": rnd["ends_at"],
+            "pausedAt": rnd["paused_at"],
+            "now": int(time.time()),  # same contract as the snapshot: never trust a local clock
+        },
+        "pods": pod_views,
+        "myPod": my_pod,
+        "me": ({"entrantId": viewer["public_id"], "name": viewer["name"]} if viewer else None),
+        "isOrganizer": organizer,
+    }
 
 
 @router.post("/{code}/entrants")
