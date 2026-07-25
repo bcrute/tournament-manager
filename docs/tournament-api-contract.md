@@ -130,6 +130,36 @@ time would otherwise show a wrong round timer. Clients compute
 `standings` is always present and always fully sorted (points, then opponents'
 points, then name). Ranks are dense positions after sorting, 1-based.
 
+### `GET /api/tournament/{code}/rounds/{n}`
+One round as it was — its pairings, pods, seats and results. The snapshot above
+carries only the latest round, so this is the only way to answer "who did I play
+in round 1?" once round 2 has opened. **404** for a round this tournament never
+had.
+
+Read access is exactly `GET /{code}`'s: possession of the code is the gate,
+`?token=` personalizes, the organizer is recognized by cookie. A past round
+exposes nothing it did not already expose while it was live, so nothing narrower
+would be protecting anything.
+
+```jsonc
+{ "round": { "number", "status", "endsAt", "pausedAt", "now" },
+  "pods": [ { /* the snapshot's pod shape, plus: */
+              "result": { "kind", "source", "version", "decidedAt",
+                          "note": "…" } } ],   // note: organizer only
+  "myPod": { /* same, plus "roomToken", "mySeat" */ },
+  "me": { "entrantId", "name" },
+  "isOrganizer": false }
+```
+
+The pod view is built by the same code as the snapshot's, so the three rules in
+§1 hold here identically: `roomCode` is organizer-only (plus the caller's own
+pod), `roomToken` appears only on `myPod`, and `entrantId` is always the public
+id. `result` is the latest version — an override appends rather than mutates —
+and it is carried because a draw awards every seat place 1, so seat placings
+alone cannot tell a drawn pod from a four-way win. `result` is `null` for a pod
+with no ruling yet. The organizer's `note` is a ruling written for staff and is
+omitted for everyone else.
+
 ### `GET /api/tournament/{code}/roster`
 **Public and unauthenticated by design** — a player scans a code and needs the
 name list before they have any credential.
@@ -448,7 +478,6 @@ filtering makes it invisible from the outside rather than merely inert.
 | `GET /rounds/latest`, `/standings`, `/calls` | folded into `GET /{code}` | three polls became one snapshot; cheaper and race-free |
 | `/tables/{id}` | `/pods/{pod_id}` | "pod" is the word players use |
 | `WS /{code}/ws` | not built | the room WebSocket carries tournament clock pushes to the players who need them; a second channel earned nothing |
-| `GET /rounds/{n}` (history) | not built | nothing needs it yet |
 | organizer secret returned once | account session + email | recoverable; a lost secret mid-event is unrecoverable |
 | anonymous official calls allowed | seated entrant token required | resolving a call grants time; anonymous let a stranger aim it at any table |
 | organizer-named pods, drag-to-assign | neither built | automated pairing landed first and covered the need; pods are numbered |
