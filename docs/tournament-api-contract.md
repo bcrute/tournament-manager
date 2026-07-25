@@ -209,7 +209,11 @@ this, opening a round is **409**.
 ```
 
 ### `POST /api/tournament/{code}/rounds`  *(organizer)*
-Pair, seat, and create one room per pod.
+Pair, seat, and create one room per pod — unless the game's profile has no
+modes, in which case the pods are seated roomless and the organizer reports each
+result by hand (§8). Such a pod's `roomCode` and `roomToken` are `null`
+everywhere they appear, and time called decides it straight away, since there is
+no live table state to rank or turns to count.
 
 ```jsonc
 { "reroll": false }  → { "round": 2, "pods": 3 }
@@ -486,7 +490,10 @@ What varies by game lives in `games.py` as a `GameProfile`:
 
 `POST /api/tournament` takes `game` (default `"mtg"`) and validates `mode` and
 `timeCalledPolicy` against that profile — a game is rejected with the list of
-what this server runs, rather than silently accepting nonsense.
+what this server runs, rather than silently accepting nonsense. `mode` may be
+omitted; it then becomes the profile's first mode. A profile with **no** modes
+accepts no `mode` at all: supplying one is **400**, and the stored value is the
+empty string. Rounds in such an event create no rooms.
 
 `tournaments.game` is `NOT NULL DEFAULT 'mtg'`, so the migration backfilled
 existing events rather than leaving nulls. `profile_for()` still degrades to

@@ -377,7 +377,11 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
 class CreateBody(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     game: str = Field(default="mtg")
-    mode: str = Field(default="life")
+    #: None means "whatever this game's first mode is". It is not defaulted to
+    #: "life" here because a game with no room support has no modes at all, and
+    #: an unasked-for default would be indistinguishable from an organizer
+    #: naming a mode that game cannot run.
+    mode: str | None = None
     settings: dict = Field(default_factory=dict)
 
 
@@ -465,8 +469,21 @@ def create_tournament(body: CreateBody, request: Request):
     if body.game not in known:
         raise HTTPException(400, f"unknown game — this server runs {', '.join(sorted(known))}")
     profile = profile_for(body.game)
-    if profile.modes and body.mode not in profile.modes:
-        raise HTTPException(400, f"{profile.name} has no '{body.mode}' mode")
+    if profile.modes:
+        mode = body.mode or profile.modes[0]
+        if mode not in profile.modes:
+            raise HTTPException(400, f"{profile.name} has no '{mode}' mode")
+    else:
+        # A game with no room support has no live table state to name: its pods
+        # are seated and reported by hand. Skipping validation here meant any
+        # string was accepted and stored against a tournament whose pods never
+        # get a room, so the value could only ever mislead. The stored mode for
+        # such an event is the empty string.
+        if body.mode:
+            raise HTTPException(
+                400, f"{profile.name} has no room modes — it is scored by hand"
+            )
+        mode = ""
 
     code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(5))
     allowed = defaults_for(body.game)
@@ -476,7 +493,7 @@ def create_tournament(body: CreateBody, request: Request):
     q(
         "INSERT INTO tournaments (code, name, organizer_account_id, game, mode, settings, last_active) "
         "VALUES (?, ?, ?, ?, ?, ?, unixepoch())",
-        (code, body.name.strip(), acct["id"], body.game, body.mode, json.dumps(cfg)),
+        (code, body.name.strip(), acct["id"], body.game, mode, json.dumps(cfg)),
     )
     return {"code": code, "game": body.game}
 
@@ -700,9 +717,15 @@ def _make_room_for_pod(t, cfg, pod_id: int, seats: list[tuple[int, str]]) -> str
 
 @router.post("/{code}/rounds")
 def open_round(code: str, body: RoundBody, request: Request):
-    """Pair, seat, and create a room per pod. Pairing is computed and persisted
-    before anything is announced, so the round opening is a broadcast of settled
-    state rather than work done under load."""
+    """Pair, seat, and — for a game with room support — create a room per pod.
+    Pairing is computed and persisted before anything is announced, so the round
+    opening is a broadcast of settled state rather than work done under load.
+
+    A game whose profile has no modes has no live table state to keep, so its
+    pods are seated and left roomless: the organizer reports each result by
+    hand. Everything that reads a pod already treats a missing `room_code` as
+    "no table app here" rather than as an error.
+    """
     t, _ = require_organizer(code, request)
     cfg = settings_of(t)
     if t["status"] == "ended":
@@ -750,6 +773,8 @@ def open_round(code: str, body: RoundBody, request: Request):
     pods = pair_round(pair_input, preferred_size=cfg["podSize"], seed=seed)
     pods = seat_pods(pods, pair_input, mode=cfg["seatAssignment"], seed=seed)
 
+    roomless = not profile_for(t["game"] if "game" in t.keys() else None).modes
+
     for i, pod in enumerate(pods, 1):
         cur = q("INSERT INTO pods (round_id, number, status) VALUES (?, ?, 'active')", (round_id, i))
         pod_id = cur.lastrowid
@@ -758,6 +783,8 @@ def open_round(code: str, body: RoundBody, request: Request):
                 "INSERT INTO pod_seats (pod_id, entrant_id, seat) VALUES (?, ?, ?)",
                 (pod_id, entrant_id, seat_no),
             )
+        if roomless:
+            continue
         room = _make_room_for_pod(t, cfg, pod_id, [(eid, names[eid]) for eid in pod.seats])
         q("UPDATE pods SET room_code = ?, game_no = 0 WHERE id = ?", (room, pod_id))
 
