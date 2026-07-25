@@ -120,7 +120,12 @@ _db.executescript(
         name TEXT NOT NULL,
         token TEXT UNIQUE,          -- null until someone claims the seat
         account_id INTEGER,
-        wizards_email TEXT,         -- only when the organizer enables it
+        -- the sanctioning id (whatever the game's profile calls it), stored
+        -- only when the organizer enables collection. The column keeps its
+        -- MTG-era name while the setting and the wire field are already
+        -- generic; it is internal and never served, and the rename waits
+        -- because a test reads it by this name.
+        wizards_email TEXT,
         dropped_at INTEGER,
         created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
