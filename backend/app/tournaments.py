@@ -14,6 +14,7 @@ query set (no N+1), pods reuse the room machinery rather than duplicating it, an
 the only background work is a lazy sweep on read.
 """
 
+import asyncio
 import csv
 import io
 import json
@@ -21,11 +22,18 @@ import re
 import secrets
 import time
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from .accounts import require_account
+from .accounts import SESSION_COOKIE, account_for_session, current_account, require_account
 from .audit import AUTHZ_DENY, security_event
 from .db import q
 from .games import canonical_policy, known_games, profile_for, structure_for
@@ -246,11 +254,16 @@ def entrant_from_token(code: str, token: str | None):
     ).fetchone()
 
 
-def standings_rows(code: str):
-    """Points and tiebreakers in one pass — no per-entrant queries."""
-    entrants = q(
-        "SELECT * FROM entrants WHERE tournament_code = ? ORDER BY id", (code,)
-    ).fetchall()
+def standings_rows(code: str, entrants=None):
+    """Points and tiebreakers in one pass — no per-entrant queries.
+
+    `entrants` is accepted already-fetched so a caller that holds the roster
+    for other reasons (the snapshot below) doesn't read it twice.
+    """
+    if entrants is None:
+        entrants = q(
+            "SELECT * FROM entrants WHERE tournament_code = ? ORDER BY id", (code,)
+        ).fetchall()
     seats = q(
         "SELECT s.entrant_id, s.points, s.place, p.id AS pod_id FROM pod_seats s "
         "JOIN pods p ON p.id = s.pod_id JOIN trounds r ON r.id = p.round_id "
@@ -323,7 +336,7 @@ def standings_rows(code: str):
     return out
 
 
-def public_standings(code: str):
+def public_standings(code: str, entrants=None):
     """standings_rows() translated for the wire.
 
     standings_rows carries the internal id because pairing and scoring key on
@@ -331,10 +344,13 @@ def public_standings(code: str):
     here, so there is one place to get the translation right rather than one
     per caller — POST /end used to serve the raw rows and leaked the integer
     primary key for exactly that reason.
+
+    `entrants` is passed straight through, so the snapshot below can hand over
+    the roster it already holds instead of making the server read it twice.
     """
     return [
         {**{k: v for k, v in row.items() if k != "publicId"}, "entrantId": row["publicId"]}
-        for row in standings_rows(code)
+        for row in standings_rows(code, entrants)
     ]
 
 
@@ -559,13 +575,12 @@ def bracket_view(code: str) -> dict | None:
     }
 
 
-def pod_views_for(round_row, viewer_entrant=None, organizer: bool = False):
-    """The pods of one round, seen by one viewer: `(pods, myPod)`.
+def pod_rows_for(round_row):
+    """The pod and seat rows of one round: `(pods, seats_by_pod)`.
 
-    Every rule about who may see what in a pod lives here and nowhere else, so
-    the live snapshot and the historical round view cannot drift apart — the
-    room code is a credential, the room token belongs to one seat, and the
-    entrant id on the wire is always the public one.
+    Split out from the view below so a caller that has to build the same round
+    for many viewers — the socket fanout — reads it once and personalizes each
+    copy in memory.
     """
     pods, seats = [], []
     if round_row:
@@ -582,10 +597,19 @@ def pod_views_for(round_row, viewer_entrant=None, organizer: bool = False):
     by_pod: dict[int, list] = {}
     for s in seats:
         by_pod.setdefault(s["pod_id"], []).append(s)
+    return pods, by_pod
 
+
+def pod_views_from(pods, by_pod, round_ends_at, viewer_entrant=None, organizer: bool = False):
+    """One viewer's `(pods, myPod)` from rows already fetched. No database access.
+
+    Every rule about who may see what in a pod lives here and nowhere else, so
+    the live snapshot, the socket push and the historical round view cannot
+    drift apart — the room code is a credential, the room token belongs to one
+    seat, and the entrant id on the wire is always the public one.
+    """
     my_pod = None
     pod_views = []
-    round_ends_at = round_row["ends_at"] if round_row else None
     for p in pods:
         members = by_pod.get(p["id"], [])
         view = {
@@ -629,15 +653,90 @@ def pod_views_for(round_row, viewer_entrant=None, organizer: bool = False):
     return pod_views, my_pod
 
 
-def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
-    """One snapshot for every client. Single query set, personalized in memory."""
+def pod_views_for(round_row, viewer_entrant=None, organizer: bool = False):
+    """The pods of one round, seen by one viewer: `(pods, myPod)`.
+
+    Reads the rows and applies the view rules in one call, for a caller serving
+    exactly one viewer — the historical round view. The live snapshot splits the
+    two halves so it can read once and personalize many times.
+    """
+    pods, by_pod = pod_rows_for(round_row)
+    return pod_views_from(
+        pods,
+        by_pod,
+        round_row["ends_at"] if round_row else None,
+        viewer_entrant,
+        organizer,
+    )
+
+
+def tournament_snapshot(code: str, with_calls: bool = False):
+    """Everything a tournament view depends on, fetched once.
+
+    Personalizing it is then pure CPU with no further queries, which is what
+    makes pushing state to every connected socket cheaper than each of them
+    polling for its own copy — the same split, for the same reason, as
+    `room_snapshot`/`personalize` in table.py.
+
+    `with_calls` because the calls queue is the organizer's alone: a viewer who
+    may never see those rows should not make the server read them.
+    """
     t = get_tournament(code)
-    cfg = settings_of(t)
+    entrants = q(
+        "SELECT * FROM entrants WHERE tournament_code = ? ORDER BY id", (t["code"],)
+    ).fetchall()
     rounds = q(
         "SELECT * FROM trounds WHERE tournament_code = ? ORDER BY number", (t["code"],)
     ).fetchall()
     latest = rounds[-1] if rounds else None
-    pod_views, my_pod = pod_views_for(latest, viewer_entrant, organizer)
+    pods, by_pod = pod_rows_for(latest)
+    calls = (
+        q(
+            "SELECT * FROM official_calls WHERE tournament_code = ? AND status != 'resolved' "
+            "ORDER BY created_at",
+            (t["code"],),
+        ).fetchall()
+        if with_calls
+        else []
+    )
+    return {
+        "t": t,
+        "cfg": settings_of(t),
+        "rounds": rounds,
+        "latest": latest,
+        "pods": pods,
+        "by_pod": by_pod,
+        "calls": calls,
+        "standings": public_standings(t["code"], entrants),
+        # the bracket is derived from pod results, so it is read here with
+        # everything else rather than once per viewer
+        "cut": bracket_view(t["code"]),
+        # entrant token -> row, so a socket's token resolves without a query
+        "by_token": {e["token"]: e for e in entrants if e["token"]},
+    }
+
+
+def personalize_tournament(snap, viewer_entrant=None, organizer: bool = False):
+    """Build one viewer's view of a snapshot. No database access.
+
+    Every §1 view rule lives here and in `pod_views_from` and nowhere else:
+    `roomCode` is the organizer's, a room token appears only on the viewer's
+    own seat, and the calls queue is organizer-only. The poll and the socket
+    both come through this function precisely so the two views cannot drift
+    apart — a fanout with its own idea of who may see what is how a seat
+    credential leaks.
+    """
+    t = snap["t"]
+    cfg = snap["cfg"]
+    rounds = snap["rounds"]
+    latest = snap["latest"]
+    pod_views, my_pod = pod_views_from(
+        snap["pods"],
+        snap["by_pod"],
+        latest["ends_at"] if latest else None,
+        viewer_entrant,
+        organizer,
+    )
 
     calls = []
     if organizer:
@@ -646,11 +745,7 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
              "category": c["category"], "note": c["note"], "createdAt": c["created_at"],
              "openSeconds": max(0, int(time.time()) - c["created_at"]),
              "suggestedMinutes": suggested_extension(max(0, int(time.time()) - c["created_at"]))}
-            for c in q(
-                "SELECT * FROM official_calls WHERE tournament_code = ? AND status != 'resolved' "
-                "ORDER BY created_at",
-                (t["code"],),
-            ).fetchall()
+            for c in snap["calls"]
         ]
 
     return {
@@ -686,14 +781,160 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
         ),
         # standings carry the internal id for callers like pairing; the wire
         # only ever sees the public one, and not both
-        "standings": public_standings(t["code"]),
+        "standings": snap["standings"],
         # null until a cut has been made; the standings above stay in Swiss
         # order, because points are what they measure and a bracket is not
         # decided on points
-        "cut": bracket_view(t["code"]),
+        "cut": snap["cut"],
         "calls": calls,
         "isOrganizer": organizer,
     }
+
+
+def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
+    """One viewer's state, read fresh. The poll path."""
+    return personalize_tournament(
+        tournament_snapshot(code, with_calls=organizer), viewer_entrant, organizer
+    )
+
+
+# ---- websocket fanout ----
+
+#: code -> {socket: viewer}. A viewer's `token` is their entrant token (None
+#: until the client sends one) and `session` is the organizer's session cookie,
+#: kept only for a socket that connected as the organizer of *this* tournament.
+#: Credentials arrive in a message or a cookie rather than in the URL, so they
+#: never reach an access log — the same reason the room socket does it.
+_ws_viewers: dict[str, dict] = {}
+_ws_lock = asyncio.Lock()
+
+
+def _resolve_viewer(viewer: dict):
+    """The account behind a socket, re-read now rather than trusted from the
+    handshake. A tab left open all day must not outlive the session that
+    authorized it, and only organizer sockets carry a session at all — so this
+    is one query per organizer device, not one per attendee."""
+    if not viewer["session"]:
+        return None
+    return account_for_session(viewer["session"])
+
+
+async def _send_state(ws: WebSocket, code: str, viewer: dict):
+    """This socket's current view, built exactly as the poll builds it."""
+    acct = _resolve_viewer(viewer)
+    try:
+        snap = tournament_snapshot(code, with_calls=acct is not None)
+    except HTTPException:
+        # no such tournament (or it went away): nudge, and let the client's
+        # own refetch see the 404 rather than inventing an answer here
+        await ws.send_json({"type": "update"})
+        return
+    organizer = bool(acct and acct["id"] == snap["t"]["organizer_account_id"])
+    entrant = snap["by_token"].get(viewer["token"]) if viewer["token"] else None
+    await ws.send_json(
+        {"type": "state", "state": personalize_tournament(snap, entrant, organizer)}
+    )
+
+
+async def broadcast_tournament(code: str):
+    """Push the new state to every connected client, personalized per viewer,
+    from a single snapshot.
+
+    Without this, standings, pairings and the roster only move on the next poll
+    — a player can be looking at a pairing that was re-rolled five seconds ago.
+    Every viewer's copy is built by the same personalize the poll uses, so an
+    entrant can no more see another seat's room token here than there.
+    """
+    code = code.upper()
+    async with _ws_lock:
+        sockets = list(_ws_viewers.get(code, {}).items())
+    if not sockets:
+        return
+    viewers = [(ws, v["token"], _resolve_viewer(v)) for ws, v in sockets]
+    # only fetch the calls queue if somebody connected may actually read it
+    want_calls = any(acct is not None for _, _, acct in viewers)
+    try:
+        snap = tournament_snapshot(code, with_calls=want_calls)
+    except HTTPException:
+        snap = None
+    for ws, token, acct in viewers:
+        try:
+            if snap is None:
+                await ws.send_json({"type": "update"})
+                continue
+            organizer = bool(acct and acct["id"] == snap["t"]["organizer_account_id"])
+            entrant = snap["by_token"].get(token) if token else None
+            await ws.send_json(
+                {"type": "state", "state": personalize_tournament(snap, entrant, organizer)}
+            )
+        except Exception:
+            pass
+
+
+@router.websocket("/ws/{code}")
+async def ws_tournament(ws: WebSocket, code: str):
+    """Tournament-scoped push.
+
+    The pod room's socket carries what happens inside one game; this carries
+    what happens to the event — pairings, results, standings, the roster, the
+    calls queue. It is an addition to `GET /{code}`, never a replacement: the
+    poll still answers, so a socket that drops degrades to a slower client
+    rather than a stuck one.
+    """
+    code = code.upper()
+    from .limits import client_id, client_ip  # imported late to avoid a cycle
+
+    limiter = getattr(ws.app.state, "limiter", None)
+    if limiter is not None:
+        allowed, _ = limiter.check(client_id(client_ip(ws)), "socket")
+        if not allowed:
+            await ws.close(code=1013)  # try again later
+            return
+
+    # The organizer view is a *different* view, not a friendlier one: it carries
+    # room codes and the calls queue. Bind it to the session cookie sent with
+    # the handshake, and only when that account owns this tournament — nobody
+    # else's socket holds a session in memory at all.
+    session = None
+    try:
+        t = get_tournament(code)
+        acct = current_account(ws)
+        if acct and acct["id"] == t["organizer_account_id"]:
+            session = ws.cookies.get(SESSION_COOKIE)
+    except HTTPException:
+        pass  # unknown code: the socket opens and simply never has anything to say
+
+    await ws.accept()
+    viewer = {"token": None, "session": session}
+    async with _ws_lock:
+        _ws_viewers.setdefault(code, {})[ws] = viewer
+    try:
+        # A client that connects mid-round shouldn't have to wait for somebody
+        # else to change something before it knows where it stands.
+        await _send_state(ws, code, viewer)
+        while True:
+            raw = await ws.receive_text()
+            # {"token": "..."} identifies the entrant behind this socket, which
+            # is what earns them their own seat's room token; anything else
+            # (keepalive pings) is ignored
+            try:
+                msg = json.loads(raw)
+            except ValueError:
+                continue
+            token = msg.get("token") if isinstance(msg, dict) else None
+            if not token:
+                continue
+            async with _ws_lock:
+                if ws in _ws_viewers.get(code, {}):
+                    _ws_viewers[code][ws]["token"] = token
+            await _send_state(ws, code, viewer)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        async with _ws_lock:
+            _ws_viewers.get(code, {}).pop(ws, None)
+            if not _ws_viewers.get(code):
+                _ws_viewers.pop(code, None)
 
 
 # ---- request bodies ----
@@ -980,7 +1221,7 @@ def get_round(code: str, number: int, request: Request, token: str | None = None
 
 
 @router.post("/{code}/entrants")
-def add_entrants(code: str, body: EntrantsBody, request: Request):
+async def add_entrants(code: str, body: EntrantsBody, request: Request):
     t, _ = require_organizer(code, request)
     incoming = [{"name": n, "externalRef": None} for n in body.names]
     incoming += [
@@ -1016,6 +1257,7 @@ def add_entrants(code: str, body: EntrantsBody, request: Request):
         )
         added.append({"entrantId": pub, "name": name, "externalRef": ref})
     touch(t["code"])
+    await broadcast_tournament(t["code"])
     return {"added": added, "matched": matched}
 
 
@@ -1047,7 +1289,7 @@ def roster(code: str):
 
 
 @router.post("/{code}/claim")
-def claim(code: str, body: ClaimBody):
+async def claim(code: str, body: ClaimBody):
     """Claim a seat by id — names may repeat, ids don't. First claim wins; the
     organizer can release one if somebody taps the wrong name."""
     t = get_tournament(code)
@@ -1078,11 +1320,13 @@ def claim(code: str, body: ClaimBody):
         (token, sid, row["id"]),
     )
     touch(t["code"])
+    # the roster's `claimed` flags are what the organizer watches check-in by
+    await broadcast_tournament(t["code"])
     return {"entrantToken": token, "entrantId": row["public_id"], "name": row["name"]}
 
 
 @router.post("/{code}/entrants/{entrant_id}/release")
-def release_claim(code: str, entrant_id: str, request: Request):
+async def release_claim(code: str, entrant_id: str, request: Request):
     t, _ = require_organizer(code, request)
     row = resolve_entrant(t["code"], entrant_id)
     if not row:
@@ -1090,6 +1334,7 @@ def release_claim(code: str, entrant_id: str, request: Request):
     q(
         "UPDATE entrants SET token = NULL WHERE id = ?", (row["id"],),
     )
+    await broadcast_tournament(t["code"])
     return {"ok": True}
 
 
@@ -1124,7 +1369,7 @@ def rename_entrant(code: str, entrant_id: str, body: RenameBody, request: Reques
 
 
 @router.post("/{code}/entrants/{entrant_id}/undrop")
-def undrop_entrant(code: str, entrant_id: str, request: Request):
+async def undrop_entrant(code: str, entrant_id: str, request: Request):
     """People come back — a drop entered by mistake shouldn't end someone's day."""
     t, _ = require_organizer(code, request)
     row = resolve_entrant(t["code"], entrant_id)
@@ -1134,11 +1379,12 @@ def undrop_entrant(code: str, entrant_id: str, request: Request):
         "UPDATE entrants SET dropped_at = NULL WHERE id = ?", (row["id"],),
     )
     touch(t["code"])
+    await broadcast_tournament(t["code"])
     return {"ok": True}
 
 
 @router.post("/{code}/end")
-def end_tournament(code: str, request: Request):
+async def end_tournament(code: str, request: Request):
     """Close the event and freeze the final standings."""
     t, _ = require_organizer(code, request)
     open_round = q(
@@ -1148,6 +1394,7 @@ def end_tournament(code: str, request: Request):
         raise HTTPException(409, "close the current round before ending the tournament")
     q("UPDATE tournaments SET status = 'ended' WHERE code = ?", (t["code"],))
     touch(t["code"])
+    await broadcast_tournament(t["code"])
     return {"ok": True, "standings": public_standings(t["code"])}
 
 
@@ -1241,7 +1488,7 @@ def export(code: str, request: Request, what: str = "standings", format: str = "
 
 
 @router.post("/{code}/entrants/{entrant_id}/drop")
-def drop_entrant(code: str, entrant_id: str, request: Request):
+async def drop_entrant(code: str, entrant_id: str, request: Request):
     t, _ = require_organizer(code, request)
     row = resolve_entrant(t["code"], entrant_id)
     if not row:
@@ -1249,6 +1496,7 @@ def drop_entrant(code: str, entrant_id: str, request: Request):
     q(
         "UPDATE entrants SET dropped_at = unixepoch() WHERE id = ?", (row["id"],),
     )
+    await broadcast_tournament(t["code"])
     return {"ok": True}
 
 
@@ -1469,7 +1717,7 @@ def _open_bracket_round(t, cfg, reuse=None) -> dict:
 
 
 @router.post("/{code}/rounds")
-def open_round(code: str, body: RoundBody, request: Request):
+async def open_round(code: str, body: RoundBody, request: Request):
     """Pair, seat, and — for a game with room support — create a room per pod.
     Pairing is computed and persisted before anything is announced, so the round
     opening is a broadcast of settled state rather than work done under load.
@@ -1502,7 +1750,9 @@ def open_round(code: str, body: RoundBody, request: Request):
             # There is nothing to re-roll: the bracket pairing is the seeding,
             # so it would come back identical. Re-cutting is the real remedy.
             raise HTTPException(409, "a bracket is seeded, not paired — it cannot be re-rolled")
-        return _open_bracket_round(t, cfg)
+        opened = _open_bracket_round(t, cfg)
+        await broadcast_tournament(t["code"])
+        return opened
 
     prior = q(
         "SELECT COALESCE(MAX(number), 0) AS n, COALESCE(MAX(seed), 0) AS s "
@@ -1544,11 +1794,14 @@ def open_round(code: str, body: RoundBody, request: Request):
 
     q("UPDATE tournaments SET status = 'running' WHERE code = ?", (t["code"],))
     touch(t["code"])
+    # settled state, then announced — including to the phone of every player
+    # waiting to be told which table they are at
+    await broadcast_tournament(t["code"])
     return {"round": number, "kind": "swiss", "pods": len(pods)}
 
 
 @router.post("/{code}/cut")
-def make_cut(code: str, body: CutBody, request: Request):
+async def make_cut(code: str, body: CutBody, request: Request):
     """Cut the field to the top N and open the first single-elimination round.
 
     Seeding is the Swiss standings as they stand: points, then opponents'
@@ -1620,6 +1873,9 @@ def make_cut(code: str, body: CutBody, request: Request):
         q("UPDATE entrants SET cut_seed = ? WHERE id = ?", (seed, row["entrantId"]))
 
     opened = _open_bracket_round(t, cfg, reuse=existing)
+    # a bracket being drawn is the single biggest change a client can be shown;
+    # nobody should learn they made the cut on the next poll
+    await broadcast_tournament(t["code"])
     return {
         "ok": True,
         "cutTo": size,
@@ -1632,7 +1888,7 @@ def make_cut(code: str, body: CutBody, request: Request):
 
 
 @router.post("/{code}/rounds/close")
-def close_round(code: str, request: Request):
+async def close_round(code: str, request: Request):
     t, _ = require_organizer(code, request)
     rnd = q(
         "SELECT * FROM trounds WHERE tournament_code = ? AND status = 'active'", (t["code"],)
@@ -1652,6 +1908,7 @@ def close_round(code: str, request: Request):
         raise HTTPException(409, f"{unfinished} pod(s) have no result yet")
     q("UPDATE trounds SET status = 'closed' WHERE id = ?", (rnd["id"],))
     touch(t["code"])
+    await broadcast_tournament(t["code"])
     return {"ok": True}
 
 
@@ -1930,7 +2187,7 @@ def _write_result(t, pod, kind: str, places: list[dict], source: str, note: str 
 
 
 @router.post("/{code}/pods/{pod_id}/result")
-def report_result(code: str, pod_id: int, body: ResultBody, request: Request):
+async def report_result(code: str, pod_id: int, body: ResultBody, request: Request):
     """Organizer override. Auto-detection writes the same rows from the room."""
     t, _ = require_organizer(code, request)
     pod = pod_in(t["code"], pod_id)
@@ -1948,10 +2205,11 @@ def report_result(code: str, pod_id: int, body: ResultBody, request: Request):
         places.append({"entrantId": row["id"], "place": entry.get("place")})
     version = _write_result(t, pod, body.kind, places, "organizer", body.note)
     touch(t["code"])
+    await broadcast_tournament(t["code"])
     return {"ok": True, "version": version}
 
 
-def record_room_result(room_code: str, game_no: int, order: list[int], kind: str = "placement"):
+async def record_room_result(room_code: str, game_no: int, order: list[int], kind: str = "placement"):
     """Called from the room when a game ends. `order` is entrant elimination
     order reversed — last standing first. Never overwrites an organizer's ruling.
     """
@@ -1975,6 +2233,9 @@ def record_room_result(room_code: str, game_no: int, order: list[int], kind: str
     q("UPDATE pods SET game_no = ? WHERE id = ?", (game_no, pod["id"]))
     _write_result(t, pod, kind, places, "auto", None)
     touch(t["code"])
+    # a table finishing moves the standings; the organizer's board should not
+    # wait for a poll to find out the round is one pod closer to done
+    await broadcast_tournament(t["code"])
 
 
 async def push_to_pods(round_id: int | None = None, room_codes=None):
@@ -2125,6 +2386,7 @@ async def call_time(code: str, request: Request):
     q("UPDATE trounds SET ends_at = ? WHERE id = ?", (int(time.time()), rnd["id"]))
     touch(t["code"])
     await push_to_pods(rnd["id"])
+    await broadcast_tournament(t["code"])
     return {"ok": True, "decided": decided, "extraTurns": counting,
             "turns": extra, "policy": canonical_policy(cfg["timeCalledPolicy"])}
 
@@ -2173,8 +2435,10 @@ async def advance_turn(
         pod = pod_in(t["code"], pod_id)
         resolve_pod_at_time(t, cfg, pod)
         await push_to_pods(room_codes=[pod["room_code"]] if pod["room_code"] else [])
+        await broadcast_tournament(t["code"])
         return {"ok": True, "turnsRemaining": 0, "decided": True}
     await push_to_pods(room_codes=[pod["room_code"]] if pod["room_code"] else [])
+    await broadcast_tournament(t["code"])
     return {"ok": True, "turnsRemaining": left, "decided": False}
 
 
@@ -2219,6 +2483,7 @@ async def timer(code: str, body: TimerBody, request: Request):
         raise HTTPException(400, "unknown timer action")
     touch(t["code"])
     await push_to_pods(rnd["id"])
+    await broadcast_tournament(t["code"])
     return {"ok": True}
 
 
@@ -2226,7 +2491,7 @@ async def timer(code: str, body: TimerBody, request: Request):
 
 
 @router.post("/{code}/pods/{pod_id}/call")
-def call_official(code: str, pod_id: int, body: CallBody, token: str | None = None):
+async def call_official(code: str, pod_id: int, body: CallBody, token: str | None = None):
     t = get_tournament(code)
     if not settings_of(t)["allowOfficialCalls"]:
         raise HTTPException(409, "official calls are disabled for this tournament")
@@ -2247,17 +2512,21 @@ def call_official(code: str, pod_id: int, body: CallBody, token: str | None = No
         (t["code"], pod_id, entrant["id"] if entrant else None, body.category, body.note),
     )
     touch(t["code"])
+    # a raised hand is the one push that has somebody standing at the table
+    # waiting for it — the organizer's queue is the only view it appears in
+    await broadcast_tournament(t["code"])
     return {"ok": True, "callId": cur.lastrowid}
 
 
 @router.post("/{code}/calls/{call_id}/ack")
-def ack_call(code: str, call_id: int, request: Request):
+async def ack_call(code: str, call_id: int, request: Request):
     t, _ = require_organizer(code, request)
     q(
         "UPDATE official_calls SET status = 'acknowledged', acknowledged_at = unixepoch() "
         "WHERE id = ? AND tournament_code = ? AND status = 'open'",
         (call_id, t["code"]),
     )
+    await broadcast_tournament(t["code"])
     return {"ok": True}
 
 
@@ -2317,6 +2586,7 @@ async def resolve_call(code: str, call_id: int, body: CallBody, request: Request
         if room and room["room_code"]:
             await push_to_pods(room_codes=[room["room_code"]])
     touch(t["code"])
+    await broadcast_tournament(t["code"])
     return {
         "ok": True,
         "openSeconds": open_for,

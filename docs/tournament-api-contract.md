@@ -50,6 +50,12 @@ change.
 It never appears in `pods[]`, which every entrant can read. Three tests in
 `test_tournaments.py::TestPlayerView` pin this; treat them as load-bearing.
 
+The same rule holds on the WebSocket, and by construction rather than by
+repetition: `WS /ws/{code}` personalizes every push through the one function
+the poll uses (`personalize_tournament`), so a fanout cannot develop its own
+idea of who may see a room token or a room code.
+`test_tournament_ws.py::TestTournamentSocket` pins that too.
+
 ---
 
 ## 2. Lifecycle
@@ -71,7 +77,9 @@ Because the timer lives on the tournament and players are looking at the *room*,
 room state carries a `tournament` block (round, deadline, pause, turns) and
 tournament writes that change a clock push to the affected rooms over the
 room's existing WebSocket. Without that push a pause is invisible to players —
-their timer keeps visibly running.
+their timer keeps visibly running. The same write also goes out on the
+tournament socket (§3), which is what a client not sitting in a pod — the
+organizer's board, a player between rounds — is watching.
 
 
 ```
@@ -193,6 +201,29 @@ and it is carried because a draw awards every seat place 1, so seat placings
 alone cannot tell a drawn pod from a four-way win. `result` is `null` for a pod
 with no ruling yet. The organizer's `note` is a ruling written for staff and is
 omitted for everyone else.
+
+### `WS /api/tournament/ws/{code}`
+The same state, pushed. Anything that changes the event — entrants added,
+seats claimed or released, drops, a round opened, re-rolled or closed, results
+(organizer *and* automatic), the timer, time called, extra turns, official
+calls — sends every connected client a message.
+
+```jsonc
+{ "type": "state", "state": { /* exactly the GET /{code} body, per viewer */ } }
+{ "type": "update" }   // no state to send (unknown code): refetch and see why
+```
+
+One `state` arrives on connect, so a client that joins mid-round does not wait
+for the next change. Send `{"token": "…"}` to identify the entrant behind the
+socket — in a message, never in the URL, so it cannot reach an access log — and
+that socket's next and every later push carries their `me` and `myPod`. The
+organizer is recognized by the session cookie sent with the handshake, and the
+session is re-read on every push: a socket left open past sign-out drops to an
+ordinary viewer's state rather than keeping the organizer's.
+
+**Additive, never load-bearing.** `GET /{code}` still answers exactly as before
+and no client is required to hold a socket open. A dropped socket degrades to a
+slower client, not a stuck one, so polling is the floor rather than the fallback.
 
 ### `GET /api/tournament/{code}/roster`
 **Public and unauthenticated by design** — a player scans a code and needs the
@@ -698,6 +729,10 @@ has hit it in an event yet; if it bites, the fix is a per-entrant bucket for
 Polling at 5 s (30 s hidden) with ~50 attendees is ~10 req/s — two orders of
 magnitude inside the limit.
 
+HTTP middleware never sees a WebSocket, so `WS /ws/{code}` checks the `socket`
+bucket itself at the handshake and closes with 1013 ("try again later") rather
+than accepting a socket it will not serve — the same check the room socket does.
+
 ---
 
 ## 6. Why hosting requires an email
@@ -780,7 +815,7 @@ filtering makes it invisible from the outside rather than merely inert.
 |---|---|---|
 | `GET /rounds/latest`, `/standings`, `/calls` | folded into `GET /{code}` | three polls became one snapshot; cheaper and race-free |
 | `/tables/{id}` | `/pods/{pod_id}` | "pod" is the word players use |
-| `WS /{code}/ws` | not built | the room WebSocket carries tournament clock pushes to the players who need them; a second channel earned nothing |
+| `WS /{code}/ws` | `WS /ws/{code}` | built after all: clock pushes over the room socket only reached players already sitting in a pod, so standings, pairings and the calls queue still waited for a poll |
 | organizer secret returned once | account session + email | recoverable; a lost secret mid-event is unrecoverable |
 | anonymous official calls allowed | seated entrant token required | resolving a call grants time; anonymous let a stranger aim it at any table |
 | organizer-named pods, drag-to-assign | both built server-side; no drag UI yet | automated pairing landed first, but a late registration and a mis-seat both need an override — §3 *seating overrides*. The organizer UI still has no drag-to-assign control |
@@ -893,9 +928,11 @@ that adding one later doesn't require a migration of live event data.
 - **Auto-result is test-covered, not event-proven.** The room → placement path
   has never run in a real game inside a tournament pod. Prove it with a
   throwaway 4-player event before running anything that counts.
-- **No tournament WebSocket.** Tournament state is polled (5 s foreground,
-  30 s hidden), so standings and roster changes lag by up to one poll. Clock
-  changes do not: they are pushed over each pod room's existing socket,
+- **The tournament WebSocket is server-side only so far.** `WS /ws/{code}`
+  (§3) pushes every event-wide change, but the shipped client still polls
+  (5 s foreground, 30 s hidden) and does not open the socket yet, so in the
+  browser standings and roster changes still lag by up to one poll. Clock
+  changes never did: they are pushed over each pod room's existing socket,
   because a pause a player cannot see is a timer that visibly keeps running.
 - **The top cut has no UI.** `POST /{code}/cut` runs the cut, seeds the
   bracket and pairs single-elimination rounds (§3), but the organizer page has

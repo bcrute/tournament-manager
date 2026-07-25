@@ -151,7 +151,7 @@ fail, the change is wrong until proven otherwise:
 
 | Boundary | Test |
 | --- | --- |
-| A pod's room token reaches only its own seat holder | `TestPlayerView` |
+| A pod's room token reaches only its own seat holder | `TestPlayerView` (poll), `TestTournamentSocket` (push) |
 | Entrant ids on the wire are opaque; the integer PK never leaves the server | `TestEntrantIdsAreOpaque` |
 | Claiming a tournament spot never links an account, even when signed in | `TestIdentityStaysSeparate` |
 | An organizer's ruling is never overwritten by an automatic result | `TestResults` |

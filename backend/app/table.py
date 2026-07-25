@@ -60,10 +60,10 @@ async def check_last_standing(room):
                     room["code"],
                     f"final identity: {p['name']} — {card['name']} ({card['types']['subtype']})",
                 )
-    report_tournament_result(room)
+    await report_tournament_result(room)
 
 
-def report_tournament_result(room):
+async def report_tournament_result(room):
     """If this room backs a tournament pod, record the result automatically.
 
     Placement comes from elimination order: last standing is 1st, and the rest
@@ -98,7 +98,9 @@ def report_tournament_result(room):
         return
     from .tournaments import record_room_result
 
-    record_room_result(room["code"], room["game_no"], order)
+    # awaited, not fired and forgotten: recording the result also pushes the new
+    # standings to everyone watching the tournament
+    await record_room_result(room["code"], room["game_no"], order)
 
 
 def log_event(code: str, text: str):
