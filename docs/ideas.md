@@ -223,10 +223,11 @@ and schedules, which is a bigger model than "a code someone shares at a table".
   (`entrants.external_ref`, the mapping table in the API contract); the adapter
   itself is unwritten. Imports are one-way — their API can't accept results —
   and any UI must say so or organizers will assume a sync that doesn't exist.
-- **Top cut execution.** `GET /{code}/plan` recommends a cut from the game
-  profile's bracket; nothing performs one. Needs re-podding, bracket seeding,
-  and single-elimination rules (where highest life *does* decide at time,
-  unlike Swiss).
+- ~~**Top cut execution.**~~ **Built.** `POST /{code}/cut` seeds a bracket from
+  the standings and pairs single-elimination rounds, and a bracket pod at time
+  is ranked on life because MTR 2.4 forbids a draw there. Two things are still
+  open: the organizer page has no button for it, and a bracket match is one
+  game rather than best-of-three.
 - **Manual pod assignment.** An organizer cannot move an entrant between pods
   or name a table. Planned first, overtaken by the pairer, never built.
 - ~~`/openapi.json` and `/docs` are public.~~ **Fixed.** Both, plus `/redoc`,

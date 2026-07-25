@@ -266,6 +266,16 @@ _db.execute(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_entrants_public ON entrants(public_id) "
     "WHERE public_id IS NOT NULL"
 )
+# Swiss or a bracket round. The distinction is not cosmetic: a single-
+# elimination round is paired from bracket seeds instead of standings, and a
+# game whose rules forbid a draw in elimination is adjudicated differently at
+# time. It is also the "cut flag" an import adapter needs to land "Top 8" on
+# (§9 of the API contract): number stays an integer, kind carries the rest.
+_ensure_column("trounds", "kind", "TEXT NOT NULL DEFAULT 'swiss'")   # swiss | elimination
+# Bracket seed from the standings at the moment of the cut, 1 = top seed.
+# NULL means this entrant did not make the cut, which is also how "no cut has
+# been made" is stored: nobody has a seed.
+_ensure_column("entrants", "cut_seed", "INTEGER")
 _ensure_column("players", "eliminated_at", "INTEGER")
 # A seated player showing the table view on their own phone. Unlike is_display
 # this changes no game state: they keep their seat, life, card and host role.

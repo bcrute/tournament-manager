@@ -45,6 +45,14 @@ class GameProfile:
     #: resource is comparable between players.
     time_called_policies: tuple[str, ...] = ("draw_all",)
 
+    #: the policy that decides an unfinished *single-elimination* pod at time.
+    #: Kept apart from `time_called_policies` because it is not the organizer's
+    #: choice: a bracket has to produce one advancing player, so a game whose
+    #: rules rank the table on its resource says so here. None means the game
+    #: publishes no such rule, and then nobody but the organizer may decide —
+    #: inventing a tiebreak for a cut is exactly what a rules engine would do.
+    elimination_time_policy: str | None = None
+
     #: label for the id an organizer may need to collect for sanctioned play —
     #: an account email for one publisher, a membership number for another. It
     #: is the only wording the server uses when it asks for or refuses that id.
@@ -241,6 +249,13 @@ MTG = GameProfile(
     # highest_resource is the official behaviour for a cut, not a house rule,
     # and only draw_survivors is purely a house convention.
     time_called_policies=("draw_all", "draw_survivors", "highest_resource", "organizer_decides"),
+    # MTR 2.4 again, the other half of it: a single-elimination match may not
+    # end in a draw, so after the additional turns the highest life total wins.
+    # In a cut this is the official ruling, not the house rule it would be in
+    # Swiss — which is why it is not read from the tournament's settings.
+    # Spelled with the profile-neutral name the policies were renamed to: life
+    # is MTG's resource, and the ranking goes through the profile either way.
+    elimination_time_policy="highest_resource",
     sanctioning_account="Wizards account email",
     # MTR 2.4: the current turn is finished, then five additional turns.
     # (Two-Headed Giant uses three; that would be its own profile.)
@@ -326,6 +341,7 @@ def known_games() -> list[dict]:
             "resourceDirection": p.resource_direction,
             "resourceGoal": p.resource_goal,
             "timeCalledPolicies": list(p.time_called_policies),
+            "eliminationTimePolicy": p.elimination_time_policy,
             "sanctioningAccount": p.sanctioning_account,
             "extraTurnsAtTime": p.extra_turns_at_time,
             "structures": [
