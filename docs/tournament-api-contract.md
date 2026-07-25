@@ -941,6 +941,24 @@ cannot 500 an older one.
 3. Nothing in `tournaments.py` should need editing. If it does, that is the
    bug: the fact belongs in the profile.
 
+Point 3 is executable, not aspirational: `tests/test_game_agnostic_core.py`
+registers a synthetic profile — pods of three, a resource that counts *up* from
+zero, no modes, no sanctioning body, no structures — and runs a whole event on
+it (create, entrants, rounds, results, standings, a cut and a bracket) with no
+other change anywhere. The same file parses `tournaments.py` and fails if any
+string literal there equals a registered game's key, mode or resource name, or
+if a `GameProfile` constant is imported to be branched on. `game` on a create
+body defaults to the registry's `DEFAULT_GAME`, not to a name written in the
+tournament layer.
+
+**What a mode means belongs to the room, not the tournament.** The tournament
+layer moves entrants between pods; the room says what that means at its table
+(`table.note_mid_game_arrival` — a Treachery arrival has no identity card, and
+nothing deals one mid-game). Likewise a pod's live state is read as
+`table.seat_resources`: seats, a resource total and who is out, in the core's
+words, with the room keeping the column name and the profile deciding which way
+those totals rank.
+
 **Deliberately not in a profile:** anything resembling a rules engine. A profile
 supplies defaults and vocabulary; it never adjudicates a game.
 

@@ -103,6 +103,45 @@ async def report_tournament_result(room):
     await record_room_result(room["code"], room["game_no"], order)
 
 
+def seat_resources(room_code: str) -> list[dict]:
+    """Each seat's live state, in the vocabulary the tournament layer speaks.
+
+    The room stores the tracked resource in a column called `life`, because this
+    started as a life counter and the schema is older than game profiles. That
+    name is the room's business and nobody else's: a tournament ranking an
+    unfinished pod asks what each seat *has* and who is out, and the game
+    profile says which way those numbers rank. Reading `players.life` from the
+    tournament layer put MTG's word for the resource in code that is supposed
+    not to know what Magic is.
+    """
+    return [
+        {
+            "token": r["token"],
+            "resource": r["life"],
+            "eliminated": bool(r["eliminated"]),
+            "eliminatedAt": r["eliminated_at"] or 0,
+        }
+        for r in q(
+            "SELECT token, life, eliminated, eliminated_at FROM players WHERE room_code = ?",
+            (room_code,),
+        ).fetchall()
+    ]
+
+
+def note_mid_game_arrival(room, name: str):
+    """Say at the table whatever this room's mode makes true of a player seated
+    into a game already under way.
+
+    The organizer moving an entrant between pods is a tournament action; what it
+    means at the table is the room's business. Treachery deals hidden identities
+    once, at the start of a game, and nothing deals one mid-game — so the table
+    is told rather than leaving somebody silently card-less. A mode with nothing
+    to add says nothing, and a game with no such mode never gets here.
+    """
+    if room["mode"] == "treachery":
+        log_event(room["code"], f"{name} has no identity card — deal one or restart the game")
+
+
 def log_event(code: str, text: str):
     """Events double as the permanent game history: stamped with the room's game
     number, never deleted, and carrying no identifiers beyond player names/ids."""
