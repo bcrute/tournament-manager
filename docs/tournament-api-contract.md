@@ -109,7 +109,10 @@ without one this returns **409**, not 403. Rationale in §6.
 ```jsonc
 // request
 { "name": "Friday Night Commander",   // 1–80 chars
-  "mode": "life",                      // life | treachery
+  "game": "mtg",                       // optional; defaults to the registry's
+                                       // DEFAULT_GAME. See §8 for the list
+  "mode": "life",                      // optional; a mode this game offers, or
+                                       // omitted for the profile's first one
   "settings": { "podSize": 4 } }       // unknown keys are dropped, not rejected
 // response
 { "code": "K7M2Q" }                    // 5 chars, alphabet excludes I/L/O/0/1
@@ -910,6 +913,8 @@ What varies by game lives in `games.py` as a `GameProfile`:
 | `time_called_policies` | offered policies, first is the default |
 | `elimination_time_policy` | how an unfinished *bracket* pod is decided at time, where a draw is not a legal outcome. Not the organizer's choice, so not a setting; `None` means the game publishes no such rule and the organizer rules |
 | `sanctioning_account` | label for the id a sanctioned event collects, and the only wording the server uses for it. `None` means the game has no sanctioning body, and `collectSanctioningId` cannot be turned on |
+| `extra_turns_at_time` | turns played after time is called before a pod is decided; the default behind the `extraTurns` setting (§6a). `0` means the game plays none |
+| `structures` | event structures an organizer may pick from, official ones first, behind the `structure` setting and `GET /{code}/plan`. Empty means the game publishes none, and `plan` says so (**409**) rather than inventing one |
 
 ### `GET /api/tournament/games`
 ```jsonc
@@ -921,7 +926,9 @@ What varies by game lives in `games.py` as a `GameProfile`:
                "sanctioningAccount": "Wizards account email" } ] }
 ```
 
-`POST /api/tournament` takes `game` (default `"mtg"`) and validates `mode` and
+`POST /api/tournament` takes `game` — defaulting to the registry's
+`DEFAULT_GAME`, which is `"mtg"` today and is read from `games.py` rather than
+written into the tournament layer — and validates `mode` and
 `timeCalledPolicy` against that profile — a game is rejected with the list of
 what this server runs, rather than silently accepting nonsense. `mode` may be
 omitted; it then becomes the profile's first mode. A profile with **no** modes
@@ -940,6 +947,24 @@ cannot 500 an older one.
    and organizers report results by hand — which already works.
 3. Nothing in `tournaments.py` should need editing. If it does, that is the
    bug: the fact belongs in the profile.
+
+Point 3 is executable, not aspirational: `tests/test_game_agnostic_core.py`
+registers a synthetic profile — pods of three, a resource that counts *up* from
+zero, no modes, no sanctioning body, no structures — and runs a whole event on
+it (create, entrants, rounds, results, standings, a cut and a bracket) with no
+other change anywhere. The same file parses `tournaments.py` and fails if any
+string literal there equals a registered game's key, mode or resource name, or
+if a `GameProfile` constant is imported to be branched on. `game` on a create
+body defaults to the registry's `DEFAULT_GAME`, not to a name written in the
+tournament layer.
+
+**What a mode means belongs to the room, not the tournament.** The tournament
+layer moves entrants between pods; the room says what that means at its table
+(`table.note_mid_game_arrival` — a Treachery arrival has no identity card, and
+nothing deals one mid-game). Likewise a pod's live state is read as
+`table.seat_resources`: seats, a resource total and who is out, in the core's
+words, with the room keeping the column name and the profile deciding which way
+those totals rank.
 
 **Deliberately not in a profile:** anything resembling a rules engine. A profile
 supplies defaults and vocabulary; it never adjudicates a game.

@@ -108,6 +108,14 @@ that it closes as complete without an organizer reporting anything — today
 
 Each is small. Together they are what makes a second profile feel bolted on.
 
+**Status, 2026-07-25.** L1 landed apart from the column (`collectSanctioningId`
+on the wire, every string from `profile.sanctioning_account`; the column is
+still `entrants.wizards_email`, internal and never served). L2 and L3 landed. The last two literals in `tournaments.py` — the `"mtg"` fallbacks and a
+branch on Treachery by name when seating someone mid-game — went with them, and
+`tests/test_game_agnostic_core.py` now runs a whole event on a synthetic profile
+and fails if either kind of leak comes back. L4, L5 and L7 are untouched, and
+L4 and L5 are frontend work.
+
 ### L1 — the sanctioning account is spelled "Wizards"
 
 `GENERIC_SETTINGS["collectWizardsEmail"]` sits in the dict whose comment says

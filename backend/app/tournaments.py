@@ -36,7 +36,7 @@ from pydantic import BaseModel, Field
 from .accounts import SESSION_COOKIE, account_for_session, current_account, require_account
 from .audit import AUTHZ_DENY, security_event
 from .db import q
-from .games import canonical_policy, known_games, profile_for, structure_for
+from .games import DEFAULT_GAME, canonical_policy, known_games, profile_for, structure_for
 from .importers import ImportProblem, adapter_for, known_sources
 from .pairing import Entrant as PairEntrant
 from .pairing import bracket_pods, pair_round, seat_pods
@@ -144,10 +144,6 @@ def defaults_for(game: str | None) -> dict:
     }
 
 
-# Back-compat alias: the shape of an MTG tournament's settings.
-DEFAULT_SETTINGS = defaults_for("mtg")
-
-
 # ---- helpers ----
 
 
@@ -205,9 +201,26 @@ def public_ids(code: str) -> dict:
     }
 
 
+def game_of(row) -> str | None:
+    """The game key a tournament row records, or None if it records none.
+
+    Rows written before profiles existed have no `game` column at all, and a
+    row from a newer build may name a game this one has never heard of. Both
+    resolve through `profile_for`, which falls back to the registry's default —
+    so every read of the column goes through here and nothing in this module
+    has to spell a game's name to cope with a missing one.
+    """
+    return row["game"] if "game" in row.keys() else None
+
+
+def profile_of(row):
+    """The game profile behind a tournament row. Every per-game fact this
+    module needs — pod size, resource, policies, modes — comes from here."""
+    return profile_for(game_of(row))
+
+
 def settings_of(row) -> dict:
-    game = row["game"] if "game" in row.keys() else None
-    return {**defaults_for(game), **json.loads(row["settings"] or "{}")}
+    return {**defaults_for(game_of(row)), **json.loads(row["settings"] or "{}")}
 
 
 def sanctioning_label(row) -> str | None:
@@ -217,8 +230,7 @@ def sanctioning_label(row) -> str | None:
     "Wizards" made the message a lie for any second game, and made it impossible
     to tell a game that has no sanctioning concept from one that does.
     """
-    game = row["game"] if "game" in row.keys() else None
-    return profile_for(game).sanctioning_account
+    return profile_of(row).sanctioning_account
 
 
 def touch(code: str):
@@ -762,7 +774,7 @@ def personalize_tournament(snap, viewer_entrant=None, organizer: bool = False):
         "tournament": {
             "code": t["code"],
             "name": t["name"],
-            "game": t["game"] if "game" in t.keys() else "mtg",
+            "game": game_of(t) or DEFAULT_GAME,
             "mode": t["mode"],
             "status": t["status"],
             "settings": cfg,
@@ -952,10 +964,13 @@ async def ws_tournament(ws: WebSocket, code: str):
 
 class CreateBody(BaseModel):
     name: str = Field(min_length=1, max_length=80)
-    game: str = Field(default="mtg")
-    #: None means "whatever this game's first mode is". It is not defaulted to
-    #: "life" here because a game with no room support has no modes at all, and
-    #: an unasked-for default would be indistinguishable from an organizer
+    #: the registry's default game, not a name written here: a client that omits
+    #: `game` gets whatever this server leads with, and a deployment that leads
+    #: with something else needs no edit in this module to say so.
+    game: str = Field(default=DEFAULT_GAME)
+    #: None means "whatever this game's first mode is". It is not defaulted to a
+    #: named mode here because a game with no room support has no modes at all,
+    #: and an unasked-for default would be indistinguishable from an organizer
     #: naming a mode that game cannot run.
     mode: str | None = None
     settings: dict = Field(default_factory=dict)
@@ -1125,8 +1140,7 @@ def plan(code: str, request: Request, players: int | None = None):
     """
     t = get_tournament(code)
     cfg = settings_of(t)
-    game = t["game"] if "game" in t.keys() else None
-    struct = structure_for(game, cfg.get("structure"), cfg.get("podSize"))
+    struct = structure_for(game_of(t), cfg.get("structure"), cfg.get("podSize"))
     if not struct:
         raise HTTPException(409, "this game has no event structures")
     if players is None:
@@ -1494,7 +1508,7 @@ def export(code: str, request: Request, what: str = "standings", format: str = "
         "tournament": {
             "code": t["code"],
             "name": t["name"],
-            "game": t["game"] if "game" in t.keys() else "mtg",
+            "game": game_of(t) or DEFAULT_GAME,
             "status": t["status"],
         },
         "exportedAt": int(time.time()),
@@ -1632,12 +1646,10 @@ def _seat_in_room(pod, name: str) -> str | None:
         ),
     )
     table_mod.log_event(pod["room_code"], f"{name} was moved to this table by the organizer")
-    if playing and room["mode"] == "treachery":
-        # nothing deals an identity into a game in progress, so say it at the
-        # table instead of leaving somebody silently card-less
-        table_mod.log_event(
-            pod["room_code"], f"{name} has no identity card — deal one or restart the game"
-        )
+    if playing:
+        # whatever arriving mid-game means for this room's mode is the room's to
+        # say — the tournament layer knows nothing about identity cards
+        table_mod.note_mid_game_arrival(room, name)
     return token
 
 
@@ -1653,7 +1665,7 @@ def _persist_pods(t, cfg, round_id: int, pods, names: dict) -> int:
     by hand. Everything that reads a pod already treats a missing `room_code` as
     "no table app here" rather than as an error.
     """
-    roomless = not profile_for(t["game"] if "game" in t.keys() else None).modes
+    roomless = not profile_of(t).modes
     for i, pod in enumerate(pods, 1):
         bye = len(pod.seats) == 1
         cur = q(
@@ -1882,8 +1894,7 @@ async def make_cut(code: str, body: CutBody, request: Request):
 
     size = body.size
     if size is None:
-        game = t["game"] if "game" in t.keys() else None
-        struct = structure_for(game, cfg.get("structure"), cfg.get("podSize"))
+        struct = structure_for(game_of(t), cfg.get("structure"), cfg.get("podSize"))
         size = struct.plan(len(field))["cutTo"] if struct else 0
         if not size:
             raise HTTPException(409, "this structure recommends no cut — name a size to run one")
@@ -2619,7 +2630,7 @@ def resolve_pod_at_time(t, cfg, pod):
     policy = canonical_policy(cfg["timeCalledPolicy"])
     elimination = pod_is_elimination(pod)
     if elimination and policy != "organizer_decides":
-        profile = profile_for(t["game"] if "game" in t.keys() else None)
+        profile = profile_of(t)
         policy = canonical_policy(profile.elimination_time_policy) or "organizer_decides"
     if policy == "organizer_decides":
         q("UPDATE pods SET status = 'awaiting_result' WHERE id = ?", (pod["id"],))
@@ -2638,20 +2649,22 @@ def resolve_pod_at_time(t, cfg, pod):
         places = [{"entrantId": s["entrant_id"], "place": 1} for s in seats]
         return _write_result(t, pod, "draw", places, "auto", "time called")
 
-    # the remaining policies need live state from the pod's room
-    rows = q(
-        "SELECT token, life, eliminated, eliminated_at FROM players WHERE room_code = ?",
-        (pod["room_code"],),
-    ).fetchall()
-    by_token = {r["token"]: r for r in rows}
+    # The remaining policies need live state from the pod's room, asked for in
+    # the core's words: seats, a resource total, who is out. The room knows the
+    # column that total is stored in; this layer only knows there is one.
+    from . import table as table_mod
+
+    by_token = {r["token"]: r for r in table_mod.seat_resources(pod["room_code"])}
 
     alive, out = [], []
     for s in seats:
         p = by_token.get(s["room_token"])
         if p and p["eliminated"]:
-            out.append((p["eliminated_at"] or 0, s["entrant_id"]))
+            out.append((p["eliminatedAt"], s["entrant_id"]))
         else:
-            alive.append((p["life"] if p and p["life"] is not None else 0, s["entrant_id"]))
+            alive.append(
+                (p["resource"] if p and p["resource"] is not None else 0, s["entrant_id"])
+            )
 
     # everyone eliminated is ranked below survivors, latest death placing higher
     tail = [eid for _, eid in sorted(out, key=lambda x: -x[0])]
@@ -2659,7 +2672,7 @@ def resolve_pod_at_time(t, cfg, pod):
     if policy == "highest_resource":
         # which way the resource ranks is the profile's to say, not this
         # function's: MTG life counts down, another game's may count up
-        profile = profile_for(t["game"] if "game" in t.keys() else None)
+        profile = profile_of(t)
         alive.sort(key=lambda x: profile.resource_rank_key(x[0]))
         ordered = [eid for _, eid in alive]
         places = [{"entrantId": eid, "place": i} for i, eid in enumerate(ordered, 1)]
