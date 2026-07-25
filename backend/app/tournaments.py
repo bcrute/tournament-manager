@@ -51,6 +51,12 @@ GENERIC_SETTINGS = {
     "structure": None,                # a game profile's structure key; None = first
 }
 
+# What seat_pods() actually implements. Validated on create because seat 1 takes
+# the first turn: a misspelled value silently falls through to "random", which
+# is a different fairness decision from the one the organizer asked for and is
+# invisible afterwards.
+SEAT_MODES = ("random", "by_standings", "manual")
+
 
 def defaults_for(game: str | None) -> dict:
     """Generic defaults plus whatever this game says about tables and resources."""
@@ -292,6 +298,9 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
         view = {
             "podId": p["id"],
             "table": p["number"],
+            # the organizer's label for this table, null when it is just its
+            # number — clients show the name and keep the number beside it
+            "name": p["label"],
             "status": p["status"],
             # A room code lets its holder take a seat in that room, so it is a
             # credential, not a label. Only the organizer and the players at
@@ -473,6 +482,8 @@ def create_tournament(body: CreateBody, request: Request):
     cfg = {k: v for k, v in body.settings.items() if k in allowed}
     if "timeCalledPolicy" in cfg and cfg["timeCalledPolicy"] not in profile.time_called_policies:
         raise HTTPException(400, f"{profile.name} does not offer that time-called policy")
+    if "seatAssignment" in cfg and cfg["seatAssignment"] not in SEAT_MODES:
+        raise HTTPException(400, f"seatAssignment must be one of {', '.join(SEAT_MODES)}")
     q(
         "INSERT INTO tournaments (code, name, organizer_account_id, game, mode, settings, last_active) "
         "VALUES (?, ?, ?, ?, ?, ?, unixepoch())",
@@ -698,6 +709,95 @@ def _make_room_for_pod(t, cfg, pod_id: int, seats: list[tuple[int, str]]) -> str
     return room_code
 
 
+def _unseat_from_room(pod, room_token: str | None, name: str):
+    """Take a moved entrant out of the room behind the table they are leaving.
+
+    Their phone is still holding this room's token, so it has to stop working
+    here: otherwise they keep a vote on life totals and eliminations at a table
+    they are no longer playing at. This mirrors `leave` in the room module — in
+    the lobby the seat simply goes away, and mid-game the row stays (identity
+    revealed, Treachery CR 907.13) because the events and commander damage that
+    mention it are already history.
+    """
+    from . import table as table_mod
+
+    if not (pod["room_code"] and room_token):
+        return
+    player = q(
+        "SELECT * FROM players WHERE room_code = ? AND token = ?",
+        (pod["room_code"], room_token),
+    ).fetchone()
+    if not player:
+        return
+    room = q("SELECT * FROM rooms WHERE code = ?", (pod["room_code"],)).fetchone()
+    if room and table_mod.norm_status(room["status"]) == "lobby":
+        q("DELETE FROM players WHERE id = ?", (player["id"],))
+    else:
+        q("UPDATE players SET left_game = 1, revealed = 1 WHERE id = ?", (player["id"],))
+    if player["is_host"]:
+        # a table left without a host cannot start its game
+        nxt = q(
+            "SELECT id FROM players WHERE room_code = ? AND left_game = 0 AND is_display = 0 "
+            "ORDER BY joined_at, id LIMIT 1",
+            (pod["room_code"],),
+        ).fetchone()
+        if nxt:
+            q("UPDATE players SET is_host = 1 WHERE id = ?", (nxt["id"],))
+    table_mod.log_event(pod["room_code"], f"{name} was moved to another table by the organizer")
+
+
+def _seat_in_room(pod, name: str) -> str | None:
+    """Seat a moved entrant in their new table's room and hand back their token.
+
+    The token is new rather than carried across: a room token is scoped to one
+    room, and the one they were holding has just been retired at the table they
+    left. They pick this one up from their own tournament poll — `myPod` carries
+    it — so nothing has to be typed at the table.
+    """
+    from . import table as table_mod
+
+    if not pod["room_code"]:
+        return None
+    room = q("SELECT * FROM rooms WHERE code = ?", (pod["room_code"],)).fetchone()
+    if not room:
+        return None
+    seat_order = (
+        q(
+            "SELECT COALESCE(MAX(seat_order), 0) AS m FROM players WHERE room_code = ?",
+            (pod["room_code"],),
+        ).fetchone()["m"]
+        + 1
+    )
+    hosted = q(
+        "SELECT 1 FROM players WHERE room_code = ? AND is_host = 1 AND left_game = 0 LIMIT 1",
+        (pod["room_code"],),
+    ).fetchone()
+    playing = table_mod.norm_status(room["status"]) == "playing"
+    token = secrets.token_urlsafe(24)
+    q(
+        "INSERT INTO players (room_code, token, name, is_host, seat_order, life) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            pod["room_code"],
+            token,
+            name,
+            0 if hosted else 1,
+            seat_order,
+            # arriving at a game already under way: start them on the room's
+            # resource total rather than at null, which renders as no life at all
+            room["starting_life"] if playing else None,
+        ),
+    )
+    table_mod.log_event(pod["room_code"], f"{name} was moved to this table by the organizer")
+    if playing and room["mode"] == "treachery":
+        # nothing deals an identity into a game in progress, so say it at the
+        # table instead of leaving somebody silently card-less
+        table_mod.log_event(
+            pod["room_code"], f"{name} has no identity card — deal one or restart the game"
+        )
+    return token
+
+
 @router.post("/{code}/rounds")
 def open_round(code: str, body: RoundBody, request: Request):
     """Pair, seat, and create a room per pod. Pairing is computed and persisted
@@ -788,6 +888,234 @@ def close_round(code: str, request: Request):
     q("UPDATE trounds SET status = 'closed' WHERE id = ?", (rnd["id"],))
     touch(t["code"])
     return {"ok": True}
+
+
+# ---- seating overrides ----
+#
+# The pairer is the only thing that seats anyone, which is right for the first
+# minute of a round and wrong for the hour after it: somebody registers late,
+# two people were split by a mistake anyone at the table can see, a table is
+# being streamed and wants a name rather than a number.
+#
+# All three overrides stop at the same line — a recorded result. A pod's result
+# is a ruling about a specific set of players, and moving someone in or out
+# after it would silently rewrite a decided game: their points would follow them
+# to a table they never played at, and `met_history` would claim they faced
+# people they never sat with. Before a result there is nothing to rewrite, so
+# the move is free; after one the organizer's route is to correct the result,
+# which is versioned and auditable, rather than to re-pair around it.
+#
+# `met_history` and `standings` are both derived from `pod_seats` rather than
+# stored, so a move that happens before a result needs no repair: whoever is
+# sitting at the table when it is decided is who played there.
+
+MIN_POD_SEATS = 3   # pod_sizes() never produces fewer, and an override shouldn't either
+
+
+class MoveBody(BaseModel):
+    entrantId: str
+
+
+class SeatOrderBody(BaseModel):
+    entrantIds: list[str] = Field(default_factory=list)
+
+
+class PodNameBody(BaseModel):
+    #: null or blank clears it and the table goes back to being its number
+    name: str | None = Field(default=None, max_length=40)
+
+
+def active_round(code: str):
+    rnd = q(
+        "SELECT * FROM trounds WHERE tournament_code = ? AND status = 'active'", (code,)
+    ).fetchone()
+    if not rnd:
+        raise HTTPException(409, "no round is open")
+    return rnd
+
+
+def seat_count(pod_id: int) -> int:
+    return q("SELECT COUNT(*) AS c FROM pod_seats WHERE pod_id = ?", (pod_id,)).fetchone()["c"]
+
+
+def require_rearrangeable(pod, rnd):
+    """A pod may only be re-arranged while it is live and undecided."""
+    if pod["round_id"] != rnd["id"]:
+        raise HTTPException(409, "that table belongs to a round that is no longer open")
+    decided = pod["status"] == "complete" or q(
+        "SELECT 1 FROM pod_results WHERE pod_id = ? LIMIT 1", (pod["id"],)
+    ).fetchone()
+    if decided:
+        raise HTTPException(
+            409,
+            f"table {pod['number']} already has a result — moving someone now would "
+            "rewrite a decided game; correct the result instead",
+        )
+
+
+@router.post("/{code}/pods/{pod_id}/move")
+async def move_entrant(code: str, pod_id: int, body: MoveBody, request: Request):
+    """Move an entrant to this table, from wherever the pairer put them.
+
+    The pod in the path is the *destination*: "seat them here" is the action an
+    organizer is taking, and the table they came from is derivable. An entrant
+    with no seat in the open round — somebody who registered after it was
+    paired — is seated rather than moved, which is the same operation with an
+    empty source.
+    """
+    t, _ = require_organizer(code, request)
+    cfg = settings_of(t)
+    rnd = active_round(t["code"])
+    dest = pod_in(t["code"], pod_id)
+    require_rearrangeable(dest, rnd)
+
+    entrant = resolve_entrant(t["code"], body.entrantId)
+    if not entrant:
+        raise HTTPException(404, "no such entrant")
+    if entrant["dropped_at"]:
+        raise HTTPException(409, f"{entrant['name']} has dropped — undrop them before seating them")
+
+    src = q(
+        "SELECT p.*, s.room_token AS seat_token FROM pod_seats s JOIN pods p ON p.id = s.pod_id "
+        "WHERE p.round_id = ? AND s.entrant_id = ?",
+        (rnd["id"], entrant["id"]),
+    ).fetchone()
+    if src and src["id"] == dest["id"]:
+        # a double-tap, or two organizers doing the same thing; not an error
+        return {"ok": True, "moved": False, "from": dest["number"], "to": dest["number"]}
+    if src:
+        require_rearrangeable(src, rnd)
+        left = seat_count(src["id"]) - 1
+        if left < MIN_POD_SEATS:
+            raise HTTPException(
+                409,
+                f"that would leave table {src['number']} with {left} — a pod never goes "
+                f"below {MIN_POD_SEATS}; move somebody in there first",
+            )
+    # The pairer's own ceiling: pod_sizes() grows a pod by one to absorb a
+    # remainder and never further, so an override that seats a seventh player at
+    # a four-player event is doing something the pairer would refuse to do.
+    cap = cfg["podSize"] + 1
+    if seat_count(dest["id"]) + 1 > cap:
+        raise HTTPException(
+            409, f"table {dest['number']} already seats {cap} — this event pods {cfg['podSize']}"
+        )
+
+    if src:
+        q("DELETE FROM pod_seats WHERE pod_id = ? AND entrant_id = ?", (src["id"], entrant["id"]))
+        # close the gap they left: seat order is turn order, and a hole in it
+        # reads at the table as a player who hasn't arrived yet
+        for i, r in enumerate(
+            q(
+                "SELECT entrant_id FROM pod_seats WHERE pod_id = ? ORDER BY seat", (src["id"],)
+            ).fetchall(),
+            1,
+        ):
+            q(
+                "UPDATE pod_seats SET seat = ? WHERE pod_id = ? AND entrant_id = ?",
+                (i, src["id"], r["entrant_id"]),
+            )
+        _unseat_from_room(src, src["seat_token"], entrant["name"])
+
+    seat_no = (
+        q(
+            "SELECT COALESCE(MAX(seat), 0) AS m FROM pod_seats WHERE pod_id = ?", (dest["id"],)
+        ).fetchone()["m"]
+        + 1
+    )
+    token = _seat_in_room(dest, entrant["name"])
+    q(
+        "INSERT INTO pod_seats (pod_id, entrant_id, seat, room_token) VALUES (?, ?, ?, ?)",
+        (dest["id"], entrant["id"], seat_no, token),
+    )
+    touch(t["code"])
+
+    rooms = [p["room_code"] for p in (src, dest) if p and p["room_code"]]
+    if src and src["room_code"]:
+        # taking a player out can leave one person alone in a live game, which
+        # is a finished game — the same call `leave` makes for the same reason
+        from . import table as table_mod
+
+        room = q("SELECT * FROM rooms WHERE code = ?", (src["room_code"],)).fetchone()
+        if room:
+            await table_mod.check_last_standing(room)
+    await push_to_pods(room_codes=rooms)
+    return {
+        "ok": True,
+        "moved": True,
+        "from": src["number"] if src else None,
+        "to": dest["number"],
+        "seat": seat_no,
+    }
+
+
+@router.post("/{code}/pods/{pod_id}/seats")
+async def set_pod_seat_order(code: str, pod_id: int, body: SeatOrderBody, request: Request):
+    """Set turn order at one table.
+
+    Seat 1 takes the first turn, which is a real advantage in multiplayer, so
+    this is the arranging half of `seatAssignment: "manual"` — without it that
+    mode only ever meant "leave the pairer's order alone".
+    """
+    t, _ = require_organizer(code, request)
+    rnd = active_round(t["code"])
+    pod = pod_in(t["code"], pod_id)
+    require_rearrangeable(pod, rnd)
+
+    seats = q(
+        "SELECT s.entrant_id, s.room_token, e.public_id FROM pod_seats s "
+        "JOIN entrants e ON e.id = s.entrant_id WHERE s.pod_id = ? ORDER BY s.seat",
+        (pod["id"],),
+    ).fetchall()
+    by_public = {s["public_id"]: s for s in seats}
+    wanted = [str(x) for x in body.entrantIds]
+    if sorted(wanted) != sorted(by_public):
+        # a partial order would leave duplicate or missing seat numbers, so this
+        # takes the whole table or nothing
+        raise HTTPException(400, "list every player at this table exactly once")
+
+    for i, pub in enumerate(wanted, 1):
+        row = by_public[pub]
+        q(
+            "UPDATE pod_seats SET seat = ? WHERE pod_id = ? AND entrant_id = ?",
+            (i, pod["id"], row["entrant_id"]),
+        )
+        if row["room_token"]:
+            # the room seats the same people; leaving it on the pairer's order
+            # would show one table two different turn orders
+            q(
+                "UPDATE players SET seat_order = ? WHERE room_code = ? AND token = ?",
+                (i, pod["room_code"], row["room_token"]),
+            )
+    touch(t["code"])
+    await push_to_pods(room_codes=[pod["room_code"]] if pod["room_code"] else [])
+    return {"ok": True, "seats": wanted}
+
+
+@router.post("/{code}/pods/{pod_id}/name")
+async def name_pod(code: str, pod_id: int, body: PodNameBody, request: Request):
+    """Name a table.
+
+    Pods are numbered, and a number is the right default, but "Feature" or "Bar
+    side" is what actually gets called across a hall. The number stays the pod's
+    identity — the name is a label, never something anything looks up by.
+    """
+    t, _ = require_organizer(code, request)
+    pod = pod_in(t["code"], pod_id)
+    name = (body.name or "").strip()
+    if name:
+        clash = q(
+            "SELECT number FROM pods WHERE round_id = ? AND id != ? AND label = ? COLLATE NOCASE",
+            (pod["round_id"], pod["id"], name),
+        ).fetchone()
+        if clash:
+            # two tables answering to one name in the same round is worse than
+            # no name at all — somebody gets sent to the wrong one
+            raise HTTPException(409, f"table {clash['number']} in this round is already called that")
+    q("UPDATE pods SET label = ? WHERE id = ?", (name or None, pod["id"]))
+    touch(t["code"])
+    await push_to_pods(room_codes=[pod["room_code"]] if pod["room_code"] else [])
+    return {"ok": True, "podId": pod["id"], "table": pod["number"], "name": name or None}
 
 
 # ---- results ----
