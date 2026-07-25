@@ -37,6 +37,7 @@ from .accounts import SESSION_COOKIE, account_for_session, current_account, requ
 from .audit import AUTHZ_DENY, security_event
 from .db import q
 from .games import canonical_policy, known_games, profile_for, structure_for
+from .importers import ImportProblem, adapter_for, known_sources
 from .pairing import Entrant as PairEntrant
 from .pairing import bracket_pods, pair_round, seat_pods
 
@@ -110,6 +111,15 @@ SANCTIONING_MODES = ("off", "optional", "required")
 # is a different fairness decision from the one the organizer asked for and is
 # invisible afterwards.
 SEAT_MODES = ("random", "by_standings", "manual")
+
+# What a pod may be ruled, and what a round may be. Both are stored as text
+# (`pod_results.kind`, `trounds.kind`) and both are checked at every boundary
+# that writes one, because neither is guessable from the value: an unknown
+# result kind scores as a placement — TopDeck's literal "Draw" forwarded by an
+# import adapter would have been recorded as a win for whoever was listed first
+# — and an unknown round kind is neither paired nor adjudicated as a bracket.
+RESULT_KINDS = ("placement", "draw", "bye", "unfinished")
+ROUND_KINDS = ("swiss", "elimination")
 
 # Settings keys renamed after clients had already shipped. The old name is
 # accepted on create and rewritten to the new one, so a build of the app that
@@ -980,7 +990,7 @@ class CutBody(BaseModel):
 
 
 class ResultBody(BaseModel):
-    kind: str = "placement"                    # placement | draw | unfinished
+    kind: str = "placement"                    # one of RESULT_KINDS
     places: list[dict] = Field(default_factory=list)   # [{entrantId, place}]
     note: str | None = None
     expectedVersion: int | None = None
@@ -1220,19 +1230,21 @@ def get_round(code: str, number: int, request: Request, token: str | None = None
     }
 
 
-@router.post("/{code}/entrants")
-async def add_entrants(code: str, body: EntrantsBody, request: Request):
-    t, _ = require_organizer(code, request)
-    incoming = [{"name": n, "externalRef": None} for n in body.names]
-    incoming += [
-        {"name": str(e.get("name", "")), "externalRef": e.get("externalRef")}
-        for e in body.entrants
-    ]
+def upsert_entrants(code: str, incoming: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Add `[{name, externalRef}]` to the roster: `(added, matched)`.
 
+    Shared by the roster endpoint and the import adapter so the idempotence rule
+    has one implementation — an import that matched people differently from the
+    endpoint an organizer types into would duplicate half a field.
+
+    `account_id` is not written here and is not written anywhere as a side
+    effect: an entrant is a name in one event, and being signed in must not
+    quietly attach an event's results to an account (TestIdentityStaysSeparate).
+    """
     added, matched = [], []
     for item in incoming:
-        name = item["name"].strip()
-        ref = (item["externalRef"] or None) and str(item["externalRef"]).strip()
+        name = str(item.get("name") or "").strip()
+        ref = (item.get("externalRef") or None) and str(item["externalRef"]).strip()
         if not name:
             continue
         if ref:
@@ -1240,7 +1252,7 @@ async def add_entrants(code: str, body: EntrantsBody, request: Request):
             # Matching on name would make display names identity.
             existing = q(
                 "SELECT id, public_id, name FROM entrants WHERE tournament_code = ? AND external_ref = ?",
-                (t["code"], ref),
+                (code, ref),
             ).fetchone()
             if existing:
                 if existing["name"] != name:  # they renamed upstream; follow it
@@ -1253,9 +1265,21 @@ async def add_entrants(code: str, body: EntrantsBody, request: Request):
         q(
             "INSERT INTO entrants (tournament_code, name, external_ref, public_id) "
             "VALUES (?, ?, ?, ?)",
-            (t["code"], name, ref, pub),
+            (code, name, ref, pub),
         )
         added.append({"entrantId": pub, "name": name, "externalRef": ref})
+    return added, matched
+
+
+@router.post("/{code}/entrants")
+async def add_entrants(code: str, body: EntrantsBody, request: Request):
+    t, _ = require_organizer(code, request)
+    incoming = [{"name": n, "externalRef": None} for n in body.names]
+    incoming += [
+        {"name": str(e.get("name", "")), "externalRef": e.get("externalRef")}
+        for e in body.entrants
+    ]
+    added, matched = upsert_entrants(t["code"], incoming)
     touch(t["code"])
     await broadcast_tournament(t["code"])
     return {"added": added, "matched": matched}
@@ -1912,6 +1936,309 @@ async def close_round(code: str, request: Request):
     return {"ok": True}
 
 
+# ---- imports ----
+#
+# An organizer who ran registration and the first rounds somewhere else should
+# not retype a field of sixty people. What comes in is entrants, pairings and
+# results; what goes back is nothing at all, and the endpoints below say so in
+# every response because an organizer who assumes a sync will report results
+# here and wonder why the other site never shows them.
+#
+# Everything source-specific lives in importers.py. This half knows only the
+# adapter's own vocabulary — refs, rounds, pods, seats, kinds — so a second
+# source is a new adapter and no change here.
+
+#: Said in full wherever an import is offered or performed. One sentence, in the
+#: response body rather than in documentation nobody reads mid-event.
+IMPORT_ONE_WAY = (
+    "Imports are one-way. Pairings and results come in; nothing goes back — "
+    "the source's API cannot accept results, so anything recorded here stays here."
+)
+
+#: Bounds on a single request. An import writes a row per seat per pod, and the
+#: payload is a file an organizer downloaded from somewhere else: worth a limit
+#: that is far above any real event and far below a request that hurts.
+MAX_IMPORT_ENTRANTS = 2000
+MAX_IMPORT_ROUNDS = 40
+
+
+class ImportBody(BaseModel):
+    source: str = "topdeck"
+    #: the source's own export, exactly as it came out of their API
+    payload: dict = Field(default_factory=dict)
+    #: read and validate it, write nothing, return what *would* happen
+    dryRun: bool = False
+
+
+@router.get("/import/sources")
+def import_sources():
+    """What this server can import from, and the direction it flows.
+
+    `oneWay` is repeated on every source as well as on the envelope so a client
+    cannot render the list without the fact attached to each row.
+    """
+    return {"sources": known_sources(), "oneWay": True, "note": IMPORT_ONE_WAY}
+
+
+def _import_round_summary(rnd, skipped: bool = False) -> dict:
+    """One imported round as the response describes it. Pure — the dry run and
+    the real thing report from the same function, so a preview cannot promise
+    something the import then does differently."""
+    return {
+        "number": rnd.number,
+        "kind": rnd.kind,
+        "cutTo": rnd.cut_to,
+        "pods": len(rnd.pods),
+        "byes": sum(1 for p in rnd.pods if p.kind == "bye"),
+        "results": sum(1 for p in rnd.pods if p.kind),
+        "awaiting": sum(1 for p in rnd.pods if not p.kind),
+        # already here, so it was read and left alone rather than replayed
+        "skipped": skipped,
+    }
+
+
+def _check_import(code: str, event) -> tuple[list, list]:
+    """Validate the whole import and split it: `(to_apply, skipped)`.
+
+    Nothing is written until every round has been through here. A half-applied
+    import is worse than a refused one: the organizer cannot see which half
+    landed, and the standings are wrong in the meantime.
+
+    An export from the source is the whole event every time, so a re-run
+    inevitably re-sends rounds this tournament already has. Those are skipped,
+    not replayed and not refused — that is what makes an import re-runnable,
+    the same property `external_ref` gives the roster. An import therefore only
+    ever *appends*: it never overwrites a round, and never inserts one behind
+    the last round this event has played, because both would rewrite results
+    people were already told at the table.
+    """
+    if len(event.entrants) > MAX_IMPORT_ENTRANTS:
+        raise HTTPException(400, f"that is more than {MAX_IMPORT_ENTRANTS} entrants")
+    if len(event.rounds) > MAX_IMPORT_ROUNDS:
+        raise HTTPException(400, f"that is more than {MAX_IMPORT_ROUNDS} rounds")
+
+    active = q(
+        "SELECT number FROM trounds WHERE tournament_code = ? AND status = 'active'", (code,)
+    ).fetchone()
+    if active:
+        raise HTTPException(409, "close the current round before importing")
+
+    played = q(
+        "SELECT COALESCE(MAX(number), 0) AS n FROM trounds WHERE tournament_code = ?", (code,)
+    ).fetchone()["n"]
+    to_apply = [r for r in event.rounds if r.number > played]
+    skipped = [r for r in event.rounds if r.number <= played]
+
+    seen = set()
+    for rnd in to_apply:
+        if rnd.number in seen:
+            raise HTTPException(400, f"the payload has two round {rnd.number}s")
+        seen.add(rnd.number)
+        if rnd.kind not in ROUND_KINDS:
+            raise HTTPException(400, f"unknown round kind '{rnd.kind}'")
+        for pod in rnd.pods:
+            if pod.kind is not None and pod.kind not in RESULT_KINDS:
+                raise HTTPException(400, f"unknown result kind '{pod.kind}'")
+            if not pod.seats:
+                raise HTTPException(400, f"round {rnd.number} has a table seating nobody")
+            # a seat is one person per pod in the schema; catching it here keeps
+            # a malformed payload a 400 rather than a half-written round
+            if len({s.ref for s in pod.seats}) != len(pod.seats):
+                raise HTTPException(
+                    400, f"round {rnd.number} seats somebody twice at one table"
+                )
+
+    # Only one round may be open at a time, so a round the source has not
+    # finished can only be the last one imported.
+    for rnd in to_apply[:-1]:
+        if any(not p.kind for p in rnd.pods):
+            raise HTTPException(
+                409,
+                f"round {rnd.number} has tables with no result — import up to it, "
+                "rule them here, then import the rest",
+            )
+
+    known = {e.ref for e in event.entrants}
+    for rnd in to_apply:
+        for pod in rnd.pods:
+            for seat in pod.seats:
+                if seat.ref not in known:
+                    raise HTTPException(
+                        400, f"round {rnd.number} seats {seat.ref}, who is not in the field"
+                    )
+    return to_apply, skipped
+
+
+def apply_import(t, event, to_apply, skipped) -> dict:
+    """Write an adapter's reading of an event into this tournament.
+
+    Source-agnostic on purpose: it takes the shapes in importers.py and nothing
+    else, so adding a source never reaches in here. Rounds are appended in the
+    order the source gave them, results are written through the same
+    `_write_result` an organizer's ruling goes through — one scoring path, so an
+    imported bye is paid exactly what a bye issued here is paid.
+
+    Imported pods get no room. Their games were played somewhere else, and a
+    room for a finished game is a table nobody will ever sit at.
+    """
+    code = t["code"]
+    added, matched = upsert_entrants(
+        code, [{"name": e.name, "externalRef": e.ref} for e in event.entrants]
+    )
+    by_ref = {
+        r["external_ref"]: r["id"]
+        for r in q(
+            "SELECT id, external_ref FROM entrants "
+            "WHERE tournament_code = ? AND external_ref IS NOT NULL",
+            (code,),
+        ).fetchall()
+    }
+
+    rounds = [_import_round_summary(r, skipped=True) for r in skipped]
+    for rnd in to_apply:
+        # a round every table has a result for is history the moment it lands;
+        # one still missing a ruling is the round the organizer is now running
+        complete = all(p.kind for p in rnd.pods)
+        cur = q(
+            "INSERT INTO trounds (tournament_code, number, status, seed, kind) "
+            "VALUES (?, ?, ?, 0, ?)",
+            (code, rnd.number, "closed" if complete else "active", rnd.kind),
+        )
+        round_id = cur.lastrowid
+        # keep the table numbers people were called to; a bye row has none, so
+        # those pods take the next free numbers rather than colliding on one
+        taken = {p.number for p in rnd.pods if p.number}
+        spare = (n for n in range(1, len(rnd.pods) + len(taken) + 1) if n not in taken)
+        for pod in rnd.pods:
+            number = pod.number or next(spare)
+            cur = q(
+                "INSERT INTO pods (round_id, number, status, label) VALUES (?, ?, ?, ?)",
+                (round_id, number, "awaiting_result", pod.label),
+            )
+            pod_id = cur.lastrowid
+            for seat_no, seat in enumerate(pod.seats, 1):
+                q(
+                    "INSERT INTO pod_seats (pod_id, entrant_id, seat) VALUES (?, ?, ?)",
+                    (pod_id, by_ref[seat.ref], seat_no),
+                )
+            if pod.kind:
+                row = q("SELECT * FROM pods WHERE id = ?", (pod_id,)).fetchone()
+                _write_result(
+                    t,
+                    row,
+                    pod.kind,
+                    [
+                        {"entrantId": by_ref[s.ref], "place": s.place}
+                        for s in pod.seats
+                        if s.place is not None
+                    ],
+                    "import",
+                    None,
+                )
+        rounds.append(_import_round_summary(rnd))
+
+    seeded = _seed_imported_cut(code, to_apply, by_ref)
+    if to_apply and t["status"] == "setup":
+        q("UPDATE tournaments SET status = 'running' WHERE code = ?", (code,))
+    touch(code)
+    return {
+        "entrants": {"added": added, "matched": matched},
+        "rounds": sorted(rounds, key=lambda r: r["number"]),
+        "cutSeeded": seeded,
+    }
+
+
+def _seed_imported_cut(code: str, rounds, by_ref: dict) -> int:
+    """Record who made the cut, from the first imported bracket round.
+
+    The cut flag on the round (`trounds.kind`) is only half of what "Top 8"
+    means: the rest of the app asks `entrants.cut_seed` who is in the bracket at
+    all — it is what makes `GET /{code}` show a bracket and what makes the next
+    round pair from the cut instead of from Swiss standings. Inventing a second
+    notion of a cut for imports would leave two answers to one question.
+
+    Seeds come from the order the source lists people in that round, table by
+    table then seat by seat. That is the bracket's own order; the standings that
+    produced it were computed somewhere else and are not ours to re-derive.
+    """
+    first = next((r for r in rounds if r.kind == "elimination"), None)
+    if not first or cut_seeds(code):
+        return 0
+    order = [s.ref for pod in first.pods for s in pod.seats]
+    for seed, ref in enumerate(dict.fromkeys(order), 1):
+        q("UPDATE entrants SET cut_seed = ? WHERE id = ?", (seed, by_ref[ref]))
+    return len(set(order))
+
+
+@router.post("/{code}/import")
+async def import_event(code: str, body: ImportBody, request: Request):
+    """Import an event from another system. Organizer only, and one-way."""
+    t, _ = require_organizer(code, request)
+    if t["status"] == "ended":
+        raise HTTPException(409, "this tournament has ended")
+    if t["status"] == "expired":
+        raise HTTPException(409, "this tournament has expired")
+    adapter = adapter_for(body.source)
+    if not adapter:
+        known = ", ".join(sorted(s["key"] for s in known_sources()))
+        raise HTTPException(400, f"unknown import source — this server reads {known}")
+    try:
+        event = adapter.read(body.payload)
+    except ImportProblem as e:
+        # the adapter's refusals are the organizer's to read: they name the
+        # round and the table, which is what they need to fix upstream
+        raise HTTPException(400, str(e))
+    to_apply, skipped = _check_import(t["code"], event)
+
+    head = {
+        "source": event.source,
+        "sourceName": adapter.name,
+        "name": event.name,
+        "oneWay": True,
+        "note": IMPORT_ONE_WAY,
+        "dryRun": body.dryRun,
+    }
+    if body.dryRun:
+        # Nothing is written, so someone who would be added has no entrant id
+        # yet — the one field a preview cannot honestly fill in. People already
+        # here keep theirs.
+        have = {
+            r["external_ref"]: r["public_id"]
+            for r in q(
+                "SELECT external_ref, public_id FROM entrants WHERE tournament_code = ? "
+                "AND external_ref IS NOT NULL",
+                (t["code"],),
+            ).fetchall()
+        }
+        return {
+            **head,
+            "entrants": {
+                "added": [
+                    {"name": e.name, "externalRef": e.ref}
+                    for e in event.entrants
+                    if e.ref not in have
+                ],
+                "matched": [
+                    {"entrantId": have[e.ref], "name": e.name, "externalRef": e.ref}
+                    for e in event.entrants
+                    if e.ref in have
+                ],
+            },
+            "rounds": sorted(
+                [_import_round_summary(r) for r in to_apply]
+                + [_import_round_summary(r, skipped=True) for r in skipped],
+                key=lambda r: r["number"],
+            ),
+            "cutSeeded": 0,
+        }
+
+    out = apply_import(t, event, to_apply, skipped)
+    # a field and a set of results appearing at once is the largest change a
+    # client can be shown; nobody should meet it on the next poll
+    await broadcast_tournament(t["code"])
+    return {**head, **out}
+
+
 # ---- seating overrides ----
 #
 # The pairer is the only thing that seats anyone, which is right for the first
@@ -2190,6 +2517,13 @@ def _write_result(t, pod, kind: str, places: list[dict], source: str, note: str 
 async def report_result(code: str, pod_id: int, body: ResultBody, request: Request):
     """Organizer override. Auto-detection writes the same rows from the room."""
     t, _ = require_organizer(code, request)
+    # The kind decides how the pod is scored, and an unrecognised one used to
+    # fall through to placement scoring with a 200 — so a client forwarding
+    # another system's spelling ("Draw") got a win for seat one, wrong points
+    # and wrong standings, with nothing to notice it by. §9's whole point is
+    # that the translation happens before this endpoint, not after it.
+    if body.kind not in RESULT_KINDS:
+        raise HTTPException(400, f"kind must be one of {', '.join(RESULT_KINDS)}")
     pod = pod_in(t["code"], pod_id)
     current = q(
         "SELECT COALESCE(MAX(version), 0) AS v FROM pod_results WHERE pod_id = ?", (pod_id,)

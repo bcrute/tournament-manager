@@ -362,6 +362,61 @@ changed — the guard is a rendering concern of the file only.
 Organizer-only, even though roster and standings are readable with the
 tournament code alone: a bulk file is not the same disclosure as a screen.
 
+### `GET /api/tournament/import/sources`
+```jsonc
+{ "sources": [ {"key": "topdeck", "name": "TopDeck Tournaments V2",
+                "docs": "https://topdeck.gg/docs/tournaments-v2",
+                "oneWay": true, "acceptsResults": false} ],
+  "oneWay": true,
+  "note": "Imports are one-way. …" }
+```
+`oneWay` is on every row as well as the envelope, so a client cannot render the
+list without the fact attached to each source. See §9.
+
+### `POST /api/tournament/{code}/import`  *(organizer)*
+```jsonc
+{ "source": "topdeck",
+  "payload": { /* their export, exactly as it came out of their API */ },
+  "dryRun": false }                    // true: validate and report, write nothing
+→ { "source": "topdeck", "sourceName": "TopDeck Tournaments V2",
+    "name": "Friday Duels", "oneWay": true, "note": "Imports are one-way. …",
+    "dryRun": false,
+    "entrants": { "added": [ {"entrantId","name","externalRef"} ],
+                  "matched": [ /* already here, name refreshed */ ] },
+    "rounds": [ {"number": 3, "kind": "elimination", "cutTo": 8, "pods": 4,
+                 "byes": 0, "results": 4, "awaiting": 0, "skipped": false} ],
+    "cutSeeded": 8 }
+```
+
+The **payload is read by an adapter**, never by the endpoint: the adapter names
+the source's shape, the endpoint knows only entrants, rounds, pods, seats and
+kinds (§9 for the mappings, `app/importers.py` for the readers). Adding a second
+source is a new adapter and no change to the tournament code.
+
+Entrants go through the same idempotent `externalRef` match as
+`POST /{code}/entrants`, so a re-run finds the same people. **`account_id` is
+never written** — an import creates entrants, not identities (§1).
+
+Rounds only ever **append**. Their export is the whole event every time, so a
+re-run re-sends rounds already here: those come back `"skipped": true`, unread
+and unchanged. A round numbered at or below the last round this event has played
+is never inserted or overwritten — that would rewrite results people were told
+at the table. Imported pods get no room; their games were played elsewhere.
+
+A round whose tables all have a result lands `closed`; one still missing a
+ruling lands `active`, and only the **last** round imported may be incomplete —
+409 otherwise, because only one round can be open. Results are written through
+the same path an organizer's ruling takes, so an imported bye scores exactly
+what a bye issued here scores.
+
+- Unknown `source` → **400** (never guessed at; the wrong reader is worse than
+  no import).
+- A payload the adapter will not guess at → **400** naming the round and table:
+  a player with no id, a winner who is not seated, an unrecognised round label.
+- A round already open here → **409** ("close the current round before
+  importing").
+- Ended or expired → **409**. Over 2000 entrants or 40 rounds → **400**.
+
 ### `POST /api/tournament/{code}/entrants/{id}/release`  *(organizer)*
 Clears the entrant's token so the seat can be claimed again. Idempotent.
 
@@ -607,12 +662,18 @@ open. Both messages name the count.
 
 ### `POST /api/tournament/{code}/pods/{pod_id}/result`  *(organizer)*
 ```jsonc
-{ "kind": "placement",                 // placement | draw | unfinished
+{ "kind": "placement",                 // placement | draw | bye | unfinished
   "places": [ {"entrantId": "kZ8vQ1nR", "place": 1} ],
   "note": "ruled a draw at time",
   "expectedVersion": 2 }               // optional optimistic-concurrency guard
 → { "ok": true, "version": 3 }
 ```
+
+Any other `kind` → **400**. The kind decides how the pod is scored, so an
+unrecognised one used to fall through to placement scoring silently: a client
+forwarding another system's spelling (`"Draw"`, §9) got a win for seat one and
+wrong standings with nothing to notice it by. `draw` and `bye` may be posted
+with no `places` at all — every seat then shares first place.
 
 Results are **versioned, never mutated** — an override appends. If
 `expectedVersion` is supplied and doesn't match the current max, **409**
@@ -628,6 +689,11 @@ order** — last standing is 1st. Written with `source: "auto"`.
 
 **An `auto` result never overwrites an `organizer` one.** The reverse is allowed:
 that's what override means. This is the least-tested path in the system (§8).
+
+A result's `source` is `auto`, `organizer` or `import`. `import` is a decision
+made in another system entirely (§9) and is kept apart from `organizer` so
+nobody reads a scorekeeper's ruling into a row nobody here ruled on. An
+imported pod has no room, so the automatic path never reaches one.
 
 ### `POST /api/tournament/{code}/timer`  *(organizer)*
 ```jsonc
@@ -901,7 +967,7 @@ adapter is a field rename rather than a translation layer:
 | `rounds[]` | `trounds` | `number` is always an integer (see below) |
 | `tables[]` | `pods` | rename only; a pod is a table with N players |
 | `players[]` | `pod_seats` | ours adds `seat` = turn order |
-| `winner_id` | `pod_results.places[]` | typed, ordered, multi-place |
+| `winner_id` | `pod_results.kind` + `pod_seats.place` | typed, ordered, multi-place; the wire shape is `places[]` on the result endpoint |
 | — | `entrants.external_ref` | `"source:id"`, makes imports re-runnable |
 
 **Where we deliberately differ**, and what an adapter must therefore do:
@@ -915,11 +981,32 @@ adapter is a field rename rather than a translation layer:
 | single `winner` per pod | expand to `places[]` | can't express placement, survival points, or a time-called draw |
 
 **Imports are one-way.** TopDeck's API cannot accept results, so pairings can
-flow in but our results stay local. Any UI that offers an import has to say this
-plainly, or organizers will assume a sync that does not exist.
+flow in but our results stay local. This is structural, not a policy: an adapter
+has one method, `read`, and no counterpart that sends anything back. Every
+import response and every row of `GET /import/sources` carries `oneWay: true`
+and says it in a sentence, because a UI that offers an import without saying so
+leaves organizers assuming a sync that does not exist.
 
-No adapter ships yet — `external_ref` and this mapping are the groundwork so
-that adding one later doesn't require a migration of live event data.
+**The adapter itself is a reader and nothing more.** `app/importers.py` holds
+the shapes above and one implementation of them (TopDeck); it touches no
+database and knows no tournament code. `POST /{code}/import` (§3) writes what an
+adapter returned, in the vocabulary of this table alone. Adding a second source
+means adding an adapter — if it meant editing the import endpoint, this boundary
+would be in the wrong place.
+
+Two details the table does not show:
+
+- **"Top 8" needs both halves.** `trounds.kind = "elimination"` says the round
+  is a bracket round; `entrants.cut_seed` says who is in the bracket at all,
+  and it is what makes the app show a cut and pair the next round from it
+  rather than from Swiss standings. An import seeds it from the order the
+  source lists people in the first bracket round — that is the bracket's own
+  order, and the standings behind it were computed elsewhere. It is the same
+  cut `POST /{code}/cut` produces, not a second notion of one.
+- **A bye is a pod of one.** Their `"Byes"` row is a list of people who sat out,
+  folded into one pseudo-table because their model has nowhere else to put it.
+  Ours does, so the row expands to one bye pod per player, each scored by
+  `settings.byeScoring`.
 
 ---
 
@@ -957,7 +1044,11 @@ that adding one later doesn't require a migration of live event data.
 - **Rename and export have no UI control yet.** Both endpoints are complete and
   tested (§3); the organizer screen has no rename field and no download button,
   so today they are reachable only by an API client.
-- **No import adapter** yet; the data model is ready for one (§9).
+- **The import has no UI.** `GET /import/sources` and `POST /{code}/import`
+  are complete and tested (§3, §9), but the organizer page has no way to pick a
+  source or hand over a file, so today an import is reachable only by an API
+  client. Whatever lands must print the one-way sentence beside the button, not
+  behind a help link.
 - **No organizer-visible expiry notice.** An expired tournament reads as
   `expired` in the API and in `GET /mine`, but no UI surfaces the distinction
   from `ended` yet.
