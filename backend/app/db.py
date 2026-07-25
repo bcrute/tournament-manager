@@ -110,7 +110,9 @@ _db.executescript(
         organizer_account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
         mode TEXT NOT NULL DEFAULT 'life',
         settings TEXT NOT NULL DEFAULT '{}',
-        status TEXT NOT NULL DEFAULT 'setup',   -- setup | running | ended
+        status TEXT NOT NULL DEFAULT 'setup',   -- setup | running | ended | expired
+                                                -- 'ended' is the organizer's call, 'expired' the
+                                                -- idle sweep's; only the first freezes standings
         created_at INTEGER NOT NULL DEFAULT (unixepoch()),
         last_active INTEGER
     );

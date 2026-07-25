@@ -68,7 +68,10 @@ create ──▶ add entrants ──▶ open round ──▶ [play] ──▶ re
              └──────────────────────── next round ◀─────────────────────────────┘
 ```
 
-`tournaments.status`: `setup` → `running` (first round opens) → `ended`.
+`tournaments.status`: `setup` → `running` (first round opens) → `ended`, or
+→ `expired` (idle sweep, §10). `ended` is the organizer's decision and freezes
+final standings; `expired` is the server retiring an abandoned event. Both are
+terminal and both refuse a new round with a 409; neither hides standings.
 `trounds.status`: `active` → `closed`. `pods.status`: `active` →
 `awaiting_result` → `complete`.
 
@@ -566,7 +569,23 @@ that adding one later doesn't require a migration of live event data.
 - **No CSV/JSON export** of standings or results.
 - **No entrant rename** outside an import.
 - **No import adapter** yet; the data model is ready for one (§9).
-- **Tournaments never expire.** Rooms belonging to a live tournament are exempt
-  from the 3 h idle sweep, which is what keeps a pod alive over lunch — but
-  nothing expires the tournament itself. `tournaments.IDLE_TIMEOUT` is defined
-  and read by nothing; either wire it up or delete it.
+- **No organizer-visible expiry notice.** An expired tournament reads as
+  `expired` in the API and in `GET /mine`, but no UI surfaces the distinction
+  from `ended` yet.
+
+### Idle expiry
+
+A tournament idles out after `tournaments.IDLE_TIMEOUT` (12 h — a tournament
+day, not a room's 3 h) with no organizer or entrant activity, and its status
+becomes `expired`. Two paths, the same shape as the room sweep: a bulk
+`expire_idle_tournaments()` on `POST /api/tournament` and `GET /mine`, and a
+single-row check inside `get_tournament` so any read of one stale tournament
+settles it. Expiry is not a 410 — an expired event still reads, with its
+standings and history intact; what it can no longer do is open a round.
+
+Rooms belonging to a **live** tournament are exempt from the 3 h room sweep,
+which is what keeps a pod alive over lunch. Live means the tournament is
+neither `ended` nor `expired` **and** is itself inside its 12 h window — both
+room-expiry paths (`expire_idle_rooms` and the per-room check in `get_room`)
+ask that same question. So ending or expiring a tournament hands its pod rooms
+back to the room sweep; nothing stays open behind an event that is over.
