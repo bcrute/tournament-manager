@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from .accounts import require_account
 from .audit import AUTHZ_DENY, security_event
 from .db import q
-from .games import known_games, profile_for, structure_for
+from .games import canonical_policy, known_games, profile_for, structure_for
 from .pairing import Entrant as PairEntrant
 from .pairing import pair_round, seat_pods
 
@@ -471,8 +471,12 @@ def create_tournament(body: CreateBody, request: Request):
     code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(5))
     allowed = defaults_for(body.game)
     cfg = {k: v for k, v in body.settings.items() if k in allowed}
-    if "timeCalledPolicy" in cfg and cfg["timeCalledPolicy"] not in profile.time_called_policies:
-        raise HTTPException(400, f"{profile.name} does not offer that time-called policy")
+    if "timeCalledPolicy" in cfg:
+        # a client on an older build still sends the old spelling; accept it and
+        # store the current one so the alias stays a boundary concern
+        cfg["timeCalledPolicy"] = canonical_policy(cfg["timeCalledPolicy"])
+        if cfg["timeCalledPolicy"] not in profile.time_called_policies:
+            raise HTTPException(400, f"{profile.name} does not offer that time-called policy")
     q(
         "INSERT INTO tournaments (code, name, organizer_account_id, game, mode, settings, last_active) "
         "VALUES (?, ?, ?, ?, ?, ?, unixepoch())",
@@ -913,7 +917,9 @@ def resolve_pod_at_time(t, cfg, pod):
     house rules that leagues genuinely run, so they are opt-in and named
     honestly rather than presented as official.
     """
-    policy = cfg["timeCalledPolicy"]
+    # tournaments settled before the rename still carry `highest_life` in their
+    # stored settings; canonicalise on read so a live event keeps resolving
+    policy = canonical_policy(cfg["timeCalledPolicy"])
     if policy == "organizer_decides":
         q("UPDATE pods SET status = 'awaiting_result' WHERE id = ?", (pod["id"],))
         return None
@@ -944,17 +950,22 @@ def resolve_pod_at_time(t, cfg, pod):
     # everyone eliminated is ranked below survivors, latest death placing higher
     tail = [eid for _, eid in sorted(out, key=lambda x: -x[0])]
 
-    if policy == "highest_life":
-        alive.sort(key=lambda x: -x[0])
+    if policy == "highest_resource":
+        # which way the resource ranks is the profile's to say, not this
+        # function's: MTG life counts down, another game's may count up
+        profile = profile_for(t["game"] if "game" in t.keys() else None)
+        alive.sort(key=lambda x: profile.resource_rank_key(x[0]))
         ordered = [eid for _, eid in alive]
         places = [{"entrantId": eid, "place": i} for i, eid in enumerate(ordered, 1)]
-        # a tie on life is a genuine tie, not an arbitrary ordering
+        # a tie on the resource is a genuine tie, not an arbitrary ordering
         for i in range(1, len(alive)):
             if alive[i][0] == alive[i - 1][0]:
                 places[i]["place"] = places[i - 1]["place"]
         start = (places[-1]["place"] + 1) if places else 1
         places += [{"entrantId": eid, "place": start + i} for i, eid in enumerate(tail)]
-        return _write_result(t, pod, "placement", places, "auto", "time called — ranked on life")
+        return _write_result(
+            t, pod, "placement", places, "auto", f"time called — ranked on {profile.resource}"
+        )
 
     # draw_survivors: everyone still alive draws; the dead keep their order below
     places = [{"entrantId": eid, "place": 1} for _, eid in alive]
@@ -998,7 +1009,7 @@ async def call_time(code: str, request: Request):
     touch(t["code"])
     await push_to_pods(rnd["id"])
     return {"ok": True, "decided": decided, "extraTurns": counting,
-            "turns": extra, "policy": cfg["timeCalledPolicy"]}
+            "turns": extra, "policy": canonical_policy(cfg["timeCalledPolicy"])}
 
 
 class TurnBody(BaseModel):

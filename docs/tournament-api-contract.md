@@ -239,7 +239,7 @@ organizer ruling is never overwritten.
 |---|---|
 | `draw_all` *(default)* | every unfinished pod is a draw |
 | `draw_survivors` | players still alive draw; eliminated rank below in death order |
-| `highest_life` | survivors ranked on life, **equal life is a genuine tie**; eliminated below |
+| `highest_resource` | survivors ranked on the profile's resource, **an equal total is a genuine tie**; eliminated below. `highest_life` is accepted as an alias — it is persisted in running events' settings — and stored as `highest_resource` |
 | `organizer_decides` | pods move to `awaiting_result`; nothing automatic |
 
 `draw_all` is the default because **MTR 2.4 makes a match that goes to time a
@@ -247,8 +247,16 @@ draw** — life totals do not rank it outside single elimination. The other
 policies are house rules that leagues really do run, so they are opt-in and
 named for what they are rather than presented as official.
 
-Eliminated players never outrank survivors, whatever their life total was when
-they died.
+Eliminated players never outrank survivors, whatever their resource total was
+when they died.
+
+Which way `highest_resource` sorts comes from the profile, not from the code:
+`resource_goal` is the value that ends the game for the player who reaches it
+and `resource_direction` is the way the resource travels there, so the player
+*furthest from* that value ranks first. MTG life counts down to 0, so 30 beats
+12; a resource counting up to its goal ranks the other way and 2 beats 9. The
+note written onto the result is worded from the profile's resource name —
+`time called — ranked on life` for MTG.
 
 **Time called does not decide the pod.** MTR 2.4: the current turn is finished
 and five additional turns are played, and only an incomplete game *after* them
@@ -471,7 +479,7 @@ What varies by game lives in `games.py` as a `GameProfile`:
 |---|---|
 | `default_pod_size` | seats at a table — 4 for multiplayer Commander, 2 for a duel |
 | `default_round_minutes` | round length |
-| `resource`, `resource_start`, `resource_direction`, `resource_goal` | what players track and which way it moves: MTG counts life *down* from 40 to 0; a game like Lorcana counts lore *up* to a target |
+| `resource`, `resource_start`, `resource_direction`, `resource_goal` | what players track and which way it moves: MTG counts life *down* from 40 to 0; a resource that counts *up* to its goal (poison, corruption) ranks the other way. All four are emitted by `/games` and the direction drives `highest_resource` ranking |
 | `modes` | room modes valid for this game; empty means no live table state, scored by hand |
 | `time_called_policies` | offered policies, first is the default |
 | `sanctioning_account` | label for the publisher account email, or `None` |
@@ -481,6 +489,7 @@ What varies by game lives in `games.py` as a `GameProfile`:
 { "games": [ { "key": "mtg", "name": "Magic: The Gathering",
                "publisher": "Wizards of the Coast", "defaultPodSize": 4,
                "modes": ["life", "treachery"], "resource": "life",
+               "resourceStart": 40, "resourceDirection": "down", "resourceGoal": 0,
                "timeCalledPolicies": [ … ], "sanctioningAccount": "Wizards account email" } ] }
 ```
 
@@ -507,9 +516,10 @@ supplies defaults and vocabulary; it never adjudicates a game.
 **Known MTG leakage still to clean up:** the settings key `startingLife` keeps
 its name because the room API already speaks it and renaming a live key buys
 nothing today — read it as "the profile's resource start". Likewise
-`collectWizardsEmail` is really "publisher account email", and the
-`highest_life` policy is really "highest resource". Rename them together when a
-second game lands, not before.
+`collectWizardsEmail` is really "publisher account email". The `highest_life`
+policy *has* been renamed to `highest_resource`; the old spelling stays
+accepted as an alias because it is sitting in the settings JSON of tournaments
+that are running right now.
 
 ---
 
