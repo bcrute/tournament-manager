@@ -190,6 +190,62 @@ second row; an upstream rename updates the existing name rather than forking the
 person. Never match on display name — that would make names identity, the flaw
 we rejected in §7.
 
+### `POST /api/tournament/{code}/entrants/{id}/rename`  *(organizer)*
+```jsonc
+{ "name": "Ada" }                      // 1–80 chars; blank after trim → 400
+→ { "ok": true, "entrantId": "…", "name": "Ada" }
+```
+
+Changes the display name and **nothing else**: the entrant token stays valid,
+the public id is unchanged, and every recorded place, point and pairing survives
+— they all key on the id, never the name. Duplicate names are accepted for the
+same reason the import path refuses to match on them (§7): names repeat, ids
+don't.
+
+It does **not** rewrite the player rows of a pod already seated. A room seat is
+a separate identity — a player renaming themselves inside a room does not touch
+their entrant either — so an in-progress game keeps the name it was seated
+under, and the new name appears on the roster and standings at once and on the
+next round's seats. Unknown id, or an internal integer id, is **404**.
+
+### `GET /api/tournament/{code}/export`  *(organizer)*
+Download the event's numbers. `?what=standings|results|all` (default
+`standings`), `?format=json|csv` (default `json`). Both responses carry
+`Content-Disposition: attachment`.
+
+```jsonc
+// format=json
+{ "tournament": { "code", "name", "game", "status" },
+  "exportedAt": 1784500123,
+  "standings": [ { /* as in GET /{code} */ } ],
+  "results":   [ {"round","table","podId","podStatus","seat","entrantId","name",
+                  "place","points","kind","source","version","note"} ] }
+```
+
+`results` is **one row per seat**, not per pod: a result is an ordering over
+players, and a flat row per player is what a spreadsheet and a scorekeeper both
+want. Where a pod has been overridden, the export carries the **latest** version
+only — the same rule standings follow.
+
+**`entrantId` is the public id in every format**, never the integer primary key
+(§3, claim). A file outlives the event and gets mailed around, so it is the last
+place to make an exception. Pinned by
+`test_rename_and_export.py::TestExport::test_export_only_ever_carries_public_ids`.
+
+CSV is written with the stdlib writer, so names containing commas, quotes and
+newlines round-trip. Text cells (`name`, `note`, `entrantId`) that begin with
+`=`, `+`, `-`, `@` or a control character are prefixed with `'`: entrant names
+are free text typed at a shop counter, and a spreadsheet would otherwise
+evaluate `=HYPERLINK(…)` on the organizer's machine. The stored name is not
+changed — the guard is a rendering concern of the file only.
+
+- `format=csv` with `what=all` → **400**; a CSV file is one table.
+- Any other `what` or `format` → **400**.
+- An event with no rounds exports a header row, not a 404.
+
+Organizer-only, even though roster and standings are readable with the
+tournament code alone: a bulk file is not the same disclosure as a screen.
+
 ### `POST /api/tournament/{code}/entrants/{id}/release`  *(organizer)*
 Clears the entrant's token so the seat can be claimed again. Idempotent.
 
@@ -563,8 +619,9 @@ that adding one later doesn't require a migration of live event data.
 - **No manual pod assignment.** An organizer cannot move an entrant between
   pods or name a table; the only route into a pod is the pairer. Re-roll
   exists in the API but has no UI control.
-- **No CSV/JSON export** of standings or results.
-- **No entrant rename** outside an import.
+- **Rename and export have no UI control yet.** Both endpoints are complete and
+  tested (§3); the organizer screen has no rename field and no download button,
+  so today they are reachable only by an API client.
 - **No import adapter** yet; the data model is ready for one (§9).
 - **Tournaments never expire.** Rooms belonging to a live tournament are exempt
   from the 3 h idle sweep, which is what keeps a pod alive over lunch — but

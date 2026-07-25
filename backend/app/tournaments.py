@@ -14,11 +14,15 @@ query set (no N+1), pods reuse the room machinery rather than duplicating it, an
 the only background work is a lazy sweep on read.
 """
 
+import csv
+import io
 import json
+import re
 import secrets
 import time
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .accounts import require_account
@@ -246,6 +250,86 @@ def standings_rows(code: str):
     return out
 
 
+def results_rows(code: str) -> list[dict]:
+    """Every seat of every pod of every round, with the pod's decision.
+
+    One row per seat rather than per pod: a pod result is an ordering over
+    players, and a flat row per player is the shape a spreadsheet, a scorekeeper
+    and a rules-committee query all want. Two queries, no N+1, same pattern as
+    `standings_rows`.
+    """
+    seats = q(
+        "SELECT r.number AS round_number, p.number AS table_number, p.id AS pod_id, "
+        "p.status AS pod_status, s.seat, s.place, s.points, e.public_id, e.name "
+        "FROM trounds r JOIN pods p ON p.round_id = r.id "
+        "JOIN pod_seats s ON s.pod_id = p.id JOIN entrants e ON e.id = s.entrant_id "
+        "WHERE r.tournament_code = ? ORDER BY r.number, p.number, s.seat",
+        (code,),
+    ).fetchall()
+    # An override appends a version rather than mutating, so the export must
+    # report the latest one — the same rule standings_rows follows.
+    decisions = {
+        r["pod_id"]: r
+        for r in q(
+            "SELECT pr.pod_id, pr.kind, pr.source, pr.note, pr.version FROM pod_results pr "
+            "JOIN pods p ON p.id = pr.pod_id JOIN trounds r ON r.id = p.round_id "
+            "WHERE r.tournament_code = ? "
+            "AND pr.version = (SELECT MAX(v2.version) FROM pod_results v2 "
+            "                  WHERE v2.pod_id = pr.pod_id)",
+            (code,),
+        ).fetchall()
+    }
+    out = []
+    for s in seats:
+        d = decisions.get(s["pod_id"])
+        out.append(
+            {
+                "round": s["round_number"],
+                "table": s["table_number"],
+                "podId": s["pod_id"],
+                "podStatus": s["pod_status"],
+                "seat": s["seat"],
+                "entrantId": s["public_id"],   # public id only; the PK stays here
+                "name": s["name"],
+                "place": s["place"],
+                "points": s["points"],
+                "kind": d["kind"] if d else None,
+                "source": d["source"] if d else None,
+                "version": d["version"] if d else None,
+                "note": d["note"] if d else None,
+            }
+        )
+    return out
+
+
+#: A leading =, +, -, @ or a control character makes Excel and Sheets treat a
+#: cell as a formula. Entrant names and result notes are free text typed by
+#: whoever ran the event, so a name like `=HYPERLINK(...)` would execute on the
+#: organizer's machine when they open the file. Prefix a quote: the value still
+#: reads correctly to a human and to any CSV parser, and no spreadsheet
+#: evaluates it. Applied to text cells only — never to the numeric columns,
+#: where a leading `-` is a real minus sign.
+_FORMULA_START = re.compile(r"^[=+\-@\t\r]")
+
+
+def csv_text(value) -> str:
+    text = "" if value is None else str(value)
+    return "'" + text if _FORMULA_START.match(text) else text
+
+
+def as_csv(header: list[str], rows: list[dict], text_columns: set[str]) -> str:
+    """Rows to CSV via the stdlib writer — entrant names contain commas, quotes
+    and the occasional newline, and hand-rolled joining gets that wrong."""
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(header)
+    for row in rows:
+        w.writerow(
+            [csv_text(row.get(k)) if k in text_columns else row.get(k, "") for k in header]
+        )
+    return buf.getvalue()
+
+
 def met_history(code: str) -> dict[int, list[int]]:
     """Who has already shared a pod with whom, for repeat avoidance."""
     rows = q(
@@ -385,6 +469,11 @@ class EntrantsBody(BaseModel):
     names: list[str] = Field(default_factory=list)
     # imports send [{name, externalRef}] instead; externalRef is "source:id"
     entrants: list[dict] = Field(default_factory=list)
+
+
+class RenameBody(BaseModel):
+    #: same bound as a tournament name; the roster is free text either way
+    name: str = Field(min_length=1, max_length=80)
 
 
 class ClaimBody(BaseModel):
@@ -630,6 +719,36 @@ def release_claim(code: str, entrant_id: str, request: Request):
     return {"ok": True}
 
 
+@router.post("/{code}/entrants/{entrant_id}/rename")
+def rename_entrant(code: str, entrant_id: str, body: RenameBody, request: Request):
+    """Fix a misspelled or mis-heard name on the roster.
+
+    A rename touches `entrants.name` and nothing else. Identity here is the
+    public id — the roster, results, standings and pairings all key on it — so
+    the token stays valid, the public id is stable, and every recorded place and
+    point survives untouched. That is also why a duplicate name is allowed:
+    names legitimately repeat (§7), and rejecting one would make the display
+    name identity, which is the exact flaw the import path avoids.
+
+    It deliberately does not rewrite the player rows in pods already seated.
+    A pod's room is a separate identity — a player renaming themselves inside a
+    room does not touch their entrant either — and rewriting a live room's
+    seats from the tournament would let an organizer's typo fix relabel a game
+    in progress. The new name shows on the roster and standings immediately,
+    and on the next round's seats.
+    """
+    t, _ = require_organizer(code, request)
+    row = resolve_entrant(t["code"], entrant_id)
+    if not row:
+        raise HTTPException(404, "no such entrant")
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "a name is required")
+    q("UPDATE entrants SET name = ? WHERE id = ?", (name, row["id"]))
+    touch(t["code"])
+    return {"ok": True, "entrantId": row["public_id"], "name": name}
+
+
 @router.post("/{code}/entrants/{entrant_id}/undrop")
 def undrop_entrant(code: str, entrant_id: str, request: Request):
     """People come back — a drop entered by mistake shouldn't end someone's day."""
@@ -656,6 +775,95 @@ def end_tournament(code: str, request: Request):
     q("UPDATE tournaments SET status = 'ended' WHERE code = ?", (t["code"],))
     touch(t["code"])
     return {"ok": True, "standings": standings_rows(t["code"])}
+
+
+#: Fixed column orders. Written down rather than derived from a dict so that
+#: adding a field to the API cannot silently reorder somebody's saved import.
+STANDINGS_COLUMNS = [
+    "rank", "entrantId", "name", "points", "opponentPoints",
+    "podsPlayed", "wins", "draws", "losses", "claimed", "dropped",
+]
+RESULTS_COLUMNS = [
+    "round", "table", "seat", "entrantId", "name", "place", "points",
+    "kind", "source", "version", "note",
+]
+
+
+def export_standings(code: str) -> list[dict]:
+    """Standings as the wire sees them: the internal id swapped for the public
+    one, never both, exactly as `tournament_state` does."""
+    return [
+        {**{k: v for k, v in row.items() if k != "publicId"}, "entrantId": row["publicId"]}
+        for row in standings_rows(code)
+    ]
+
+
+@router.get("/{code}/export")
+def export(code: str, request: Request, what: str = "standings", format: str = "json"):
+    """Take the event's numbers away with you — organizer only.
+
+    An organizer needs the results outside this app: to report a sanctioned
+    event upstream, to post a league table, or simply to keep a record once the
+    tournament is swept. This is the whole of that path, so it is deliberately
+    a download rather than another polling shape.
+
+    **`entrantId` is the public id in every format.** The integer primary key
+    never leaves the server (§3), and a file that outlives the event is the
+    worst possible place to make an exception: it gets mailed around, pasted
+    into spreadsheets and re-imported long after anyone remembers what the
+    column meant.
+
+    Organizer-only even though the roster and standings are readable with the
+    tournament code alone. A bulk file is not the same disclosure as a screen:
+    it hands whoever holds the code the entire history of the event in one
+    request, and export is an organizer's action anyway.
+    """
+    t, _ = require_organizer(code, request)
+    if what not in ("standings", "results", "all"):
+        raise HTTPException(400, "export 'what' must be standings, results or all")
+    if format not in ("json", "csv"):
+        raise HTTPException(400, "export 'format' must be json or csv")
+
+    if format == "csv":
+        if what == "all":
+            # A CSV file is one table. Ask for one of them.
+            raise HTTPException(400, "csv exports one table at a time — ask for standings or results")
+        if what == "standings":
+            rows = [
+                {**r, "claimed": str(bool(r["claimed"])).lower(),
+                 "dropped": str(bool(r["dropped"])).lower()}
+                for r in export_standings(t["code"])
+            ]
+            body = as_csv(STANDINGS_COLUMNS, rows, {"entrantId", "name"})
+        else:
+            body = as_csv(RESULTS_COLUMNS, results_rows(t["code"]), {"entrantId", "name", "note"})
+        return Response(
+            content=body,
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="{t["code"]}-{what}.csv"',
+            },
+        )
+
+    payload = {
+        "tournament": {
+            "code": t["code"],
+            "name": t["name"],
+            "game": t["game"] if "game" in t.keys() else "mtg",
+            "status": t["status"],
+        },
+        "exportedAt": int(time.time()),
+    }
+    if what in ("standings", "all"):
+        payload["standings"] = export_standings(t["code"])
+    if what in ("results", "all"):
+        payload["results"] = results_rows(t["code"])
+    return JSONResponse(
+        payload,
+        headers={
+            "Content-Disposition": f'attachment; filename="{t["code"]}-{what}.json"',
+        },
+    )
 
 
 @router.post("/{code}/entrants/{entrant_id}/drop")
