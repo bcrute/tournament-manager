@@ -34,8 +34,16 @@ a signed-in claim would be a privacy regression, not a convenience. Pinned by
 
 **Entrant tokens are query parameters, not headers**, because the player client
 reads state from a plain `GET` it can retry cheaply. That places the token in
-request URLs, so it must never be logged: the reverse proxy strips query strings
-from access logs. A header would be tidier and is the obvious future change.
+request URLs, so it must never be logged. Two things write request targets down
+and neither can redact the other's log, so both redact their own: the app
+replaces credential-looking query values before any handler sees the record
+(`backend/app/access_log.py`, installed at import in `main.py` — uvicorn's
+access log is on by default and would otherwise write `?token=…` to the
+container log), and the vhost this repo ships (`deploy/caddy/sites/mtg.caddy`)
+filters the same parameter out of Caddy's access log. Either way the path and
+the parameter *name* survive; only the value becomes `REDACTED`. Pinned by
+`test_token_logging.py`. A header would be tidier and is the obvious future
+change.
 
 **Room tokens are seat credentials.** `GET /{code}` returns one only on
 `myPod.roomToken`, for the caller's own seat, derived from their entrant token.

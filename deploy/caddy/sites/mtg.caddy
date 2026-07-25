@@ -18,5 +18,25 @@ mtg.skadoosh.dev {
 	# The app owns its security headers; Caddy only strips its own Server banner.
 	header -Server
 
+	# Entrant tokens are query parameters (contract §1), so the access log must
+	# never keep one: the filter encoder rewrites the value out of the logged
+	# URI before the line is written, leaving the path and the parameter name.
+	# Scoped to this vhost — the other apps behind this Caddy keep whatever
+	# logging their own sites/*.caddy asks for.
+	#
+	# This is only half the job. The app writes its own access log (uvicorn,
+	# on by default) and Caddy cannot touch it, so it redacts the same
+	# parameter itself in backend/app/access_log.py. Both layers are required.
+	log {
+		format filter {
+			wrap console
+			fields {
+				request>uri query {
+					replace token REDACTED
+				}
+			}
+		}
+	}
+
 	reverse_proxy mtg:8000
 }

@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .access_log import install as install_access_log_redaction
 from .accounts import router as accounts_router
 from .admin import router as admin_router
 from .db import q
@@ -18,6 +19,12 @@ from .tournaments import router as tournaments_router
 # free reconnaissance for anyone probing it. Authentication still holds without
 # them, so the loss is an attacker's map, not a user's feature.
 _DEV_DOCS = os.environ.get("TABLE_DEV_DOCS", "off") == "on"
+
+# Entrant tokens ride in the query string (§1), and uvicorn's access log writes
+# the full request target. Installed at import time — before the first request
+# is served under any runner — so no line is ever written with a live token in
+# it. See access_log.py for why this lives in the app and not only in the proxy.
+install_access_log_redaction()
 
 app = FastAPI(
     title="mtg",
