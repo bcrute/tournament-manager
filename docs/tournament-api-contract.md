@@ -146,8 +146,8 @@ aren't already visible in the room.
 Claim a seat. No auth — possession of the tournament code is the only gate.
 
 ```jsonc
-{ "entrantId": 41 }
-→ { "entrantToken": "…", "entrantId": 41, "name": "Ada" }
+{ "entrantId": "kZ8vQ1nR" }
+→ { "entrantToken": "…", "entrantId": "kZ8vQ1nR", "name": "Ada" }
 ```
 
 **`entrantId` is an opaque random string, tournament-scoped.** The integer
@@ -205,8 +205,13 @@ Ends the event and freezes standings. **409** if a round is still open; after
 this, opening a round is **409**.
 
 ```jsonc
-→ { "ok": true, "standings": [ … ] }
+→ { "ok": true, "standings": [ … ] }   // identical shape and sort to GET /{code}
 ```
+
+`standings` here is the same translated rows the snapshot serves, opaque
+`entrantId` included — a frozen final table that disagreed with the snapshot
+players are still polling would be worse than either. Pinned by
+`TestEndReturnsPublicIds`.
 
 ### `POST /api/tournament/{code}/rounds`  *(organizer)*
 Pair, seat, and create one room per pod.
@@ -278,7 +283,7 @@ open. Both messages name the count.
 ### `POST /api/tournament/{code}/pods/{pod_id}/result`  *(organizer)*
 ```jsonc
 { "kind": "placement",                 // placement | draw | unfinished
-  "places": [ {"entrantId": 41, "place": 1} ],
+  "places": [ {"entrantId": "kZ8vQ1nR", "place": 1} ],
   "note": "ruled a draw at time",
   "expectedVersion": 2 }               // optional optimistic-concurrency guard
 → { "ok": true, "version": 3 }
