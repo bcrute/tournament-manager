@@ -53,7 +53,11 @@ single absolute timestamp written when the organizer starts the timer; every
 client counts down against it locally, using the server's `now` only to correct
 a device whose clock is wrong. Pause records `paused_at`; resume adds the gap
 back onto `ends_at`. A pod's `extension_seconds` is added on read, so a judge
-extending one table moves only that table.
+extending one table moves only that table: the stored round deadline is never
+mutated by an extension. Both read paths apply it — the room's
+`tournament.endsAt` and each `pods[].endsAt` in the tournament snapshot. A
+client shows a table's clock from that per-pod `endsAt`; `round.endsAt` is the
+round's own deadline and is short by the extension for an extended table.
 
 Because the timer lives on the tournament and players are looking at the *room*,
 room state carries a `tournament` block (round, deadline, pause, turns) and
@@ -114,6 +118,7 @@ Optional `?token=` (entrant). Organizer recognized by cookie.
   "round": { "number", "status", "endsAt", "pausedAt",
              "now": 1784500123 },      // server clock; clients derive an offset
   "pods": [ { "podId", "table", "status", "roomCode", "extensionSeconds",
+              "endsAt",                  // round.endsAt + this pod's extension
               "seats": [ {"seat", "entrantId", "name", "place", "points"} ] } ],
   "myPod": { /* same shape, plus: */ "roomToken": "…", "mySeat": 2 },
   "me": { "entrantId", "name" },       // null when anonymous
@@ -126,6 +131,12 @@ Optional `?token=` (entrant). Organizer recognized by cookie.
 `round.now` exists so clients never trust the local clock — a phone with a wrong
 time would otherwise show a wrong round timer. Clients compute
 `offset = now*1000 - Date.now()` once per poll.
+
+`pods[].endsAt` (and `myPod.endsAt`) is the deadline for *that* table: the
+round's `endsAt` with the pod's `extensionSeconds` already added, or `null`
+when the round timer has not been started. It is what a table's countdown
+should use — `extensionSeconds` stays alongside it so the UI can say a table
+was extended, not so the client can do the addition itself.
 
 `standings` is always present and always fully sorted (points, then opponents'
 points, then name). Ranks are dense positions after sorting, 1-based.
@@ -378,10 +389,23 @@ verbatim.
 
 ## 5. Rate limiting
 
-Shared limiter (`limits.py`). Tournament paths classify as `normal`
-(900 req / 60 s per client) except `POST /claim` and account endpoints, which
-are `sensitive` (20 / 600). Clients are identified by a salted HMAC of the IP —
-pseudonymous, never the raw address. Repeat offenders escalate 1h → 6h → 24h → 7d.
+Shared limiter (`limits.py`). Classification is purely method + path suffix:
+every `GET` is `normal` (900 req / 60 s per client), and a write is `sensitive`
+(20 / 600) only when its path ends in one of `SENSITIVE_SUFFIXES` — the list is
+the contract, so read it there rather than inferring from the endpoint's
+purpose. Today that is `/rooms`, `/join`, `/reclaim`, `/start`, `/rename`,
+`/display`, `/lift`; on tournaments `/claim`, `/entrants` and `/turn`; and on
+accounts `/signup`, `/login`, `/recover`, `/password`, `/recovery-codes`,
+`/email`, `/delete`. Everything else is `normal` — life taps, results, official
+calls, timer writes, notes, `/logout`. Clients are identified by a salted HMAC
+of the IP — pseudonymous, never the raw address. Repeat offenders escalate
+1h → 6h → 24h → 7d.
+
+The identifier is per-IP, so a venue behind one NAT shares one bucket. That is
+fine at 900/60 and tight at 20/600: ten pods counting five extra turns each is
+50 `POST /turn` calls from one address, over the 20-per-10-minute limit. Nobody
+has hit it in an event yet; if it bites, the fix is a per-entrant bucket for
+`/turn`, not a looser limit on seat claiming.
 
 Polling at 5 s (30 s hidden) with ~50 attendees is ~10 req/s — two orders of
 magnitude inside the limit.
@@ -397,8 +421,12 @@ true of players and false of organizers, so the UI never says it unqualified.
 It is enforced at create time (**409**), never at signup, so the requirement
 lands on the person choosing to host rather than on everyone.
 
-The address is stored plainly and used only for recovery. It is never returned
-by any endpoint — `/api/account/me` exposes `hasEmail: bool`, not the value.
+The address is stored plainly and is never returned by any endpoint —
+`/api/account/me` exposes `hasEmail: bool`, not the value. Nor is it read for
+anything else: the only code that touches the column coerces it to a bool (the
+`hasEmail` flag and the hosting gate). It is collected against the day recovery
+mail exists — today it recovers nothing, because the server sends no mail at
+all and `/recover` authenticates on a one-time code (§10).
 
 Usernames, by contrast, cannot be encrypted: they're looked up on every sign-in,
 and searchable encryption means deterministic encryption or a blind index, both
@@ -563,6 +591,11 @@ that adding one later doesn't require a migration of live event data.
 - **No manual pod assignment.** An organizer cannot move an entrant between
   pods or name a table; the only route into a pod is the pairer. Re-roll
   exists in the API but has no UI control.
+- **The recovery email recovers nothing yet.** Hosting is gated on a stored
+  address (§6), but there is no mail-sending code in the server: the only
+  working recovery path is a one-time code. An organizer who loses both their
+  password and their codes is not rescued by the address we made them give.
+  Either wire up mail or stop calling it a recovery email.
 - **No CSV/JSON export** of standings or results.
 - **No entrant rename** outside an import.
 - **No import adapter** yet; the data model is ready for one (§9).
