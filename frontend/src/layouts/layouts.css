@@ -58,6 +58,22 @@
   padding: 1.5rem 1rem 3rem;
 }
 
+@media (min-width: 60rem) {
+  /* On a pointer device the bar doesn't need touch-target height. */
+  .site-bar {
+    padding: 0.35rem 1rem;
+  }
+
+  .site-bar nav a {
+    min-height: 36px;
+    padding: 0.35rem 0.75rem;
+  }
+
+  .site-body {
+    width: 80%;
+  }
+}
+
 .site-footer {
   padding: 1rem;
   border-top: 1px solid #2a2f3a;
