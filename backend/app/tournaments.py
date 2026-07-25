@@ -268,6 +268,21 @@ def standings_rows(code: str):
     return out
 
 
+def public_standings(code: str):
+    """standings_rows() translated for the wire.
+
+    standings_rows carries the internal id because pairing and scoring key on
+    it; no response may. Every endpoint that serves standings goes through
+    here, so there is one place to get the translation right rather than one
+    per caller — POST /end used to serve the raw rows and leaked the integer
+    primary key for exactly that reason.
+    """
+    return [
+        {**{k: v for k, v in row.items() if k != "publicId"}, "entrantId": row["publicId"]}
+        for row in standings_rows(code)
+    ]
+
+
 def met_history(code: str) -> dict[int, list[int]]:
     """Who has already shared a pod with whom, for repeat avoidance."""
     rows = q(
@@ -383,11 +398,7 @@ def tournament_state(code: str, viewer_entrant=None, organizer: bool = False):
         ),
         # standings carry the internal id for callers like pairing; the wire
         # only ever sees the public one, and not both
-        "standings": [
-            {**{k: v for k, v in row.items() if k != "publicId"},
-             "entrantId": row["publicId"]}
-            for row in standings_rows(t["code"])
-        ],
+        "standings": public_standings(t["code"]),
         "calls": calls,
         "isOrganizer": organizer,
     }
@@ -728,7 +739,7 @@ def end_tournament(code: str, request: Request):
         raise HTTPException(409, "close the current round before ending the tournament")
     q("UPDATE tournaments SET status = 'ended' WHERE code = ?", (t["code"],))
     touch(t["code"])
-    return {"ok": True, "standings": standings_rows(t["code"])}
+    return {"ok": True, "standings": public_standings(t["code"])}
 
 
 @router.post("/{code}/entrants/{entrant_id}/drop")
