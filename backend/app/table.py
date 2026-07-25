@@ -149,11 +149,22 @@ def card_public(card):
 
 def expire_idle_rooms():
     """Close rooms nobody has touched in IDLE_TIMEOUT. History is kept — only the
-    room stops accepting play, so an abandoned code can't be rejoined forever."""
+    room stops accepting play, so an abandoned code can't be rejoined forever.
+
+    A pod of a live tournament is exempt: three hours is a room's clock, and a
+    field breaking for lunch must not come back to closed tables. The exemption
+    lasts exactly as long as the tournament does — see tournaments.LIVE_TOURNAMENT
+    — so an ended or expired event's rooms come back under this sweep instead of
+    living forever behind a tournament that no longer exists as a live thing.
+    """
+    from .tournaments import IDLE_TIMEOUT as TOURNAMENT_IDLE_TIMEOUT
+    from .tournaments import LIVE_TOURNAMENT_ROOMS
+
     q(
         "UPDATE rooms SET status = 'closed' WHERE status != 'closed' "
-        "AND COALESCE(last_active, created_at) < unixepoch() - ?",
-        (IDLE_TIMEOUT,),
+        "AND COALESCE(last_active, created_at) < unixepoch() - ? "
+        f"AND code NOT IN ({LIVE_TOURNAMENT_ROOMS})",
+        (IDLE_TIMEOUT, TOURNAMENT_IDLE_TIMEOUT),
     )
 
 
@@ -162,7 +173,17 @@ def touch(code: str):
 
 
 def _is_tournament_room(code: str) -> bool:
-    return bool(q("SELECT 1 FROM pods WHERE room_code = ? LIMIT 1", (code,)).fetchone())
+    """Is a still-live tournament holding this room open? Asking whether a pods
+    row merely exists would exempt the pods of events that ended months ago."""
+    from .tournaments import IDLE_TIMEOUT as TOURNAMENT_IDLE_TIMEOUT
+    from .tournaments import LIVE_TOURNAMENT_ROOMS
+
+    return bool(
+        q(
+            f"SELECT 1 FROM ({LIVE_TOURNAMENT_ROOMS}) WHERE room_code = ? LIMIT 1",
+            (TOURNAMENT_IDLE_TIMEOUT, code),
+        ).fetchone()
+    )
 
 
 def note_bad_join(request: Request):

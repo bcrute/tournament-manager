@@ -33,6 +33,43 @@ router = APIRouter()
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 IDLE_TIMEOUT = 12 * 60 * 60  # a tournament day, not a room's 3h
 
+#: A tournament nobody has ended and nobody has touched inside IDLE_TIMEOUT.
+#: Written once and asked from two places — the tournament sweep below and the
+#: room sweep in table.py — because the pod-room exemption and tournament
+#: expiry have to agree. If they can disagree, expiring an event strands its
+#: pod rooms open forever: exempt from the 3h room sweep by a tournament that
+#: is no longer live. Takes IDLE_TIMEOUT as its one parameter.
+LIVE_TOURNAMENT = (
+    "t.status NOT IN ('ended', 'expired') "
+    "AND COALESCE(t.last_active, t.created_at) >= unixepoch() - ?"
+)
+
+#: Rooms that a live tournament is holding open, for the room sweep to skip.
+LIVE_TOURNAMENT_ROOMS = (
+    "SELECT p.room_code FROM pods p "
+    "JOIN trounds r ON r.id = p.round_id "
+    "JOIN tournaments t ON t.code = r.tournament_code "
+    "WHERE p.room_code IS NOT NULL AND " + LIVE_TOURNAMENT
+)
+
+
+def expire_idle_tournaments():
+    """Retire tournaments nobody has touched in IDLE_TIMEOUT.
+
+    The room sweep's shape, one tier up: a bulk UPDATE, run lazily off the hot
+    path rather than on a scheduler. 'expired' is deliberately not 'ended' —
+    ending is an organizer's decision that freezes final standings, expiring is
+    the server admitting an event was abandoned. Standings and history stay
+    readable either way; what stops is the event, and the exemption its pod
+    rooms were enjoying.
+    """
+    q(
+        "UPDATE tournaments SET status = 'expired' "
+        "WHERE status NOT IN ('ended', 'expired') "
+        "AND COALESCE(last_active, created_at) < unixepoch() - ?",
+        (IDLE_TIMEOUT,),
+    )
+
 # Game-independent defaults. Anything that varies by game comes from the game
 # profile instead — see games.py. Keep this list free of MTG assumptions.
 GENERIC_SETTINGS = {
@@ -164,6 +201,14 @@ def get_tournament(code: str):
     row = q("SELECT * FROM tournaments WHERE code = ?", (code.upper(),)).fetchone()
     if not row:
         raise HTTPException(404, "tournament not found")
+    # check just this tournament's idle clock (primary-key read); the bulk sweep
+    # runs on create. Unlike a closed room this is not a 410: an expired event's
+    # standings are still worth reading, it just can't be run any more.
+    if row["status"] not in ("ended", "expired"):
+        cutoff = q("SELECT unixepoch() - ? AS c", (IDLE_TIMEOUT,)).fetchone()["c"]
+        if (row["last_active"] or row["created_at"]) < cutoff:
+            q("UPDATE tournaments SET status = 'expired' WHERE code = ?", (row["code"],))
+            row = q("SELECT * FROM tournaments WHERE code = ?", (row["code"],)).fetchone()
     return row
 
 
@@ -478,6 +523,10 @@ def my_tournaments(request: Request):
     history. Registered before `/{code}` so it isn't read as a tournament code.
     """
     acct = require_account(request)
+    # a list read can't use get_tournament's per-row check, and an organizer's
+    # dashboard showing "running" against an abandoned event is the one place
+    # that lie would be believed
+    expire_idle_tournaments()
     rows = q(
         "SELECT t.code, t.name, t.status, t.game, t.mode, t.created_at, t.last_active, "
         "(SELECT COUNT(*) FROM entrants e WHERE e.tournament_code = t.code "
@@ -510,6 +559,7 @@ def create_tournament(body: CreateBody, request: Request):
             "add a recovery email to your account before hosting — "
             "an organizer who loses access mid-event strands the whole room",
         )
+    expire_idle_tournaments()  # cheap hygiene sweep, off the hot path
     known = {g["key"] for g in known_games()}
     if body.game not in known:
         raise HTTPException(400, f"unknown game — this server runs {', '.join(sorted(known))}")
@@ -806,6 +856,10 @@ def open_round(code: str, body: RoundBody, request: Request):
     cfg = settings_of(t)
     if t["status"] == "ended":
         raise HTTPException(409, "this tournament has ended")
+    if t["status"] == "expired":
+        # get_tournament already flipped it; pairing a new round here would seat
+        # people into rooms the sweep has stopped protecting
+        raise HTTPException(409, "this tournament has expired")
 
     active = q(
         "SELECT * FROM trounds WHERE tournament_code = ? AND status = 'active'", (t["code"],)
