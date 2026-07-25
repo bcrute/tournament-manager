@@ -165,7 +165,11 @@ _db.executescript(
         pod_id INTEGER NOT NULL REFERENCES pods(id) ON DELETE CASCADE,
         version INTEGER NOT NULL,
         kind TEXT NOT NULL,          -- placement | draw | bye | unfinished
-        source TEXT NOT NULL,        -- auto | organizer
+        source TEXT NOT NULL,        -- auto | organizer | import
+                                     -- 'import' is a result decided in another
+                                     -- system entirely; it is kept apart from
+                                     -- 'organizer' so nobody reads a scorekeeper
+                                     -- ruling into a row nobody here ruled on
         note TEXT,
         decided_at INTEGER NOT NULL DEFAULT (unixepoch())
     );

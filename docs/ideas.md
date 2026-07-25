@@ -113,7 +113,7 @@ bearing, and its assumptions stop leaking into the core.
 | Game rules and vocabulary | **Done** — `GameProfile` in `games.py`; MTG is a profile, not the base |
 | Event structure | **Done** — presets carrying their own provenance |
 | Payment processor | Planned — PayPal first, never card data, never custody |
-| Tournament import | Groundwork — `external_ref` plus the mapping table |
+| Tournament import | **Done** — `ImportAdapter` in `importers.py`; TopDeck is an adapter, not the core |
 | Notification/delivery | Not needed yet |
 
 The test of a good boundary here is the one already written down for games: if
@@ -219,10 +219,13 @@ and schedules, which is a bigger model than "a code someone shares at a table".
 
 ## Smaller notes
 
-- **Import adapter** for TopDeck and similar. Groundwork exists
-  (`entrants.external_ref`, the mapping table in the API contract); the adapter
-  itself is unwritten. Imports are one-way — their API can't accept results —
-  and any UI must say so or organizers will assume a sync that doesn't exist.
+- ~~**Import adapter** for TopDeck and similar.~~ **Built.** `POST
+  /{code}/import` reads a source's export through an adapter (`importers.py`)
+  and writes entrants, rounds, pods and results; the four places their shape
+  isn't ours — one winner, a draw in an id field, a "Byes" pseudo-table, "Top
+  8" as a round number — die at that boundary. One-way is structural: an
+  adapter has `read` and no counterpart, and every response says so. What is
+  left is the UI, which must print that sentence beside the button.
 - ~~**Top cut execution.**~~ **Built.** `POST /{code}/cut` seeds a bracket from
   the standings and pairs single-elimination rounds, and a bracket pod at time
   is ranked on life because MTR 2.4 forbids a draw there. Two things are still

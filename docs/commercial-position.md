@@ -62,9 +62,11 @@ the least-exercised code in the system.
 Strategic consequence: **integrate rather than compete.** TopDeck has solved
 multiplayer Swiss and owns event discovery; its weakness is that it stops at
 the table's edge. Being the table layer that feeds it beats trying to out-pair
-them. The groundwork is in place — `entrants.external_ref` and the field
-mapping in `tournament-api-contract.md` §9 — but no adapter is written, and
-imports would be one-way because TopDeck's API cannot accept results.
+them. That path now exists: `POST /{code}/import` reads a TopDeck export
+through an adapter and lands it as entrants, rounds and results
+(`tournament-api-contract.md` §9). It is one-way by construction — their API
+cannot accept results — so this feeds *from* them, and what is played here
+stays here. No UI offers it yet.
 
 Monetization shape, if it ever goes there: **players free** (needed for the
 network effect), **organizers or stores pay**. Same shape TopDeck uses.
