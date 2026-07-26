@@ -10,7 +10,7 @@ import {
   logout,
   saveNote,
 } from "./account";
-import FanContentNotice from "../FanContentNotice";
+import SiteFooter from "../layouts/SiteFooter";
 import SignIn from "./SignIn";
 import { goBack } from "../goBack";
 import Icon from "../Icon";
@@ -61,7 +61,7 @@ export default function Dashboard() {
         <footer>
           <Link to="/table">← back to Table</Link>
         </footer>
-        <FanContentNotice />
+        <SiteFooter />
       </div>
     );
   }

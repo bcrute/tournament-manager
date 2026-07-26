@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, ApiError, GameMode, SeatInfo, SeatsResponse } from "./api";
 import { clearSession, landingAction, loadSession, saveSession } from "./session";
-import FanContentNotice from "../FanContentNotice";
+import SiteFooter from "../layouts/SiteFooter";
 import { t } from "../i18n";
 import Icon from "../Icon";
 import QrScanner, { scanSupported } from "./QrScanner";
@@ -307,10 +307,6 @@ export default function Landing() {
       </div>
       </div>
 
-      <footer>
-        <Link to="/">mtg.skadoosh.dev</Link>
-      </footer>
-
       {scanning && (
         <QrScanner
           onClose={() => setScanning(false)}
@@ -321,7 +317,7 @@ export default function Landing() {
         />
       )}
 
-      <FanContentNotice />
+      <SiteFooter />
     </div>
   );
 }

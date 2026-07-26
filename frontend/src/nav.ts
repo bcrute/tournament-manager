@@ -21,11 +21,11 @@ export interface NavItem {
   listed?: boolean;
 }
 
-/** The public website. One page today; the shape is what matters. */
+/** The places someone goes to do something. Privacy lives in the footer —
+ *  nav is for destinations, not small print. */
 export const SITE_NAV: NavItem[] = [
   { label: "Play", to: "/table", icon: "heart", listed: true },
   { label: "Tournaments", to: "/tournament", icon: "crown", listed: true },
-  { label: "Privacy", to: "/privacy", icon: "note", listed: true },
 ];
 
 export type ConsoleSection = "pods" | "roster" | "standings" | "calls" | "settings";
