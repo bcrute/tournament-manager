@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import Icon, { IconName } from "../Icon";
+import SiteNav from "./SiteNav";
 
 /**
  * Management chrome: a console, not a page.
@@ -32,6 +33,8 @@ export default function ConsoleLayout({
   return (
     <div className="console">
       <a className="skip-link" href="#main">Skip to content</a>
+      {/* the same header as everywhere else — a console is still part of the site */}
+      <SiteNav />
       <header className="console-bar">
         <div className="console-title">
           <h1>{title}</h1>

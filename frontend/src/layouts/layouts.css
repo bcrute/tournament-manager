@@ -18,6 +18,7 @@
   align-items: center;
   gap: 0.6rem;
   padding: 0.55rem 1rem;
+  margin-bottom: 0; /* the global header margin is for page titles, not bars */
   border-bottom: 1px solid #2a2f3a;
 }
 
@@ -248,6 +249,7 @@
   align-items: center;
   gap: 1rem;
   padding: 0.8rem 1rem;
+  margin-bottom: 0; /* the global header margin is for page titles, not bars */
   border-bottom: 1px solid #2a2f3a;
 }
 
@@ -309,7 +311,14 @@
   .console {
     display: grid;
     grid-template-columns: 13rem 1fr;
-    grid-template-areas: "bar bar" "nav body";
+    /* auto rows for the chrome, 1fr for the body — without this the
+       min-height's spare space stretches the header rows too */
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas: "top top" "bar bar" "nav body";
+  }
+
+  .console > .site-bar {
+    grid-area: top;
   }
 
   .console-bar {
