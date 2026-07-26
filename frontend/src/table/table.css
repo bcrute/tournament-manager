@@ -1745,7 +1745,7 @@ button.ghost.danger {
 
 .cmd-panel {
   width: 70vw;
-  height: 70vh;
+  max-height: 70vh; /* sized by its rows — four players shouldn't fill a wall */
   max-width: 70rem;
   display: flex;
   flex-direction: column;
@@ -1777,8 +1777,8 @@ button.ghost.danger {
 
 .cmd-row {
   position: relative;
-  flex: 1;
-  min-height: 3.2rem;
+  flex: none;
+  min-height: 4rem; /* a full thumb, not a fraction of the viewport */
   display: flex;
   align-items: stretch;
   border-bottom: 1px solid #241c33;
@@ -1792,16 +1792,28 @@ button.ghost.danger {
   background: rgba(255, 255, 255, 0.04);
 }
 
-/* same gesture as the seat cards behind: left removes, right adds */
+/* same gesture as the seat cards behind: left removes, right adds. The
+   icons sit at the row's edges so they read as edge affordances, not as
+   punctuation floating beside the name and the number. */
 .cmd-half {
   flex: 1;
   border: none;
   background: none;
   color: inherit;
-  opacity: 0.5;
-  display: grid;
-  place-items: center;
+  opacity: 0.55;
+  display: flex;
+  align-items: center;
   cursor: pointer;
+}
+
+.cmd-half.dec {
+  justify-content: flex-start;
+  padding-left: 1.1rem;
+}
+
+.cmd-half.inc {
+  justify-content: flex-end;
+  padding-right: 1.1rem;
 }
 
 .cmd-half:active {

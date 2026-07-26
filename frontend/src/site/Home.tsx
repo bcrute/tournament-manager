@@ -122,7 +122,7 @@ export default function Home() {
           {[
             ["table-player", "Your own phone: life, commander damage, and nothing else in the way."],
             ["table-display", "One phone showing the whole table, without giving up its seat."],
-            ["table-commander", "Commander damage as a grid — left to remove, right to add."],
+            ["table-commander", "Commander damage tracked per attacker, one tap per point."],
             ["tournament-console", "Running an event: pods, pairings, timer and judge calls."],
             ["tournament-standings", "Standings players can read from inside their game."],
           ].map(([file, caption]) => (

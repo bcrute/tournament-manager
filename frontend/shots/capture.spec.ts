@@ -54,12 +54,19 @@ test("a game in progress, four players", async ({ page, browser }) => {
   await expect(page.locator(".tracker-bar")).toBeVisible({ timeout: 10_000 });
   await shot(page, "table-display");
 
-  // commander damage, opened from a seat
+  // commander damage, opened from a seat — with damage on the board, so the
+  // shot shows what the sheet is for instead of a column of zeros
   const grid = page.locator(".seat-cmd-grid").first();
   if (await grid.count()) {
     await grid.click();
     const panel = page.locator(".cmd-panel");
-    if (await panel.isVisible().catch(() => false)) await shot(page, "table-commander");
+    if (await panel.isVisible().catch(() => false)) {
+      const inc = (row: number) => page.locator(".cmd-row").nth(row).locator(".cmd-half.inc");
+      for (let i = 0; i < 7; i++) await inc(1).click();
+      for (let i = 0; i < 3; i++) await inc(2).click();
+      for (let i = 0; i < 12; i++) await inc(3).click();
+      await shot(page, "table-commander");
+    }
   }
 });
 
