@@ -1004,6 +1004,13 @@ class CutBody(BaseModel):
     size: int | None = None
 
 
+class EndBody(BaseModel):
+    #: end even though a round is still open. An event that empties out mid-round
+    #: cannot be closed the ordinary way — `close_round` refuses while any pod
+    #: lacks a result, and the pods of players who went home never get one.
+    force: bool = False
+
+
 class ResultBody(BaseModel):
     kind: str = "placement"                    # one of RESULT_KINDS
     places: list[dict] = Field(default_factory=list)   # [{entrantId, place}]
@@ -1422,14 +1429,29 @@ async def undrop_entrant(code: str, entrant_id: str, request: Request):
 
 
 @router.post("/{code}/end")
-async def end_tournament(code: str, request: Request):
-    """Close the event and freeze the final standings."""
+async def end_tournament(code: str, request: Request, body: EndBody | None = None):
+    """Close the event and freeze the final standings.
+
+    `force` is the organizer's own version of the escape hatch admin already had
+    (`admin.py`'s force-end): it closes the open round instead of refusing. An
+    event that dissolves mid-round — half the field leaves, two pods never
+    report — is otherwise unendable by the person running it, because closing a
+    round requires a result from every pod and those results are never coming.
+    Unfinished pods keep no result and simply score nothing; that is the same
+    outcome admin has always produced, and it beats leaving the event running
+    forever.
+    """
     t, _ = require_organizer(code, request)
     open_round = q(
         "SELECT id FROM trounds WHERE tournament_code = ? AND status = 'active'", (t["code"],)
     ).fetchone()
-    if open_round:
+    if open_round and not (body and body.force):
         raise HTTPException(409, "close the current round before ending the tournament")
+    if open_round:
+        q(
+            "UPDATE trounds SET status = 'closed' WHERE tournament_code = ? AND status = 'active'",
+            (t["code"],),
+        )
     q("UPDATE tournaments SET status = 'ended' WHERE code = ?", (t["code"],))
     touch(t["code"])
     await broadcast_tournament(t["code"])

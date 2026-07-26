@@ -276,15 +276,27 @@ export default function Organize() {
                 </button>
               </>
             )}
-            {tournament.status !== "ended" && round?.status === "closed" && (
+            {/* Reachable whenever the event is live — including before round 1,
+                which the old `round?.status === "closed"` test made impossible:
+                a tournament created by mistake had no way out at all. With a
+                round still open this force-ends, the way admin always could. */}
+            {tournament.status !== "ended" && (
               <button
                 disabled={busy}
+                title={
+                  roundOpen
+                    ? "Closes the open round; pods with no result score nothing"
+                    : "Ends the event and freezes the standings"
+                }
                 onClick={() => {
-                  if (window.confirm("End the tournament? Standings are frozen."))
-                    void run(() => endTournament(code));
+                  const which = round ? `Round ${round.number}` : "The current round";
+                  const ask = roundOpen
+                    ? `End the tournament now? ${which} is still open — it will be closed, and any pod without a result scores nothing. Standings are frozen.`
+                    : "End the tournament? Standings are frozen.";
+                  if (window.confirm(ask)) void run(() => endTournament(code, roundOpen));
                 }}
               >
-                End tournament
+                {roundOpen ? "End anyway" : "End tournament"}
               </button>
             )}
           </div>

@@ -432,11 +432,20 @@ idempotent.
 
 ### `POST /api/tournament/{code}/end`  *(organizer)*
 Ends the event and freezes standings. **409** if a round is still open; after
-this, opening a round is **409**.
+this, opening a round is **409**. Legal with no rounds at all — an event created
+by mistake is ended, not abandoned.
 
 ```jsonc
+← { "force": false }                   // optional; bodyless is force: false
 → { "ok": true, "standings": [ … ] }   // identical shape and sort to GET /{code}
 ```
+
+`force: true` closes the open round instead of refusing, and is the organizer's
+own copy of the escape hatch admin already had. It exists because an event that
+dissolves mid-round cannot be ended the ordinary way: `close_round` requires a
+result from every pod, and the pods whose players went home are never going to
+report one. Unfinished pods keep no result and score nothing — the event is
+over, not decided. Pinned by `test_end_tournament.py`.
 
 `standings` here is the same translated rows the snapshot serves, opaque
 `entrantId` included — a frozen final table that disagreed with the snapshot
