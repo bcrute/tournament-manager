@@ -87,7 +87,6 @@ export default function Organize() {
   }
 
   const { tournament, round, pods, standings, calls } = state;
-  const joinUrl = `${location.origin}/tournament/${tournament.code}`;
   const roundOpen = round?.status === "active";
   const allReported = pods.length > 0 && pods.every((p) => p.status === "complete");
 
@@ -129,8 +128,6 @@ export default function Organize() {
       subtitle={
         <>
           Join code <strong className="tq-code">{tournament.code}</strong>
-          <span className="dot-sep tq-join-url">·</span>
-          <span className="hint tq-join-url">{joinUrl}</span>
         </>
       }
       status={clock}

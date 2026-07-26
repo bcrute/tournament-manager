@@ -128,7 +128,8 @@
   }
 
   .site-body {
-    width: 80%;
+    /* 80% of the window, but a 4K monitor doesn't get 40-word lines */
+    width: min(80%, 80rem);
   }
 }
 
@@ -304,7 +305,16 @@
 
 .console-body {
   flex: 1;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 94rem; /* the console spreads, but not across a whole ultrawide */
+  margin-inline: auto;
   padding: 1rem;
+}
+
+/* paragraphs keep a readable measure whatever their panel's width */
+.console-body p {
+  max-width: 70ch;
 }
 
 @media (min-width: 52rem) {
