@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Icon from "../Icon";
+import AppNav from "../layouts/AppNav";
 import ConsoleLayout from "../layouts/ConsoleLayout";
 import { CONSOLE_SECTIONS, ConsoleSection, consolePath } from "../nav";
 import {
@@ -79,6 +80,11 @@ export default function Organize() {
   if (!state) {
     return (
       <div className="console">
+        {/* loading and failure are still pages of this app, and stranding
+            someone on one with no navigation is how "no way out" happens */}
+        <header className="console-masthead">
+          <AppNav />
+        </header>
         <main className="console-body">
           <p className="hint">{error ?? "Loading…"}</p>
         </main>

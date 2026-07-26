@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Icon from "../Icon";
+import AppNav from "../layouts/AppNav";
 import { goBack } from "../goBack";
 import { Account, account, AccountError, getAccount } from "../table/account";
 import SignIn from "../table/SignIn";
@@ -21,7 +22,21 @@ import {
  * email stays optional — but an organizer who loses their account mid-event
  * leaves a room full of people with no way to run the rest of the rounds.
  */
+/** The bar is wrapped around every one of this page's several return paths
+ *  rather than added to each: sign-in, the email prompt, the list and the
+ *  create form are all the same page as far as navigation is concerned. */
 export default function Host() {
+  return (
+    <div className="play">
+      <header className="play-masthead">
+        <AppNav />
+      </header>
+      <HostBody />
+    </div>
+  );
+}
+
+function HostBody() {
   const navigate = useNavigate();
   const [acct, setAcct] = useState<Account | null | undefined>(undefined);
   const [email, setEmail] = useState("");

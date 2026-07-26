@@ -1,7 +1,5 @@
 import type { ReactNode } from "react";
-import { Link, NavLink } from "react-router-dom";
-import Icon from "../Icon";
-import { PLAY_NAV, SITE_NAV } from "../nav";
+import AppNav from "./AppNav";
 
 /**
  * Player chrome: one screen, one task, thumb-first.
@@ -19,28 +17,14 @@ export default function PlayLayout({
   children: ReactNode;
   bare?: boolean;
 }) {
-  const listed = PLAY_NAV.filter((n) => n.listed);
   if (bare) return <>{children}</>;
   return (
     <div className="play">
       <a className="skip-link" href="#main">Skip to content</a>
-      {/* the same masthead the site uses: arriving here from the front page
-          shouldn't feel like leaving the site */}
+      {/* the same bar the site and the console use: arriving here from the front
+          page shouldn't feel like leaving the site */}
       <header className="play-masthead">
-        <Link to="/" className="site-logo">
-          mtg<span>.skadoosh.dev</span>
-        </Link>
-        <nav aria-label="Site">
-          {SITE_NAV.filter((n) => n.listed).map((n) => (
-            <NavLink
-              key={n.to}
-              to={n.to}
-              className={({ isActive }) => (isActive ? "active" : undefined)}
-            >
-              {n.label}
-            </NavLink>
-          ))}
-        </nav>
+        <AppNav />
       </header>
       {title && (
         <header className="play-bar">
@@ -48,21 +32,6 @@ export default function PlayLayout({
         </header>
       )}
       <main className="play-body" id="main">{children}</main>
-      {listed.length > 1 && (
-      <nav className="play-nav" aria-label="Main">
-        {listed.map((n) => (
-          <NavLink
-            key={n.to}
-            to={n.to}
-            end
-            className={({ isActive }) => `play-tab${isActive ? " active" : ""}`}
-          >
-            <Icon name={n.icon} />
-            <span>{n.label}</span>
-          </NavLink>
-        ))}
-      </nav>
-      )}
     </div>
   );
 }

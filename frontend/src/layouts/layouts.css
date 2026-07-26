@@ -29,27 +29,10 @@
   font-weight: 400;
 }
 
-.site-bar nav {
-  margin-left: auto;
-  display: flex;
-  gap: 0.25rem;
-}
-
-.site-bar nav a {
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.5rem;
-  text-decoration: none;
-  color: inherit;
-  opacity: 0.75;
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-}
-
-.site-bar nav a.active {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.07);
-}
+/* The nav itself lives in `.app-nav` (see "the one navigation bar" below).
+   Descendant rules here would out-specify it — `.site-bar nav` beats `.app-nav`
+   — and force the phone's panel permanently open, so the bar owns only its
+   own box. */
 
 .site-body {
   flex: 1;
@@ -62,11 +45,6 @@
   /* On a pointer device the bar doesn't need touch-target height. */
   .site-bar {
     padding: 0.35rem 1rem;
-  }
-
-  .site-bar nav a {
-    min-height: 36px;
-    padding: 0.35rem 0.75rem;
   }
 
   .site-body {
@@ -457,28 +435,118 @@ textarea:focus-visible,
   }
 }
 
-/* the masthead carries the site's nav, not just a logo — losing it was what
-   made /table stop feeling like part of the site */
-.play-masthead nav {
-  margin-left: auto;
+/* The console gets the same masthead as everything else. Before this, running
+   an event was a dead end — no logo, no links, no way back without the URL. */
+.console-masthead {
   display: flex;
-  gap: 0.25rem;
+  align-items: center;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid #2a2f3a;
 }
 
-.play-masthead nav a {
-  padding: 0.5rem 0.75rem;
-  min-height: 44px;
+@media (min-width: 52rem) {
+  .console-masthead {
+    padding: 0.9rem 1.5rem;
+  }
+}
+
+/* ---------- the one navigation bar ----------
+   Rendered by `AppNav` inside every layout's masthead. Mobile-first, so the
+   base rules are the phone: a hamburger, and the links in a panel hanging from
+   it. Past 60rem the panel becomes an ordinary row and the button disappears —
+   the same breakpoint and the same trade the room bar makes, so the two are
+   never in different modes on the same screen. */
+
+.app-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.app-menu-btn {
+  margin-left: auto;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.4rem;
+  border: 1px solid #2a2f3a;
   border-radius: 0.5rem;
-  text-decoration: none;
+  background: none;
   color: inherit;
-  opacity: 0.75;
+  cursor: pointer;
 }
 
-.play-masthead nav a.active {
+.app-nav {
+  display: none;
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 30;
+  min-width: 12rem;
+  flex-direction: column;
+  padding: 0.35rem;
+  border: 1px solid #2a2f3a;
+  border-radius: 0.6rem;
+  background: #161a22;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+
+.app-nav.open {
+  display: flex;
+}
+
+.app-nav a {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  min-height: 44px;
+  border-radius: 0.45rem;
+  text-decoration: none;
+  color: inherit;
+  opacity: 0.8;
+}
+
+.app-nav a.active {
   opacity: 1;
   background: rgba(255, 255, 255, 0.07);
+}
+
+@media (min-width: 60rem) {
+  /* a hamburger buys screen space a phone hasn't got; a laptop has it spare,
+     so the links are simply shown and the button goes away rather than hiding
+     things that fit */
+  .app-menu-btn {
+    display: none;
+  }
+
+  .app-nav,
+  .app-nav.open {
+    display: flex;
+    position: static;
+    flex-direction: row;
+    margin-left: auto;
+    min-width: 0;
+    gap: 0.25rem;
+    padding: 0;
+    border: none;
+    background: none;
+    box-shadow: none;
+  }
+
+  .app-nav a {
+    min-height: 36px;
+    padding: 0.35rem 0.75rem;
+  }
+
+  /* inline, the label carries it and the icon is noise */
+  .app-nav a .icon {
+    display: none;
+  }
 }
 
 .site-footer-links {

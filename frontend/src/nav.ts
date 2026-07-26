@@ -29,15 +29,15 @@ export const SITE_NAV: NavItem[] = [
 ];
 
 /**
- * The player's bottom navigation.
+ * Retired 2026-07-26: the player shell had a bottom tab strip of its own, which
+ * meant the app answered "where is navigation?" differently depending on which
+ * screen you were on. There is one bar now (`AppNav`), driven by `SITE_NAV`,
+ * and its only entry — Table — was already there as "Play".
  *
- * "Your games" used to sit here and led to a sign-in wall for the many players
- * who never make an account. It now lives in the menu, and only appears when
- * there is an account behind it.
+ * Kept as an empty list rather than deleted: the invariants below still hold
+ * over it, and a player-specific strip is a plausible thing to want back.
  */
-export const PLAY_NAV: NavItem[] = [
-  { label: "Table", to: "/table", icon: "heart", listed: true },
-];
+export const PLAY_NAV: NavItem[] = [];
 
 export type ConsoleSection = "pods" | "roster" | "standings" | "calls" | "settings";
 

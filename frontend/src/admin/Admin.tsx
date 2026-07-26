@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import SignIn from "../table/SignIn";
 import { goBack } from "../goBack";
+import AppNav from "../layouts/AppNav";
 import ConsoleLayout from "../layouts/ConsoleLayout";
 import { ADMIN_SECTIONS } from "../nav";
 import {
@@ -92,7 +93,14 @@ export default function Admin() {
 
   if (denied || !overview) {
     return (
-      <main className="adm">
+      <div className="console">
+        {/* the nav here links away from admin, never to it — /admin stays
+            unlisted, and the server is what enforces that, not the absence
+            of a link */}
+        <header className="console-masthead">
+          <AppNav />
+        </header>
+        <main className="adm">
         <header>
           <h1>Admin</h1>
         </header>
@@ -104,7 +112,8 @@ export default function Admin() {
             onCancel={() => goBack(navigate, "/")}
           />
         )}
-      </main>
+        </main>
+      </div>
     );
   }
 

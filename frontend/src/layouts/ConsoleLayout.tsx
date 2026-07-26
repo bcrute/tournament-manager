@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
+import AppNav from "./AppNav";
 import Icon, { IconName } from "../Icon";
 
 /**
@@ -32,6 +33,14 @@ export default function ConsoleLayout({
   return (
     <div className="console">
       <a className="skip-link" href="#main">Skip to content</a>
+      {/* app navigation first, then the event's own chrome. Running an event
+          used to be a dead end: no logo, no way back to the rest of the app
+          without editing the URL. The section tabs below are a different axis —
+          they move within this console, not around the app — so they stay
+          visible rather than folding into the same menu. */}
+      <header className="console-masthead">
+        <AppNav />
+      </header>
       <header className="console-bar">
         <div className="console-title">
           <h1>{title}</h1>

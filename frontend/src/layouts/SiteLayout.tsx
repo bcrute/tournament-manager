@@ -1,29 +1,17 @@
 import type { ReactNode } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { Link } from "react-router-dom";
+import AppNav from "./AppNav";
 import FanContentNotice from "../FanContentNotice";
-import { SITE_NAV } from "../nav";
 
-/** Public website chrome. One page today; the nav is here so adding a second
- *  is a line in `SITE_NAV` rather than another bespoke header. */
+/** Public website chrome. The bar itself is `AppNav`, shared with every other
+ *  layout — adding a section is a line in `SITE_NAV`, and it appears everywhere
+ *  at once rather than in whichever header happened to be copied. */
 export default function SiteLayout({ children }: { children: ReactNode }) {
   return (
     <div className="site">
       <a className="skip-link" href="#main">Skip to content</a>
       <header className="site-bar">
-        <Link to="/" className="site-logo">
-          mtg<span>.skadoosh.dev</span>
-        </Link>
-        <nav aria-label="Site">
-          {SITE_NAV.filter((n) => n.listed).map((n) => (
-            <NavLink
-              key={n.to}
-              to={n.to}
-              className={({ isActive }) => (isActive ? "active" : undefined)}
-            >
-              {n.label}
-            </NavLink>
-          ))}
-        </nav>
+        <AppNav />
       </header>
       <main className="site-body" id="main">{children}</main>
       <footer className="site-footer">
