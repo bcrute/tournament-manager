@@ -88,6 +88,7 @@
   flex: 1;
   box-sizing: border-box; /* width + padding must still fit a phone */
   width: min(100%, 60rem);
+  max-width: none; /* the global main cap (860px) silently overrode the 80% */
   margin: 0 auto;
   padding: 1.5rem 1rem 3rem;
 }
@@ -128,8 +129,8 @@
   }
 
   .site-body {
-    /* 80% of the window, but a 4K monitor doesn't get 40-word lines */
-    width: min(80%, 80rem);
+    /* long text blocks keep their own measure (hero, prose, ch caps) */
+    width: 80%;
   }
 }
 
@@ -312,7 +313,6 @@
   flex: 1;
   box-sizing: border-box;
   width: 100%;
-  max-width: 94rem; /* the console spreads, but not across a whole ultrawide */
   margin-inline: auto;
   padding: 1rem;
 }
@@ -351,6 +351,9 @@
 
   .console-body {
     grid-area: body;
+    /* 80% of the page, like the site's content column; the sections keep
+       their own caps so this widens the canvas, not the prose */
+    max-width: 80vw;
     padding: 1.25rem;
   }
 }
