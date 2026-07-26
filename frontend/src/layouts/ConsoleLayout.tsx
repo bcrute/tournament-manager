@@ -35,12 +35,12 @@ export default function ConsoleLayout({
       <a className="skip-link" href="#main">Skip to content</a>
       {/* the same header as everywhere else — a console is still part of the site */}
       <SiteNav />
+      {/* three zones: the code an organizer reads out on the left, the event's
+          name centered, whatever must stay visible (the clock) on the right */}
       <header className="console-bar">
-        <div className="console-title">
-          <h1>{title}</h1>
-          {subtitle && <p className="console-sub">{subtitle}</p>}
-        </div>
-        {status && <div className="console-status">{status}</div>}
+        <div className="console-sub">{subtitle}</div>
+        <h1>{title}</h1>
+        <div className="console-status">{status}</div>
       </header>
 
       {sections.length > 0 && (
