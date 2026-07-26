@@ -201,7 +201,10 @@ def get_room(code: str, allow_closed: bool = False):
     # check just this room's idle clock (primary-key read); the bulk sweep runs on create
     if row["status"] != "closed" and not _is_tournament_room(row["code"]):
         cutoff = q("SELECT unixepoch() - ? AS c", (IDLE_TIMEOUT,)).fetchone()["c"]
-        if (row["last_active"] or row["created_at"]) < cutoff:
+        # no timestamp means no idle verdict — same as the sweep's COALESCE,
+        # where a NULL comparison is false. Seen as a live TypeError once.
+        last_seen = row["last_active"] or row["created_at"]
+        if last_seen is not None and last_seen < cutoff:
             q("UPDATE rooms SET status = 'closed' WHERE code = ?", (row["code"],))
             row = q("SELECT * FROM rooms WHERE code = ?", (row["code"],)).fetchone()
     if row["status"] == "closed" and not allow_closed:
