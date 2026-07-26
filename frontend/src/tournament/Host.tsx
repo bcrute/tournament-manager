@@ -84,11 +84,11 @@ export default function Host() {
     }
   }
 
-  if (acct === undefined) return <main className="tq-host" />;
+  if (acct === undefined) return <div className="tq-host" />;
 
   if (!acct) {
     return (
-      <main className="tq-host">
+      <div className="tq-host">
         <header>
           <h1>Host a tournament</h1>
           <p className="tagline">
@@ -101,13 +101,13 @@ export default function Host() {
           onDone={(a) => setAcct(a)}
           onCancel={() => goBack(navigate, "/table")}
         />
-      </main>
+      </div>
     );
   }
 
   if (!acct.hasEmail) {
     return (
-      <main className="tq-host">
+      <div className="tq-host">
         <header>
           <h1>One thing first</h1>
         </header>
@@ -134,7 +134,7 @@ export default function Host() {
             {busy ? "…" : "Save and continue"}
           </button>
         </div>
-      </main>
+      </div>
     );
   }
 
@@ -143,7 +143,7 @@ export default function Host() {
   // than a new one.
   if (!creating && mine !== null) {
     return (
-      <main className="tq-host">
+      <div className="tq-host">
         <header>
           <h1>Your tournaments</h1>
           <p className="tagline">Signed in as {acct.username}</p>
@@ -194,12 +194,12 @@ export default function Host() {
         <button className="primary" onClick={() => setCreating(true)}>
           <Icon name="plus" /> New tournament
         </button>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="tq-host">
+    <div className="tq-host">
       <header>
         <button className="sheet-back" onClick={() => setCreating(false)} aria-label="Back">
           <Icon name="back" /> Back
@@ -293,6 +293,6 @@ export default function Host() {
           {busy ? "…" : "Create tournament"}
         </button>
       </div>
-    </main>
+    </div>
   );
 }

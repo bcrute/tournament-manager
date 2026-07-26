@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ADMIN_SECTIONS, CONSOLE_SECTIONS, consolePath, PLAY_NAV, SITE_NAV } from "./nav";
+import { ADMIN_SECTIONS, CONSOLE_SECTIONS, consolePath, SITE_NAV } from "./nav";
 
 describe("navigation structure", () => {
   it("routes the organizer console per section", () => {
@@ -8,13 +8,13 @@ describe("navigation structure", () => {
   });
 
   it("keeps every destination absolute so nav works from any depth", () => {
-    for (const item of [...SITE_NAV, ...PLAY_NAV]) {
+    for (const item of SITE_NAV) {
       expect(item.to.startsWith("/")).toBe(true);
     }
   });
 
   it("gives every entry an icon — the nav renders icon-first for language reasons", () => {
-    for (const item of [...SITE_NAV, ...PLAY_NAV, ...CONSOLE_SECTIONS, ...ADMIN_SECTIONS]) {
+    for (const item of [...SITE_NAV, ...CONSOLE_SECTIONS, ...ADMIN_SECTIONS]) {
       expect(item.icon).toBeTruthy();
     }
   });
@@ -26,7 +26,7 @@ describe("navigation structure", () => {
     expect(new Set(adminIds).size).toBe(adminIds.length);
   });
 
-  it("keeps the player's nav short — a player has few destinations", () => {
-    expect(PLAY_NAV.length).toBeLessThanOrEqual(3);
+  it("keeps the site nav short — past a handful it stops being navigation", () => {
+    expect(SITE_NAV.length).toBeLessThanOrEqual(5);
   });
 });

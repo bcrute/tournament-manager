@@ -91,11 +91,10 @@ export default function Admin() {
   }
 
   if (denied || !overview) {
+    // same chrome as the signed-in console; no sections until there is
+    // something behind them
     return (
-      <main className="adm">
-        <header>
-          <h1>Admin</h1>
-        </header>
+      <ConsoleLayout title="Admin" sections={[]} pathFor={() => "/admin"}>
         {denied && (
           <SignIn
             purpose="required"
@@ -104,7 +103,7 @@ export default function Admin() {
             onCancel={() => goBack(navigate, "/")}
           />
         )}
-      </main>
+      </ConsoleLayout>
     );
   }
 

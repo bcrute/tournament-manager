@@ -40,6 +40,7 @@ export default function ConsoleLayout({
         {status && <div className="console-status">{status}</div>}
       </header>
 
+      {sections.length > 0 && (
       <nav className="console-nav" aria-label="Sections">
         {sections.map((s) => (
           <NavLink
@@ -52,6 +53,7 @@ export default function ConsoleLayout({
           </NavLink>
         ))}
       </nav>
+      )}
 
       <main className="console-body" id="main">{children}</main>
     </div>

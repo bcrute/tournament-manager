@@ -208,7 +208,10 @@
 }
 
 .sheet {
-  width: min(94vw, 420px);
+  /* sized by the container, not the viewport — a sheet renders inside the
+     layout's column as often as inside the full-screen overlay */
+  box-sizing: border-box;
+  width: min(100%, 420px);
   margin: 1.5rem auto 0;
   display: flex;
   flex-direction: column;
@@ -1930,7 +1933,7 @@ button.ghost.danger {
 
 /* Never smaller than a comfortable target, whatever the viewport maths says. */
 .bar-menu-btn,
-.play-tab,
+.site-menu-btn,
 .console-tab {
   min-width: 44px;
   min-height: 44px;

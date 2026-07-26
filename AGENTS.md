@@ -230,12 +230,19 @@ it lives.
 
 Three layouts, in `frontend/src/layouts/`. A page picks one; it never invents
 its own chrome. Navigation is data in `frontend/src/nav.ts`, so adding a
-section is a line in a list.
+section is a line in a list. The layout owns the `<main>` landmark — pages
+render plain containers inside it.
+
+Site navigation is one component, `SiteNav`: a hamburger menu on a phone,
+inline links past 60rem. `SiteLayout` and `PlayLayout` both render it. The
+room is the one exception — a card fills that screen, and `RoomBar` is its
+chrome, with the same hamburger grammar (leading trigger, `aria-expanded`,
+Escape closes and hands focus back).
 
 | Layout | Used by | Shape |
 | --- | --- | --- |
-| `SiteLayout` | `/` | The public website. One page today, nav ready for more |
-| `PlayLayout` | table lobby, dashboard, tournament player | Mobile-first single column, bottom nav. `bare` for full-viewport pages like the room |
+| `SiteLayout` | `/`, `/privacy` | The public website: `SiteNav` plus a footer |
+| `PlayLayout` | table lobby, dashboard, tournament host & player | `SiteNav` over a mobile-first single column |
 | `ConsoleLayout` | tournament organizer, admin | Sections as a tab strip on a phone, a sidebar past 52rem. A persistent status slot for the round clock |
 
 **Why three and not one:** a player screen is one task, thumb-first. A console

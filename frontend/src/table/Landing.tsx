@@ -117,12 +117,12 @@ export default function Landing() {
 
   if (autoJoining) {
     return (
-      <main className="tr-landing">
+      <div className="tr-landing">
         <header>
           <h1>Table</h1>
           <p className="tagline">Joining room {params.get("join")}…</p>
         </header>
-      </main>
+      </div>
     );
   }
 
@@ -162,7 +162,7 @@ export default function Landing() {
 
   if (rejoin) {
     return (
-      <main className="tr-landing">
+      <div className="tr-landing">
         <header>
           <h1>Rejoin {rejoin.code}</h1>
           <p className="tagline">That game is already under way — pick your seat</p>
@@ -188,12 +188,12 @@ export default function Landing() {
             ← back
           </button>
         </footer>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="tr-landing">
+    <div className="tr-landing">
       <header>
         <h1>Table</h1>
         <p className="tagline">Life totals &amp; hidden roles for game night</p>
@@ -322,6 +322,6 @@ export default function Landing() {
       )}
 
       <FanContentNotice />
-    </main>
+    </div>
   );
 }

@@ -9,12 +9,15 @@
   flex-direction: column;
 }
 
+/* One header everywhere: a hamburger on a phone, inline links on a wide
+   screen. Same grammar as the room's bar — the trigger leads, the menu drops
+   below it. */
 .site-bar {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-  padding: 0.9rem 1rem;
+  gap: 0.6rem;
+  padding: 0.55rem 1rem;
   border-bottom: 1px solid #2a2f3a;
 }
 
@@ -29,30 +32,60 @@
   font-weight: 400;
 }
 
-.site-bar nav {
-  margin-left: auto;
-  display: flex;
-  gap: 0.25rem;
+.site-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  margin-left: -0.5rem;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
 }
 
-.site-bar nav a {
+/* closed: still in the DOM, so Escape hides rather than removes */
+.site-nav {
+  display: none;
+}
+
+.site-nav.open {
+  position: absolute;
+  top: 100%;
+  left: 0.5rem;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  min-width: 13rem;
+  padding: 0.35rem;
+  background: #161a23;
+  border: 1px solid #2a2f3a;
+  border-radius: 0.6rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.site-nav a {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   padding: 0.5rem 0.75rem;
   border-radius: 0.5rem;
   text-decoration: none;
   color: inherit;
   opacity: 0.75;
   min-height: 44px;
-  display: inline-flex;
-  align-items: center;
 }
 
-.site-bar nav a.active {
+.site-nav a.active {
   opacity: 1;
   background: rgba(255, 255, 255, 0.07);
 }
 
 .site-body {
   flex: 1;
+  box-sizing: border-box; /* width + padding must still fit a phone */
   width: min(100%, 60rem);
   margin: 0 auto;
   padding: 1.5rem 1rem 3rem;
@@ -64,7 +97,31 @@
     padding: 0.35rem 1rem;
   }
 
-  .site-bar nav a {
+  .site-menu-btn {
+    display: none;
+  }
+
+  .site-nav,
+  .site-nav.open {
+    position: static;
+    display: flex;
+    flex-direction: row;
+    margin-left: auto;
+    min-width: 0;
+    padding: 0;
+    gap: 0.25rem;
+    background: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  /* inline links carry their own words; the icons are for the menu */
+  .site-nav a svg {
+    display: none;
+  }
+
+  .site-nav a {
     min-height: 36px;
     padding: 0.35rem 0.75rem;
   }
@@ -170,49 +227,12 @@
   flex-direction: column;
 }
 
-.play-bar {
-  padding: 0.9rem 1rem 0.4rem;
-}
-
-.play-bar h1 {
-  margin: 0;
-  font-size: 1.25rem;
-}
-
 .play-body {
   flex: 1;
+  box-sizing: border-box; /* width + padding must still fit a phone */
   width: min(100%, 34rem);
   margin: 0 auto;
   padding: 0.5rem 1rem 1rem;
-}
-
-/* bottom nav: thumb-reachable, and out of the way of the primary action */
-.play-nav {
-  position: sticky;
-  bottom: 0;
-  display: flex;
-  background: #12151c;
-  border-top: 1px solid #2a2f3a;
-  padding-bottom: env(safe-area-inset-bottom);
-}
-
-.play-tab {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.15rem;
-  padding: 0.5rem;
-  min-height: 52px;
-  text-decoration: none;
-  color: inherit;
-  opacity: 0.6;
-  font-size: 0.72rem;
-}
-
-.play-tab.active {
-  opacity: 1;
-  color: #9db8ff;
 }
 
 /* ---------- console ---------- */
@@ -420,65 +440,6 @@ textarea:focus-visible,
     max-width: 64rem;
     padding: 1.5rem 2rem 2rem;
   }
-
-  .play-bar {
-    max-width: 64rem;
-    margin: 0 auto;
-    padding: 1.25rem 2rem 0.5rem;
-  }
-
-  .play-bar h1 {
-    font-size: 1.6rem;
-  }
-
-  /* the bottom bar is a phone idiom; on a pointer device it floats oddly at
-     the base of a tall window */
-  .play-nav {
-    position: static;
-    max-width: 64rem;
-    margin: 1rem auto 0;
-    border-top: 1px solid #2a2f3a;
-    border-radius: 0.5rem;
-  }
-}
-
-/* The play area carries the site's masthead: arriving from the front page
-   shouldn't feel like leaving the site for a bare app screen. */
-.play-masthead {
-  display: flex;
-  align-items: center;
-  padding: 0.7rem 1rem;
-  border-bottom: 1px solid #2a2f3a;
-}
-
-@media (min-width: 60rem) {
-  .play-masthead {
-    padding: 0.9rem 2rem;
-  }
-}
-
-/* the masthead carries the site's nav, not just a logo — losing it was what
-   made /table stop feeling like part of the site */
-.play-masthead nav {
-  margin-left: auto;
-  display: flex;
-  gap: 0.25rem;
-}
-
-.play-masthead nav a {
-  padding: 0.5rem 0.75rem;
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  border-radius: 0.5rem;
-  text-decoration: none;
-  color: inherit;
-  opacity: 0.75;
-}
-
-.play-masthead nav a.active {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.07);
 }
 
 .site-footer-links {

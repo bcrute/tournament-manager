@@ -41,15 +41,15 @@ export default function Dashboard() {
 
   if (acct === undefined) {
     return (
-      <main className="tr-landing">
+      <div className="tr-landing">
         <p className="tagline">Loading…</p>
-      </main>
+      </div>
     );
   }
 
   if (!acct) {
     return (
-      <main className="tr-landing">
+      <div className="tr-landing">
         <header>
           <h1>Your games</h1>
           <p className="tagline">
@@ -62,7 +62,7 @@ export default function Dashboard() {
           <Link to="/table">← back to Table</Link>
         </footer>
         <FanContentNotice />
-      </main>
+      </div>
     );
   }
 
@@ -77,7 +77,7 @@ export default function Dashboard() {
   }
 
   return (
-    <main className="tr-landing dashboard">
+    <div className="tr-landing dashboard">
       <header>
         <h1>{acct.username}</h1>
         <p className="tagline">{games.length} game{games.length === 1 ? "" : "s"} recorded</p>
@@ -210,6 +210,6 @@ export default function Dashboard() {
           </div>
         )}
       </footer>
-    </main>
+    </div>
   );
 }

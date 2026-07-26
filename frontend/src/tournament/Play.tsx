@@ -68,7 +68,7 @@ function ClaimSeat({
   }
 
   return (
-    <main className="tq-play">
+    <div className="tq-play">
       <header>
         <h1>{roster?.name ?? code}</h1>
         <p className="tagline">Tap your name to check in</p>
@@ -92,7 +92,7 @@ function ClaimSeat({
       {roster && roster.entrants.length === 0 && (
         <p className="hint">The organizer hasn&rsquo;t added the roster yet — check back in a moment.</p>
       )}
-    </main>
+    </div>
   );
 }
 
@@ -136,7 +136,7 @@ function SeatView({
   const standing = state?.standings.find((s) => s.entrantId === seat.entrantId);
 
   return (
-    <main className="tq-play">
+    <div className="tq-play">
       <header>
         <h1>{state?.tournament.name ?? code}</h1>
         <p className="tagline">Checked in as {seat.name}</p>
@@ -191,6 +191,6 @@ function SeatView({
           Not you? Check in as someone else
         </button>
       </footer>
-    </main>
+    </div>
   );
 }

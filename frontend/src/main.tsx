@@ -32,7 +32,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <Route path="/table" element={<PlayLayout><Landing /></PlayLayout>} />
         <Route path="/table/r/:code" element={<Room />} />
         <Route path="/table/me" element={<PlayLayout><Dashboard /></PlayLayout>} />
-        <Route path="/tournament" element={<Host />} />
+        <Route path="/tournament" element={<PlayLayout><Host /></PlayLayout>} />
         <Route path="/tournament/:code" element={<PlayLayout><Play /></PlayLayout>} />
         <Route path="/tournament/:code/organize" element={<Navigate to="pods" replace />} />
         <Route path="/tournament/:code/organize/:section" element={<Organize />} />
