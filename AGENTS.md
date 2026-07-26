@@ -40,7 +40,11 @@ not in it and never should be:
 
 4. **VPS SSH access — only for manual host operations.** Routine deploys never
    need it: the workflow has its own key in the repo's Actions secrets
-   (`VPS_SSH_KEY`, base64-encoded). What does need it: editing the root
+   (`VPS_SSH_KEY`, base64-encoded; its public half is the
+   `github-actions-deploy-mtg` entry in root's `authorized_keys` — minted
+   2026-07-26 after the migrated secret turned out to have never been
+   authorized on the VPS, which silently failed every GitHub deploy at the
+   first SSH step while the site kept serving the last home-runner build). What does need it: editing the root
    Caddyfile, `mtg.env`, or anything in `deploy/README.md`'s runbook. Access is
    `root@74.208.222.65`, host key pinned in `deploy.yml`. Keys are per-machine
    and named for what they are (e.g. `~/.ssh/social_vps_ed25519`); to work from
