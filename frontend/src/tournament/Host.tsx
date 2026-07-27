@@ -264,20 +264,23 @@ export default function Host() {
           </label>
         )}
 
-        <label>
-          Format
-          <div className="tr-mode">
-            {(profile?.modes ?? ["life", "treachery"]).map((m) => (
-              <button
-                key={m}
-                className={mode === m ? "active" : ""}
-                onClick={() => setMode(m)}
-              >
-                {m === "life" ? "Life counter" : m === "treachery" ? "Hidden roles" : m}
-              </button>
-            ))}
-          </div>
-        </label>
+        {/* one format needs no picker — the same rule the game selector uses */}
+        {(profile?.modes?.length ?? 0) > 1 && (
+          <label>
+            Format
+            <div className="tr-mode">
+              {profile!.modes.map((m) => (
+                <button
+                  key={m}
+                  className={mode === m ? "active" : ""}
+                  onClick={() => setMode(m)}
+                >
+                  {m === "life" ? "Life counter" : m === "treachery" ? "Hidden roles" : m}
+                </button>
+              ))}
+            </div>
+          </label>
+        )}
 
         {profile && profile.structures?.length > 0 && (
           <label>

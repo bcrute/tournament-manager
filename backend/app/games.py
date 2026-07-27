@@ -36,8 +36,10 @@ class GameProfile:
     resource_direction: str  # "down" | "up"
     resource_goal: int
 
-    #: room modes this game can run. The room is what tracks live table state;
-    #: a game with no room support simply has none and is scored by hand.
+    #: formats a *tournament* of this game can be run in, and the only thing
+    #: this field governs — `tournaments.py` validates against it and the
+    #: create form offers it. A room's own modes are separate (`table.MODES`),
+    #: so a format missing here can still be played casually at a table.
     modes: tuple[str, ...] = ()
 
     #: time-called policies offered for this game, first is the default. Only
@@ -216,7 +218,11 @@ MTG = GameProfile(
     resource_start=40,
     resource_direction="down",
     resource_goal=0,
-    modes=("life", "treachery"),
+    # Life only. Treachery is a hidden-role variant: it has no standings a
+    # Swiss event can rank, and the identities it deals are the one part of the
+    # app whose art we host on someone else's goodwill. It stays available for
+    # a casual room, which is where it is actually played.
+    modes=("life",),
     # draw_all first: MTR 2.4 makes an unfinished game a draw *in Swiss*. In
     # single elimination the same section says highest life wins — so
     # highest_life is the official behaviour for a cut, not a house rule, and

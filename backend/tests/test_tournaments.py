@@ -818,8 +818,19 @@ class TestGameSurface:
         games = client.get("/api/tournament/games").json()["games"]
         assert [g["key"] for g in games] == ["mtg"]
         mtg = games[0]
-        assert mtg["defaultPodSize"] == 4 and "treachery" in mtg["modes"]
+        assert mtg["defaultPodSize"] == 4
         assert mtg["publisher"] == "Wizards of the Coast"
+
+    def test_a_tournament_runs_life_only(self, client):
+        """Treachery is a hidden-role variant with nothing for Swiss to rank.
+        It stays playable in a casual room; it is not a tournament format."""
+        games = client.get("/api/tournament/games").json()["games"]
+        assert games[0]["modes"] == ["life"]
+        organizer(client, "modesOnly")
+        r = client.post(
+            "/api/tournament", json={"name": "roles", "mode": "treachery", "settings": {}}
+        )
+        assert r.status_code == 400
 
     def test_games_route_is_not_shadowed_by_the_tournament_code_route(self, client):
         """/games must not be read as a 5-char tournament code."""
