@@ -296,16 +296,36 @@ button.link {
   gap: 0.6rem;
 }
 
+/* The card holds two targets: the whole surface opens the event, and delete
+   sits in its corner. */
 .tq-mine-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0 0.5rem;
   padding: 0.8rem;
   border: 1px solid var(--line, #2a2f3a);
   border-radius: 0.6rem;
+  background: var(--panel, #161a23);
+}
+
+/* stretched: the link's own box is only the text, but its overlay covers the
+   card, so a tap anywhere but the delete button opens the event */
+.tq-mine-link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
   text-decoration: none;
   color: inherit;
-  background: var(--panel, #161a23);
+}
+
+.tq-mine-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
 }
 
 .tq-mine-card.running {
@@ -332,31 +352,34 @@ button.link {
   color: #ffb4a2;
 }
 
-/* Under the card, not on it: the card is one big link, and a destructive
-   control inside a navigation target is a misclick waiting to happen. */
-.tq-mine li {
-  display: grid;
-  justify-items: end;
-  gap: 0.2rem;
-}
-
-.tq-mine li > .tq-mine-card {
-  justify-self: stretch;
-}
-
+/* Above the stretched link, or the card's overlay would swallow the click.
+   Icon-only and quiet: it shares a card with the thing it destroys, so it
+   should be findable without competing with the event's own name. */
 .tq-mine-delete {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  color: var(--danger, #e06c75);
-  opacity: 0.75;
-  text-decoration: none;
-  min-height: 32px;
+  justify-content: center;
+  min-width: 44px; /* the app's touch-target floor, same as the nav buttons */
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-dim, #b8b0c8);
 }
 
-.tq-mine-delete:hover {
-  opacity: 1;
-  text-decoration: underline;
+@media (hover: hover) and (pointer: fine) {
+  .tq-mine-delete:hover:not(:disabled) {
+    border-color: #6b3038;
+    background: rgba(224, 108, 117, 0.12);
+    color: var(--danger, #e06c75);
+  }
+}
+
+.tq-mine-delete:focus-visible {
+  color: var(--danger, #e06c75);
 }
 
 /* The structure's recommendation, next to the button it informs. Officially

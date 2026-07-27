@@ -170,11 +170,12 @@ export default function Host() {
         {mine.length > 0 && (
           <ul className="tq-mine">
             {mine.map((t) => (
-              <li key={t.code}>
-                <Link
-                  to={`/tournament/${t.code}/organize/pods`}
-                  className={`tq-mine-card ${t.status}`}
-                >
+              /* The card is the container, not the link. The link stretches
+                 across it so the whole card still opens the event, and delete
+                 sits above that overlay — inside the card, but its own target
+                 rather than a button nested in a navigation element. */
+              <li key={t.code} className={`tq-mine-card ${t.status}`}>
+                <Link to={`/tournament/${t.code}/organize/pods`} className="tq-mine-link">
                   <span className="tq-mine-head">
                     <strong>{t.name}</strong>
                     <span className="tq-code">{t.code}</span>
@@ -197,14 +198,14 @@ export default function Host() {
                     )}
                   </span>
                 </Link>
-                {/* outside the Link on purpose: a delete nested inside the
-                    card's own navigation is a misclick waiting to happen */}
                 <button
-                  className="link tq-mine-delete"
+                  className="tq-mine-delete"
                   disabled={busy}
+                  aria-label={`Delete ${t.name}`}
+                  title="Delete this tournament"
                   onClick={() => void remove(t)}
                 >
-                  <Icon name="close" size={14} /> Delete
+                  <Icon name="close" size={16} />
                 </button>
               </li>
             ))}
