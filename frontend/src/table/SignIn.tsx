@@ -101,20 +101,13 @@ export default function SignIn({
       </button>
       <h2>{mode === "login" ? "Sign in" : "Create an account"}</h2>
       {optional && (
-        <>
-          <p className="notice">
-            <strong>Playing never needs an account.</strong> Every game, table and
-            tournament works signed out — an account only keeps a history of your games
-            and your private notes. <em>Hosting</em> a tournament is the one exception:
-            organizers need an account so they can get back into their event.
-          </p>
-          <p className="hint">
-            <strong>No email required.</strong> Sign up with just a username and a
-            password. You can add an email later if you want, and it is used for one thing
-            only: recovering your account. It is never required, never shown to anyone,
-            and never used to contact you.
-          </p>
-        </>
+        <p className="notice">
+          <strong>Playing never needs an account.</strong> One only keeps your game
+          history and private notes, and signing up is a username and a password —
+          an email is optional, used for nothing but account recovery.{" "}
+          <em>Hosting</em> a tournament is the one exception: organizers need a way
+          back into their event.
+        </p>
       )}
       <div className="tr-mode">
         <button className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>

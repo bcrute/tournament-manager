@@ -201,12 +201,12 @@ export default function Host() {
   return (
     <div className="tq-host">
       <header>
-        <button className="sheet-back" onClick={() => setCreating(false)} aria-label="Back">
-          <Icon name="back" /> Back
-        </button>
         <h1>Create a tournament</h1>
       </header>
       <div className="sheet">
+        <button className="sheet-back" onClick={() => setCreating(false)} aria-label="Back">
+          <Icon name="back" /> Back
+        </button>
         <label>
           Event name
           <input

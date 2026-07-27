@@ -265,8 +265,9 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         {/* no onLeave: this is a player showing the table view, not a
             dedicated display. "Disconnect" belongs to a device that gave up its
             seat, and offering it here would drop them out of their own game —
-            "Back to my view" below is the way out. */}
-        <DisplayView state={state} code={code} token={token} />
+            "Back to my view" below is the way out. upright: this device is in
+            someone's hand, not lying flat in the middle of the table. */}
+        <DisplayView state={state} code={code} token={token} upright />
         <div className="tracker-bar">
           <span>
             <Icon name="monitor" /> Keeping score for the table
@@ -395,42 +396,53 @@ function RoomInner({ code, token }: { code: string; token: string }) {
           onUnveil={() => act("/unveil").then(() => undefined)}
         />
       )}
-      {activeTab === "life" && (
-        <main className="tr-life-page">
-          <header>
-            <p className="tagline">
-              {state.me.name}{" "}
-              <button className="ghost rename-btn" onClick={() => void renameSelf()}>
-                <Icon name="edit" size={14} label={t("menu.rename")} />
-              </button>
-            </p>
-            <p className="tagline">
-              {state.room.firstPlayer && `${state.room.firstPlayer} went first · `}room {code}
-            </p>
-          </header>
-          <LifePanel state={state} code={code} token={token} />
+      {activeTab !== "card" && (
+        /* life and table are one main: on a phone the tabs pick which section
+           shows; past 60rem (life mode) both render side by side and the tabs
+           disappear — a desktop doesn't need to choose. treachery keeps one
+           section at a time (`solo`), since the card screen still needs tabs. */
+        <main className={`tr-panels active-${activeTab}${treachery ? " solo" : ""}`}>
+          {(!treachery || activeTab === "life") && (
+            <section className="tr-life-page">
+              <header>
+                <p className="tagline">
+                  {state.me.name}{" "}
+                  <button className="ghost rename-btn" onClick={() => void renameSelf()}>
+                    <Icon name="edit" size={14} label={t("menu.rename")} />
+                  </button>
+                </p>
+                <p className="tagline">
+                  {state.room.firstPlayer && `${state.room.firstPlayer} went first · `}room {code}
+                </p>
+              </header>
+              <LifePanel state={state} code={code} token={token} />
+            </section>
+          )}
+          {(!treachery || activeTab === "table") && (
+            <TableView
+              state={state}
+              onZoom={(p) => setZoomPid(p.pid)}
+              onEnd={
+                state.me.isHost && !ended
+                  ? () => {
+                      const msg = treachery
+                        ? "End the game and return everyone to the room? Identities are revealed first."
+                        : "End the game and return everyone to the room?";
+                      if (window.confirm(msg)) void act("/end");
+                    }
+                  : undefined
+              }
+              onReopen={state.me.isHost && ended ? () => void act("/reopen") : undefined}
+            />
+          )}
         </main>
-      )}
-      {activeTab === "table" && (
-        <TableView
-          state={state}
-          onZoom={(p) => setZoomPid(p.pid)}
-          onEnd={
-            state.me.isHost && !ended
-              ? () => {
-                  const msg = treachery
-                    ? "End the game and return everyone to the room? Identities are revealed first."
-                    : "End the game and return everyone to the room?";
-                  if (window.confirm(msg)) void act("/end");
-                }
-              : undefined
-          }
-          onReopen={state.me.isHost && ended ? () => void act("/reopen") : undefined}
-        />
       )}
 
       {!ended && (
-        <nav className="bottom-nav" onPointerDown={(e) => e.stopPropagation()}>
+        <nav
+          className={`bottom-nav${treachery ? "" : " no-card"}`}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
           {treachery && (
             <button className={activeTab === "card" ? "active" : ""} onClick={() => setTab("card")}>
               <Icon name="card" /> {t("nav.card")}
@@ -563,7 +575,7 @@ function Lobby({
           </button>
         </section>
       ) : (
-        <p className="tagline">Waiting for the host to start…</p>
+        <p className="tagline tr-waiting">Waiting for the host to start…</p>
       )}
 
       {state.log.length > 0 && (
@@ -788,7 +800,7 @@ function TableView({
   const treachery = state.room.mode === "treachery";
   const ended = state.room.status === "ended";
   return (
-    <main className="tr-table">
+    <section className="tr-table">
       <header>
         <h1>{ended ? "Game over" : "The table"}</h1>
         {treachery && <p className="dist">{distSummary(state.room.distribution)}</p>}
@@ -850,6 +862,6 @@ function TableView({
           </button>
         )}
       </footer>
-    </main>
+    </section>
   );
 }

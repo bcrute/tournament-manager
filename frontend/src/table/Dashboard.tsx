@@ -52,10 +52,7 @@ export default function Dashboard() {
       <div className="tr-landing">
         <header>
           <h1>Your games</h1>
-          <p className="tagline">
-            Optional for playing — sign in to keep a history and private notes. No email
-            needed. (Hosting a tournament does need an account.)
-          </p>
+          <p className="tagline">Your game history and notes, when you want them kept.</p>
         </header>
         <SignIn onDone={setAcct} onCancel={() => goBack(navigate, "/table")} />
         <footer>

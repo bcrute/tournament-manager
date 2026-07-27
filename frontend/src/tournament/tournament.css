@@ -345,3 +345,40 @@ button.link {
   font-style: normal;
   opacity: 0.8;
 }
+
+/* ---------- tournament pages on a desktop ----------
+   The phone keeps its single thumb column; past 60rem the lists become grids
+   and headings align with the content they head instead of centering over it. */
+
+@media (min-width: 60rem) {
+  .tq-host,
+  .tq-play {
+    max-width: 60rem;
+  }
+
+  .tq-host > header,
+  .tq-play > header {
+    text-align: left;
+  }
+
+  .tq-host .sheet {
+    margin-inline: 0;
+  }
+
+  /* checking in is finding your name — a grid scans faster than a tower */
+  .tq-claim {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+    gap: 0.6rem;
+  }
+
+  .tq-claim li {
+    margin-bottom: 0;
+  }
+
+  .tq-mine {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+    gap: 0.75rem;
+  }
+}

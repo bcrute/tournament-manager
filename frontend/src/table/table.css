@@ -404,6 +404,23 @@
   color: #c9a84c;
 }
 
+/* Life and table as one main: tabs choose a section on a phone, a desktop
+   shows both. The wrapper clears the fixed room bar so the first line of
+   either section isn't underneath it. */
+.tr-panels {
+  max-width: none;
+  margin: 0;
+  padding: calc(2.6rem + env(safe-area-inset-top)) 0 0;
+}
+
+.tr-panels.active-life > .tr-table {
+  display: none;
+}
+
+.tr-panels.active-table > .tr-life-page {
+  display: none;
+}
+
 /* Life panel */
 .tr-life-page {
   max-width: 480px;
@@ -1137,10 +1154,10 @@ button.ghost {
   cursor: grabbing;
 }
 
-/* Reveal toasts */
+/* Reveal toasts — below the room bar, never on top of it */
 .toasts {
   position: fixed;
-  top: calc(0.7rem + env(safe-area-inset-top));
+  top: calc(3.2rem + env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%);
   z-index: 40;
@@ -1755,6 +1772,12 @@ button.ghost.danger {
   overflow: hidden;
 }
 
+/* held in a hand (or on a desktop), not read across a table: a narrow sheet,
+   not a wall-sized one */
+.display-view.upright .cmd-panel {
+  width: min(94vw, 34rem);
+}
+
 .cmd-panel header {
   padding: 0.7rem 1rem;
   border-bottom: 1px solid #322747;
@@ -1916,9 +1939,57 @@ button.ghost.danger {
     margin-inline: auto;
   }
 
+  /* room for the inline menu next to the code and name; wrap rather than
+     overflow when it still doesn't fit */
   .room-bar {
-    max-width: 60rem;
+    max-width: 80rem;
     margin-inline: auto;
+    flex-wrap: wrap;
+  }
+
+  .bar-menu {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  /* life and the table side by side — the tabs disappear (life mode), since
+     there is nothing left to switch between */
+  .bottom-nav.no-card {
+    display: none;
+  }
+
+  .tr-panels {
+    padding-top: 4rem;
+  }
+
+  .tr-panels:not(.solo) {
+    display: grid;
+    grid-template-columns: minmax(22rem, 34rem) minmax(24rem, 1fr);
+    gap: 0 2rem;
+    align-items: start;
+    max-width: 80rem;
+    margin-inline: auto;
+    padding-inline: 2rem;
+  }
+
+  .tr-panels:not(.solo) > .tr-table,
+  .tr-panels:not(.solo) > .tr-life-page {
+    display: block;
+    max-width: none;
+    margin: 0;
+  }
+
+  /* beside the life panel it's a left-aligned pane, not a centered page */
+  .tr-panels:not(.solo) > .tr-table {
+    text-align: left;
+  }
+
+  .tr-panels:not(.solo) .life-roster {
+    gap: 0.5rem 1.75rem;
+  }
+
+  .tr-panels:not(.solo) > .tr-life-page {
+    padding-bottom: 2rem;
   }
 
   .life-panel {
@@ -1926,10 +1997,53 @@ button.ghost.danger {
     margin-inline: auto;
   }
 
+  /* the lobby regroups on a desktop: the joining half (code + QR) on the
+     left, the room itself (players + game options) on the right, the log
+     across the bottom. On a phone it stays one column in that same order. */
+  .tr-lobby {
+    max-width: 64rem;
+    margin-inline: auto;
+    display: grid;
+    grid-template-columns: minmax(16rem, 20rem) minmax(24rem, 44rem);
+    grid-template-rows: auto auto auto 1fr auto;
+    grid-template-areas:
+      "head players"
+      "qr   players"
+      "qr   game"
+      ".    game"
+      "log  log";
+    column-gap: 3rem;
+    align-items: start;
+    text-align: left;
+  }
+
+  .tr-lobby > header {
+    grid-area: head;
+  }
+
+  .tr-lobby > .qr {
+    grid-area: qr;
+  }
+
+  .tr-lobby > .tr-players {
+    grid-area: players;
+  }
+
+  .tr-lobby > .tr-host,
+  .tr-lobby > .tr-waiting {
+    grid-area: game;
+  }
+
+  .tr-lobby > .game-log {
+    grid-area: log;
+  }
+
   /* the roster and the lobby player list read as a long thin column on a
-     wide screen; give them the width they have */
+     wide screen; give them the width they have. The list, not its section —
+     gridding the section put the heading in one column and the names in the
+     other, which read as two unrelated blocks. */
   .life-roster,
-  .tr-players {
+  .tr-players ul {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
     gap: 0.5rem;
@@ -1978,8 +2092,23 @@ button.ghost.danger {
 
 @media (min-width: 62rem) {
   .tr-landing {
-    max-width: 34rem;
+    max-width: 60rem;
     margin-inline: auto;
+  }
+
+  /* explainer beside the form. The old objection to side-by-side — the form
+     column sizing to whichever mode's fields are widest — is gone now that
+     the form column is a fixed width. */
+  .tr-columns {
+    display: grid;
+    grid-template-columns: 1fr 26rem;
+    gap: 0 3rem;
+    align-items: start;
+    text-align: left;
+  }
+
+  .tr-columns .tr-form {
+    max-width: none;
   }
 
   .tr-explainer {

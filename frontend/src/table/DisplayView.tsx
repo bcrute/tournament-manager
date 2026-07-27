@@ -13,6 +13,7 @@ export default function DisplayView({
   token,
   onTakeSeat,
   onLeave,
+  upright = false,
 }: {
   state: RoomState;
   code: string;
@@ -21,6 +22,10 @@ export default function DisplayView({
   /** Only a dedicated display disconnects. A player showing the table view
    *  keeps their seat and leaves via "Back to my view". */
   onLeave?: () => void;
+  /** Rotation faces each card at its player — the arrangement for a device
+   *  lying flat in the table's middle. A device someone is holding (or a
+   *  desktop) reads everything upright, seats kept in table positions. */
+  upright?: boolean;
 }) {
   const lobby = state.room.status === "lobby";
   const ended = state.room.status === "ended";
@@ -118,7 +123,9 @@ export default function DisplayView({
   }
 
   const grid = seatGrid(ordered.length);
-  const seated = assignSeats(ordered);
+  const seated = assignSeats(ordered).map((s) =>
+    upright ? { ...s, slot: { ...s.slot, rotate: 0 } } : s,
+  );
   // turn order follows the seating: rearranging the tiles rearranges play order
   const turns = turnPositions(ordered, state.room.firstPid);
   // the grid and the sheet both read positionally, so they must agree on order
@@ -182,7 +189,7 @@ export default function DisplayView({
   }
 
   return (
-    <main className="display-view">
+    <main className={`display-view${upright ? " upright" : ""}`}>
       <header className="display-head">
         <span className="display-code">{code}</span>
         <span className="display-mode">

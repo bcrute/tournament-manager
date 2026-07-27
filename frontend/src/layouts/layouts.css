@@ -132,6 +132,11 @@
     /* long text blocks keep their own measure (hero, prose, ch caps) */
     width: 80%;
   }
+
+  /* let the cards multiply instead of stretching into banner-width tiles */
+  .features {
+    grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  }
 }
 
 .site-footer {
@@ -473,6 +478,9 @@ textarea:focus-visible,
      only lets pages that want the room have it, rather than stretching
      everything. */
   .play-body {
+    /* the base width rule caps at 34rem; on a desktop the pages size
+       themselves, so the shell must actually let them */
+    width: 100%;
     max-width: 64rem;
     padding: 1.5rem 2rem 2rem;
   }
