@@ -231,6 +231,7 @@
 }
 
 .sheet input,
+.sheet select,
 .note-input {
   font-size: 1rem;
   padding: 0.7rem 0.9rem;
@@ -241,6 +242,29 @@
   font-family: inherit;
   width: 100%;
   box-sizing: border-box;
+}
+
+/* a select is inline by default, so it sat on the same line as its own label
+   and pulled the hint text up beside it; every other field stacks */
+.sheet label {
+  display: block;
+}
+
+.sheet select {
+  display: block;
+  margin-top: 0.3rem;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, #b8b0c8 50%),
+    linear-gradient(135deg, #b8b0c8 50%, transparent 50%);
+  background-position: calc(100% - 1.1rem) 55%, calc(100% - 0.75rem) 55%;
+  background-size: 0.4rem 0.4rem, 0.4rem 0.4rem;
+  background-repeat: no-repeat;
+  padding-right: 2.2rem;
+}
+
+.sheet label > .hint {
+  display: block;
+  margin-top: 0.3rem;
 }
 
 .note-input {

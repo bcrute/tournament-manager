@@ -98,6 +98,38 @@ all 62 scans in `frontend/public/cards/trd/`.
 in the room, and the notice credits the Treachery project. Getting the
 maintainers' explicit permission is still worth doing and has not been done.
 
+### Other publishers — naming a game we don't license
+
+Added 2026-07-27, when Lorcana became the second game profile.
+
+Wizards is the unusual case: it publishes a Fan Content Policy, so the MTG
+surface rests on an actual (if software-shaped-hole) grant. **Ravensburger
+publishes no equivalent for Lorcana, and Disney IP is enforced hard.** There is
+no licence to rely on, so the position has to be that we never needed one:
+
+- **We ship no assets.** No card data, no art, no symbols, no logos, no trade
+  dress. The Lorcana profile is six numbers and a Swiss table we wrote
+  ourselves — `resource="lore"`, up, to 20, two to a table.
+- **The name is used nominatively**, to say which game the tool suits. That is
+  the same use a dice bag makes of "d20"; it is not branding, and nothing in
+  the app claims endorsement or affiliation.
+- **Our structures are marked unofficial.** `LORCANA_SWISS.official is False`,
+  and a test asserts it, because presenting numbers we invented as a
+  publisher's rules would be the actual misrepresentation.
+- **Rules aren't copyrightable; their expression is.** We cite documents rather
+  than reproduce them (see `MTR_PREMIER.source`), and for Lorcana we cite
+  nothing because we're claiming nothing.
+
+**The risk, stated plainly:** this is thinner ground than the MTG profile, and
+the mitigation is that the exposure is small and reversible — a name in a
+dropdown is a one-line revert if Ravensburger ever objects. Accepted knowingly
+on 2026-07-27 for a free, noncommercial tool.
+
+**This is the assumption that breaks first if money is ever involved.** The
+Wizards policy is noncommercial outright ([`commercial-position.md`](./commercial-position.md)),
+and nominative use gets read less charitably when there's revenue behind it.
+A paid tier needs a lawyer, not this document.
+
 ### Third-party tournament platforms (optional interop)
 
 | Platform | Access | Fit |

@@ -816,7 +816,7 @@ class TestGameSurface:
 
     def test_the_server_advertises_its_game_profiles(self, client):
         games = client.get("/api/tournament/games").json()["games"]
-        assert [g["key"] for g in games] == ["mtg"]
+        assert [g["key"] for g in games] == ["mtg", "lorcana"]
         mtg = games[0]
         assert mtg["defaultPodSize"] == 4
         assert mtg["publisher"] == "Wizards of the Coast"
@@ -850,8 +850,10 @@ class TestGameSurface:
     def test_an_unknown_game_is_rejected_with_what_is_available(self, client):
         organizer(client, "hostBB")
         r = client.post("/api/tournament",
-                        json={"name": "Lorcana night", "game": "lorcana", "mode": "life"})
-        assert r.status_code == 400 and "mtg" in r.json()["detail"]
+                        json={"name": "Pokemon night", "game": "pokemon", "mode": "life"})
+        assert r.status_code == 400
+        # the error names what this server does run, so the client can recover
+        assert "mtg" in r.json()["detail"] and "lorcana" in r.json()["detail"]
 
     def test_a_mode_the_game_does_not_have_is_rejected(self, client):
         organizer(client, "hostBC")
@@ -1682,3 +1684,67 @@ class TestDeletingATournament:
         assert r.status_code == 409
         assert "close the current round" in r.json()["detail"]
         assert client.get(f"/api/tournament/{code}").status_code == 200
+
+
+class TestLorcanaProfile:
+    """A second game, to prove the core is a core: entrants, Swiss, pods,
+    standings and calls are the same code, and only the profile differs."""
+
+    def test_the_server_advertises_it(self, client):
+        games = {g["key"]: g for g in client.get("/api/tournament/games").json()["games"]}
+        lorcana = games["lorcana"]
+        assert lorcana["name"] == "Lorcana"
+        assert lorcana["publisher"] == "Ravensburger"
+        assert lorcana["defaultPodSize"] == 2
+        assert lorcana["resource"] == "lore"
+
+    def test_lore_counts_up_to_twenty(self, client):
+        from app.games import profile_for
+        p = profile_for("lorcana")
+        assert (p.resource_start, p.resource_direction, p.resource_goal) == (0, "up", 20)
+
+    def test_an_event_runs_end_to_end_without_a_room(self, client):
+        """The table app speaks life totals; lore is not that. Pods are
+        seatings, results are reported by hand, and nothing else changes."""
+        organizer(client, "lorcanaTO")
+        code = client.post(
+            "/api/tournament",
+            json={"name": "Ink night", "game": "lorcana", "settings": {}},
+        ).json()["code"]
+        add(client, code, ["Ada", "Bram", "Cleo", "Dev"])
+        assert client.post(f"/api/tournament/{code}/rounds", json={}).status_code == 200
+
+        pods = client.get(f"/api/tournament/{code}").json()["pods"]
+        assert len(pods) == 2, "four players, two to a table"
+        assert all(p["roomCode"] is None for p in pods), "no room for a game the room can't speak"
+        assert all(len(p["seats"]) == 2 for p in pods)
+
+        report_all(client, code)
+        assert client.post(f"/api/tournament/{code}/rounds/close").status_code == 200
+        standings = client.get(f"/api/tournament/{code}").json()["standings"]
+        assert len(standings) == 4 and standings[0]["points"] > standings[-1]["points"]
+
+    def test_time_called_falls_back_to_a_draw_without_a_room(self, client):
+        organizer(client, "lorcanaTime")
+        code = client.post(
+            "/api/tournament",
+            json={"name": "Ink night", "game": "lorcana", "settings": {}},
+        ).json()["code"]
+        add(client, code, ["Ada", "Bram"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        assert client.post(f"/api/tournament/{code}/rounds/time").status_code == 200
+        assert client.post(f"/api/tournament/{code}/rounds/close").status_code == 200
+
+    def test_mtg_still_gets_its_rooms(self, client):
+        organizer(client, "mtgStillRooms")
+        code = host(client)
+        add(client, code, ["Ada", "Bram", "Cleo", "Dev"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        pods = client.get(f"/api/tournament/{code}").json()["pods"]
+        assert all(p["roomCode"] for p in pods)
+
+    def test_its_structure_is_not_passed_off_as_official(self, client):
+        """A house convention shown as a rule is the one thing this must not do."""
+        games = {g["key"]: g for g in client.get("/api/tournament/games").json()["games"]}
+        for s in games["lorcana"]["structures"]:
+            assert s["official"] is False

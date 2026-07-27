@@ -151,3 +151,31 @@ class TestSeating:
         pods = pair_round(entrants, seed=1)
         seated = seat_pods(pods, entrants, "random", seed=1)
         assert any(p.seats != s.seats for p, s in zip(pods, seated))
+
+
+class TestDuelsArePairs:
+    """`pod_sizes` was written for Commander, where no pod may be smaller than
+    three. Applied to a 1v1 game that rule seated four duelists at one table —
+    including MTG's own MTR Premier structure, which is 1v1."""
+
+    def test_four_duelists_are_two_tables_not_one(self):
+        assert pod_sizes(4, 2) == [2, 2]
+
+    def test_an_odd_player_gets_a_one_seat_pod_for_a_bye(self):
+        assert pod_sizes(5, 2) == [2, 2, 1]
+        assert pod_sizes(3, 2) == [2, 1]
+
+    def test_even_fields_pair_cleanly(self):
+        for n in (2, 6, 8, 16):
+            assert pod_sizes(n, 2) == [2] * (n // 2)
+
+    def test_multiplayer_sizing_is_untouched(self):
+        assert pod_sizes(4, 4) == [4]
+        assert pod_sizes(7, 4) == [4, 3]
+        assert pod_sizes(8, 4) == [4, 4]
+        assert pod_sizes(9, 4) == [5, 4]
+
+    def test_pairing_actually_returns_those_tables(self):
+        field = [Entrant(id=i, points=0, met=()) for i in range(1, 5)]
+        pods = pair_round(field, preferred_size=2, seed=1)
+        assert sorted(len(p.seats) for p in pods) == [2, 2]

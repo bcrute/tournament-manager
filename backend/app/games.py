@@ -251,7 +251,75 @@ MTG = GameProfile(
 )
 
 
-_PROFILES: dict[str, GameProfile] = {p.key: p for p in (MTG,)}
+# --- Lorcana ---------------------------------------------------------------
+# Named plainly, because "ascending resource tracker" helps nobody find it.
+#
+# What this profile contains is the shape of an *event*: two players a table,
+# a resource that counts up, and a Swiss table we wrote ourselves. It ships no
+# card data, no art, no symbols and no logos, and it claims no endorsement —
+# the name is here to say which game the tool suits, which is the same reason
+# a dice bag says "d20" on the label. Ravensburger publishes no fan-content
+# grant of the kind Wizards does, so unlike the MTG profile this one rests on
+# using the name for what it is rather than on a licence. See
+# docs/tournament-research.md §2.
+LORCANA_SWISS = EventStructure(
+    key="lorcana_swiss_house",
+    name="Swiss — house convention (unofficial)",
+    official=False,
+    source="Community convention; no published rules document backs these numbers",
+    min_players=4,
+    pod_size=2,
+    # The usual Swiss shape for a 1v1 field: enough rounds to separate the top,
+    # then a cut of four once the field is big enough to justify one.
+    bands=(
+        Bracket(max_players=8, swiss_rounds=3, cut_to=0),
+        Bracket(max_players=16, swiss_rounds=4, cut_to=4),
+        Bracket(max_players=32, swiss_rounds=5, cut_to=8),
+        Bracket(max_players=64, swiss_rounds=6, cut_to=8),
+        Bracket(max_players=_BIG, swiss_rounds=7, cut_to=8),
+    ),
+    notes=(
+        "Rounds and cut are ours, not Ravensburger's. Set them to whatever the "
+        "event actually runs."
+    ),
+)
+
+LORCANA = GameProfile(
+    key="lorcana",
+    name="Lorcana",
+    publisher="Ravensburger",
+    default_pod_size=2,
+    default_round_minutes=50,
+    # lore counts up and the game ends when someone reaches 20 — the mirror of
+    # MTG's life, which is exactly the axis this dataclass exists to express
+    resource="lore",
+    resource_start=0,
+    resource_direction="up",
+    resource_goal=20,
+    # No live table state yet: the room is written in MTG's vocabulary (life,
+    # commander damage, "I'm dead"), none of which is true of lore. An empty
+    # modes tuple means pods are seatings and results are reported by hand,
+    # which the rest of the tournament layer already handles. Giving Lorcana a
+    # room means teaching the room to speak a profile's resource first.
+    modes=(),
+    # draw_all only: the others read life totals off a live room this game
+    # doesn't have one of.
+    time_called_policies=("draw_all",),
+    structures=(LORCANA_SWISS,),
+    notes={
+        "resource": "First to 20 lore wins; lore counts up from zero.",
+        "unofficial": (
+            "Rounds, cut and round length here are conventions we chose, not "
+            "Ravensburger's. This tool is unaffiliated with Ravensburger and Disney."
+        ),
+        "tableApp": (
+            "Pods are seatings only — the shared table counter is Magic-specific "
+            "for now, so report Lorcana results from the console."
+        ),
+    },
+)
+
+_PROFILES: dict[str, GameProfile] = {p.key: p for p in (MTG, LORCANA)}
 
 DEFAULT_GAME = "mtg"
 
@@ -293,6 +361,7 @@ def known_games() -> list[dict]:
             "name": p.name,
             "publisher": p.publisher,
             "defaultPodSize": p.default_pod_size,
+            "defaultRoundMinutes": p.default_round_minutes,
             "modes": list(p.modes),
             "resource": p.resource,
             "timeCalledPolicies": list(p.time_called_policies),

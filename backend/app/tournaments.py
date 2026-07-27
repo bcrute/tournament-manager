@@ -740,6 +740,7 @@ def open_round(code: str, body: RoundBody, request: Request):
     state rather than work done under load."""
     t, _ = require_organizer(code, request)
     cfg = settings_of(t)
+    profile = profile_for(t["game"] if "game" in t.keys() else None)
     if t["status"] == "ended":
         raise HTTPException(409, "this tournament has ended")
 
@@ -793,8 +794,14 @@ def open_round(code: str, body: RoundBody, request: Request):
                 "INSERT INTO pod_seats (pod_id, entrant_id, seat) VALUES (?, ?, ?)",
                 (pod_id, entrant_id, seat_no),
             )
-        room = _make_room_for_pod(t, cfg, pod_id, [(eid, names[eid]) for eid in pod.seats])
-        q("UPDATE pods SET room_code = ?, game_no = 0 WHERE id = ?", (room, pod_id))
+        # A game with no room mode gets seatings only: the table app speaks
+        # life totals and commander damage, which would be nonsense for a
+        # resource that counts up. Pods carry a null room_code, which the
+        # console, the player view and the time-called policies already treat
+        # as "report this one by hand".
+        if profile.modes:
+            room = _make_room_for_pod(t, cfg, pod_id, [(eid, names[eid]) for eid in pod.seats])
+            q("UPDATE pods SET room_code = ?, game_no = 0 WHERE id = ?", (room, pod_id))
 
     q("UPDATE tournaments SET status = 'running' WHERE code = ?", (t["code"],))
     touch(t["code"])

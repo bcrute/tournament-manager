@@ -56,6 +56,19 @@ export default function Host() {
 
   const profile = games.find((g) => g.key === game);
 
+  // Table size and round length belong to the game, not to the form. Left
+  // alone, switching to a duel game kept Magic's four-to-a-pod and quietly
+  // seated four duelists at one table. Only the untouched fields follow the
+  // profile: an organizer who typed a number meant it.
+  const [touched, setTouched] = useState<{ pod?: boolean; minutes?: boolean }>({});
+  useEffect(() => {
+    if (!profile) return;
+    if (!touched.pod) setPodSize(profile.defaultPodSize);
+    if (!touched.minutes) setRoundMinutes(profile.defaultRoundMinutes);
+    if (profile.modes.length && !profile.modes.includes(mode)) setMode(profile.modes[0]);
+    setStructure("");
+  }, [profile, touched.pod, touched.minutes, mode]);
+
   async function addEmail() {
     setBusy(true);
     setError(null);
@@ -305,13 +318,16 @@ export default function Host() {
         )}
 
         <label>
-          Players per pod
+          Players per table
           <input
             type="number"
             min={2}
             max={6}
             value={podSize}
-            onChange={(e) => setPodSize(Number(e.target.value))}
+            onChange={(e) => {
+              setTouched((s) => ({ ...s, pod: true }));
+              setPodSize(Number(e.target.value));
+            }}
           />
         </label>
         <label>
@@ -321,7 +337,10 @@ export default function Host() {
             min={10}
             max={240}
             value={roundMinutes}
-            onChange={(e) => setRoundMinutes(Number(e.target.value))}
+            onChange={(e) => {
+              setTouched((s) => ({ ...s, minutes: true }));
+              setRoundMinutes(Number(e.target.value));
+            }}
           />
         </label>
         {error && <p className="error">{error}</p>}

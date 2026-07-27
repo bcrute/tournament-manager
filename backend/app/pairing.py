@@ -44,9 +44,19 @@ def pod_sizes(n: int, preferred: int = 4) -> list[int]:
     Prefers `preferred`, degrades to 3 and 5, and never produces a pod of 1 or 2
     — a remainder gets absorbed into a neighbouring pod instead. Byes are the
     caller's problem and only arise below a single pod's worth of players.
+
+    **Except at 1v1, where a pod of two is the table.** Everything below this
+    guard is a multiplayer rule: "no pod smaller than three" is right for
+    Commander and nonsense for a duel, and applying it to a duel seated four
+    players at one table. A duel is pairs, with an odd player out in a
+    one-seat pod the organizer reports as a bye — which is how this app models
+    byes anyway (`pod_results.kind = 'bye'`).
     """
     if n <= 0:
         return []
+    if preferred <= 2:
+        pairs, odd = divmod(n, 2)
+        return [2] * pairs + ([1] if odd else [])
     if n < 3:
         return [n]  # too few for a pod at all; caller issues byes
     if n <= 5:

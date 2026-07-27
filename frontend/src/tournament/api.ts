@@ -123,6 +123,7 @@ export interface GameProfile {
   name: string;
   publisher: string;
   defaultPodSize: number;
+  defaultRoundMinutes: number;
   modes: string[];
   resource: string;
   timeCalledPolicies: string[];
