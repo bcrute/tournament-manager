@@ -3,7 +3,7 @@ import { expect, Page, test } from "@playwright/test";
 /** Start a game and return its room code. */
 async function createRoom(page: Page, name: string) {
   await page.goto("/table");
-  await page.getByRole("button", { name: /create game/i }).click();
+  await page.getByRole("button", { name: /^create$/i }).click();
   await page.getByPlaceholder(/your name/i).fill(name);
   await page.getByRole("button", { name: /create room/i }).click();
   await expect(page).toHaveURL(/\/table\/r\/.+/);
@@ -82,7 +82,7 @@ test.describe("a game at the table", () => {
 test.describe("room addresses", () => {
   test("the address bar never carries the joinable code", async ({ page }) => {
     await page.goto("/table");
-    await page.getByRole("button", { name: /create game/i }).click();
+    await page.getByRole("button", { name: /^create$/i }).click();
     await page.getByPlaceholder(/your name/i).fill("ada");
     await page.getByRole("button", { name: /create room/i }).click();
     await expect(page).toHaveURL(/\/table\/r\/.+/);
@@ -100,7 +100,7 @@ test.describe("room addresses", () => {
 test.describe("the commander damage grid", () => {
   test("is a miniature of the table, one square per seat", async ({ page, browser, isMobile }) => {
     await page.goto("/table");
-    await page.getByRole("button", { name: /create game/i }).click();
+    await page.getByRole("button", { name: /^create$/i }).click();
     await page.getByPlaceholder(/your name/i).fill("Ada");
     await page.getByRole("button", { name: /create room/i }).click();
     await page.waitForURL(/\/table\/r\/.+/);

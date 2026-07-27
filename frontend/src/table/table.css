@@ -362,11 +362,13 @@
   vertical-align: middle;
 }
 
+/* wraps rather than running edge to edge — and left-aligned like the other
+   fields, so create and join present the same silhouette */
 .display-toggle {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
-  justify-content: center;
+  text-align: left;
   color: #b8b0c8;
   font-size: 0.92rem;
 }

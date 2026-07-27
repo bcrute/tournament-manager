@@ -17,7 +17,7 @@ const NAMES = ["Ada", "Bram", "Cleo", "Dev", "Esme", "Finn", "Gus", "Hana", "Iri
 
 async function table(page: Page, browser: import("@playwright/test").Browser, n: number) {
   await page.goto("/table");
-  await page.getByRole("button", { name: /create game/i }).click();
+  await page.getByRole("button", { name: /^create$/i }).click();
   await page.getByPlaceholder(/your name/i).fill(NAMES[0]);
   await page.getByRole("button", { name: /create room/i }).click();
   await page.waitForURL(/\/table\/r\/.+/);

@@ -225,10 +225,10 @@ export default function Landing() {
       <div className="tr-form">
         <div className="tr-mode">
           <button className={mode === "create" ? "active" : ""} onClick={() => setMode("create")}>
-            Create game
+            Create
           </button>
           <button className={mode === "join" ? "active" : ""} onClick={() => setMode("join")}>
-            Join game
+            Join
           </button>
         </div>
 

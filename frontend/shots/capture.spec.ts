@@ -23,7 +23,7 @@ test("front page", async ({ page }) => {
 
 test("a game in progress, four players", async ({ page, browser }) => {
   await page.goto("/table");
-  await page.getByRole("button", { name: /create game/i }).click();
+  await page.getByRole("button", { name: /^create$/i }).click();
   await page.getByPlaceholder(/your name/i).fill("Ada");
   await page.getByRole("button", { name: /create room/i }).click();
   // the address carries an opaque id now; the joinable code is on the page

@@ -16,7 +16,7 @@ test.describe("accessibility", () => {
 
   test("every icon-only control has an accessible name", async ({ page }) => {
     await page.goto("/table");
-    await page.getByRole("button", { name: /create game/i }).click();
+    await page.getByRole("button", { name: /^create$/i }).click();
     await page.getByPlaceholder(/your name/i).fill("ada");
     await page.getByRole("button", { name: /create room/i }).click();
     await page.waitForURL(/\/table\/r\//);
@@ -56,7 +56,7 @@ test.describe("accessibility", () => {
   test("the menu closes on Escape and hands focus back", async ({ page, isMobile }) => {
     test.skip(!isMobile, "there is no menu to close on a pointer device");
     await page.goto("/table");
-    await page.getByRole("button", { name: /create game/i }).click();
+    await page.getByRole("button", { name: /^create$/i }).click();
     await page.getByPlaceholder(/your name/i).fill("ada");
     await page.getByRole("button", { name: /create room/i }).click();
     await page.waitForURL(/\/table\/r\//);

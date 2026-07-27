@@ -18,7 +18,7 @@ test.describe("privacy posture", () => {
     await page.goto("/");
     await page.goto("/privacy");
     await page.goto("/table");
-    await page.getByRole("button", { name: /create game/i }).click();
+    await page.getByRole("button", { name: /^create$/i }).click();
     await page.getByPlaceholder(/your name/i).fill("ada");
     await page.getByRole("button", { name: /create room/i }).click();
     await page.waitForURL(/\/table\/r\//);
@@ -28,7 +28,7 @@ test.describe("privacy posture", () => {
 
   test("a signed-out player is given no cookies at all", async ({ page, context }) => {
     await page.goto("/table");
-    await page.getByRole("button", { name: /create game/i }).click();
+    await page.getByRole("button", { name: /^create$/i }).click();
     await page.getByPlaceholder(/your name/i).fill("ada");
     await page.getByRole("button", { name: /create room/i }).click();
     await page.waitForURL(/\/table\/r\//);
@@ -52,7 +52,7 @@ test.describe("privacy posture", () => {
     });
 
     await page.goto("/table");
-    await page.getByRole("button", { name: /create game/i }).click();
+    await page.getByRole("button", { name: /^create$/i }).click();
     await page.getByPlaceholder(/your name/i).fill("ada");
     await page.getByRole("button", { name: /create room/i }).click();
     // the room is created server-side before anything is stored; an unguarded
@@ -85,7 +85,7 @@ test.describe("browser-enforced policy", () => {
 
     await page.goto("/");
     await page.goto("/table");
-    await page.getByRole("button", { name: /create game/i }).click();
+    await page.getByRole("button", { name: /^create$/i }).click();
     await page.getByPlaceholder(/your name/i).fill("ada");
     await page.getByRole("button", { name: /create room/i }).click();
     await page.waitForURL(/\/table\/r\/.+/);
