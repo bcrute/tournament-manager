@@ -31,8 +31,10 @@ class Api:
         assert r.status_code == expect, f"{method} {path} -> {r.status_code}: {r.text}"
         return r.json()
 
-    def create(self, name="host", mode="life", expect=200):
-        return self.call("POST", "/rooms", body={"name": name, "mode": mode}, expect=expect)
+    def create(self, name="host", mode="life", display=False, expect=200):
+        return self.call(
+            "POST", "/rooms", body={"name": name, "mode": mode, "display": display}, expect=expect
+        )
 
     def join(self, code, name, display=False, expect=200):
         return self.call(

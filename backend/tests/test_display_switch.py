@@ -67,3 +67,53 @@ class TestBecomeDisplay:
         code, tokens = life_room
         api.call("POST", f"/rooms/{code}/leave", token=tokens["p2"])
         api.call("POST", f"/rooms/{code}/display", token=tokens["p2"], body={"display": True}, expect=403)
+
+
+class TestRoomOpenedByADisplay:
+    """A spare tablet sets the table up: it opens the room and shows the code,
+    and the players scan their way in. The display holds no seat, so the host's
+    controls have to land on somebody who does."""
+
+    def test_the_creating_display_takes_no_seat(self, api):
+        r = api.create("tv", display=True)
+        s = api.me(r["code"], r["playerToken"])
+        assert s["me"]["isDisplay"] is True
+        assert s["me"]["isHost"] is False
+        assert s["players"] == []
+        assert s["room"]["displays"] == 1
+
+    def test_the_first_player_to_join_becomes_host(self, api):
+        r = api.create("tv", display=True)
+        t2 = api.join(r["code"], "ada")["playerToken"]
+        t3 = api.join(r["code"], "bram")["playerToken"]
+        assert api.me(r["code"], t2)["me"]["isHost"] is True
+        assert api.me(r["code"], t3)["me"]["isHost"] is False
+
+    def test_that_host_can_actually_start_the_game(self, api):
+        # the whole point of handing the role over: without it the room opened
+        # by a display could never begin
+        r = api.create("tv", display=True)
+        t2 = api.join(r["code"], "ada")["playerToken"]
+        api.join(r["code"], "bram")
+        api.start(r["code"], t2)
+        assert api.me(r["code"], t2)["room"]["status"] == "playing"
+
+    def test_a_normal_room_still_keeps_its_creator_as_host(self, api):
+        r = api.create("ada")
+        t2 = api.join(r["code"], "bram")["playerToken"]
+        assert api.me(r["code"], r["playerToken"])["me"]["isHost"] is True
+        assert api.me(r["code"], t2)["me"]["isHost"] is False
+
+    def test_opening_as_a_display_is_logged(self, api):
+        r = api.create("tv", display=True)
+        log = [e["text"] for e in api.me(r["code"], r["playerToken"])["log"]]
+        assert any("a table display opened the room" in x for x in log)
+
+    def test_the_display_can_take_a_seat_from_the_lobby(self, api):
+        # it opened the room, but nothing stops it joining the game after all
+        r = api.create("tv", display=True)
+        api.call("POST", f"/rooms/{r['code']}/display", token=r["playerToken"],
+                 body={"display": False})
+        s = api.me(r["code"], r["playerToken"])
+        assert s["me"]["isDisplay"] is False
+        assert "tv" in [p["name"] for p in s["players"]]

@@ -7,20 +7,13 @@ import { t } from "../i18n";
 import Icon from "../Icon";
 import QrScanner, { scanSupported } from "./QrScanner";
 import { getItem, removeItem, setItem } from "../storage";
-
-function randomName() {
-  const chars = "abcdefghjkmnpqrstuvwxyz23456789";
-  return Array.from(
-    crypto.getRandomValues(new Uint8Array(5)),
-    (b) => chars[b % chars.length],
-  ).join("");
-}
+import { suggestTableName } from "../username";
 
 export default function Landing() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [name, setName] = useState(
-    () => getItem("table.name") ?? getItem("treachery.name") ?? randomName(),
+    () => getItem("table.name") ?? getItem("treachery.name") ?? suggestTableName(),
   );
   const [joinCode, setJoinCode] = useState(params.get("join") ?? "");
   const [mode, setMode] = useState<"join" | "create">(params.get("join") ? "join" : "create");
@@ -77,7 +70,7 @@ export default function Landing() {
           await api(`/rooms/${s.code}/leave`, { method: "POST", token: s.token }).catch(() => {});
           clearSession();
         }
-        const nm = (getItem("table.name") ?? "").trim() || randomName();
+        const nm = (getItem("table.name") ?? "").trim() || suggestTableName();
         try {
           const res = await api<{ code: string; urlId?: string; playerToken: string }>(
             `/rooms/${joinParam.trim().toUpperCase()}/join`,
@@ -140,11 +133,15 @@ export default function Landing() {
         mode === "create"
           ? await api<{ code: string; urlId?: string; playerToken: string }>("/rooms", {
               method: "POST",
-              body: { name: trimmed, mode: gameMode },
+              body: {
+                name: trimmed || "Table display",
+                mode: gameMode,
+                display: asDisplay,
+              },
             })
           : await api<{ code: string; urlId?: string; playerToken: string }>(
               `/rooms/${joinCode.trim().toUpperCase()}/join`,
-              { method: "POST", body: { name: trimmed || "display", display: asDisplay } },
+              { method: "POST", body: { name: trimmed || "Table display", display: asDisplay } },
             );
       saveSession({ code: res.code, urlId: res.urlId, token: res.playerToken });
       navigate(`/table/r/${res.urlId ?? res.code}`);
@@ -269,16 +266,21 @@ export default function Landing() {
                 <Icon name="card" /> {t("scan.button")}
               </button>
             )}
-            <label className="display-toggle">
-              <input
-                type="checkbox"
-                checked={asDisplay}
-                onChange={(e) => setAsDisplay(e.target.checked)}
-              />
-              Join as table display (shared screen, not a player)
-            </label>
           </>
         )}
+
+        {/* Either way round: a spare tablet can open the room as the shared
+            screen, or join one that already exists. Creating as the display is
+            the natural setup — the screen shows the code everyone scans — and
+            the first player to join takes the host's controls. */}
+        <label className="display-toggle">
+          <input
+            type="checkbox"
+            checked={asDisplay}
+            onChange={(e) => setAsDisplay(e.target.checked)}
+          />
+          Use this device as the table display (shared screen, not a player)
+        </label>
 
         {!asDisplay && (
           <label className="field">
@@ -302,7 +304,11 @@ export default function Landing() {
           disabled={busy || (mode === "join" && joinCode.trim().length < 5)}
           onClick={() => void go()}
         >
-          {busy ? "…" : mode === "create" ? "Create room" : asDisplay ? "Connect display" : "Join room"}
+          {busy
+            ? "…"
+            : mode === "create"
+              ? asDisplay ? "Create as display" : "Create room"
+              : asDisplay ? "Join as display" : "Join room"}
         </button>
       </div>
       </div>

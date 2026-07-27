@@ -474,6 +474,10 @@ async def ws_room(ws: WebSocket, code: str):
 class CreateBody(BaseModel):
     name: str = Field(min_length=1, max_length=24)
     mode: str = Field(default="life")
+    #: Open the room as the shared screen rather than as a player. A spare
+    #: tablet setting up the table starts here; the first player to join takes
+    #: the host's controls, since a display holds no seat.
+    display: bool = False
 
 
 class JoinBody(BaseModel):
@@ -537,11 +541,20 @@ def create_room(body: CreateBody, request: Request):
         "INSERT INTO rooms (code, url_id, mode, starting_life) VALUES (?, ?, ?, ?)",
         (code, url_id := new_url_id(), body.mode, starting),
     )
-    q(
-        "INSERT INTO players (room_code, token, name, is_host, account_id) VALUES (?, ?, ?, 1, ?)",
-        (code, token, body.name.strip(), account_id_of(request)),
-    )
-    log_event(code, f"{body.name.strip()} created the room ({body.mode} mode)")
+    if body.display:
+        # a display holds no seat, so it cannot be the host either; whoever
+        # joins first gets the controls (see join_room)
+        q(
+            "INSERT INTO players (room_code, token, name, is_display) VALUES (?, ?, ?, 1)",
+            (code, token, body.name.strip() or "Table display"),
+        )
+        log_event(code, f"a table display opened the room ({body.mode} mode)")
+    else:
+        q(
+            "INSERT INTO players (room_code, token, name, is_host, account_id) VALUES (?, ?, ?, 1, ?)",
+            (code, token, body.name.strip(), account_id_of(request)),
+        )
+        log_event(code, f"{body.name.strip()} created the room ({body.mode} mode)")
     touch(code)
     return {"code": code, "urlId": url_id, "playerToken": token}
 
@@ -571,9 +584,16 @@ async def join_room(code: str, body: JoinBody, request: Request):
     if norm_status(room["status"]) != "lobby":
         raise HTTPException(409, "game already started — ask the host to reopen the lobby")
     token = secrets.token_urlsafe(24)
+    # A room opened by a table display has no host until someone sits down;
+    # without this nobody could ever start the game.
+    host = not q(
+        "SELECT 1 FROM players WHERE room_code = ? AND is_host = 1 AND is_display = 0 "
+        "AND left_game = 0",
+        (room["code"],),
+    ).fetchone()
     q(
-        "INSERT INTO players (room_code, token, name, account_id) VALUES (?, ?, ?, ?)",
-        (room["code"], token, name, account_id_of(request)),
+        "INSERT INTO players (room_code, token, name, is_host, account_id) VALUES (?, ?, ?, ?, ?)",
+        (room["code"], token, name, 1 if host else 0, account_id_of(request)),
     )
     log_event(room["code"], f"{name} joined")
     touch(room["code"])
