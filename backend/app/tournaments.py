@@ -658,6 +658,41 @@ def end_tournament(code: str, request: Request):
     return {"ok": True, "standings": standings_rows(t["code"])}
 
 
+@router.delete("/{code}")
+def delete_tournament(code: str, request: Request):
+    """Remove an event and everything under it.
+
+    Organizers accumulate abandoned events — a test run, a night that never
+    happened — and until now the only way to tidy them was to leave them in the
+    list forever. Deleting is the organizer's own data and nobody else's: the
+    row cascades to entrants, rounds, pods, results and calls.
+
+    An active round blocks it, exactly as ending does. People are sitting at
+    tables during a round, and pulling the event out from under them is not
+    something a stray tap should be able to do.
+
+    Pod rooms are closed rather than deleted. They hold their own players and
+    game log, they expire on the normal idle sweep, and a room outliving its
+    event by an hour is a much smaller problem than a delete that has to reason
+    about who is still seated in one.
+    """
+    t, _ = require_organizer(code, request)
+    open_round = q(
+        "SELECT id FROM trounds WHERE tournament_code = ? AND status = 'active'", (t["code"],)
+    ).fetchone()
+    if open_round:
+        raise HTTPException(409, "close the current round before deleting the tournament")
+    q(
+        "UPDATE rooms SET status = 'closed' WHERE code IN ("
+        "  SELECT p.room_code FROM pods p JOIN trounds r ON p.round_id = r.id"
+        "  WHERE r.tournament_code = ? AND p.room_code IS NOT NULL"
+        ")",
+        (t["code"],),
+    )
+    q("DELETE FROM tournaments WHERE code = ?", (t["code"],))
+    return {"ok": True}
+
+
 @router.post("/{code}/entrants/{entrant_id}/drop")
 def drop_entrant(code: str, entrant_id: str, request: Request):
     t, _ = require_organizer(code, request)

@@ -146,6 +146,14 @@ button.link {
   margin-bottom: 0.75rem;
 }
 
+/* the one irreversible control on this screen; it should not look like the
+   round buttons sitting next to it */
+.tq-round-actions button.danger {
+  margin-left: auto;
+  border-color: #6b3038;
+  color: var(--danger, #e06c75);
+}
+
 .tq-pods {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
@@ -322,6 +330,33 @@ button.link {
 
 .tq-mine-calls {
   color: #ffb4a2;
+}
+
+/* Under the card, not on it: the card is one big link, and a destructive
+   control inside a navigation target is a misclick waiting to happen. */
+.tq-mine li {
+  display: grid;
+  justify-items: end;
+  gap: 0.2rem;
+}
+
+.tq-mine li > .tq-mine-card {
+  justify-self: stretch;
+}
+
+.tq-mine-delete {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--danger, #e06c75);
+  opacity: 0.75;
+  text-decoration: none;
+  min-height: 32px;
+}
+
+.tq-mine-delete:hover {
+  opacity: 1;
+  text-decoration: underline;
 }
 
 /* The structure's recommendation, next to the button it informs. Officially

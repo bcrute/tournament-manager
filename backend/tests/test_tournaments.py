@@ -49,6 +49,17 @@ def seat_token(client, code, pod):
     raise AssertionError("every seat in this pod is already claimed")
 
 
+def report_all(client, code):
+    """Report every pod in the open round, so the round can be closed."""
+    for pod in client.get(f"/api/tournament/{code}").json()["pods"]:
+        client.post(
+            f"/api/tournament/{code}/pods/{pod['podId']}/result",
+            json={"kind": "placement",
+                  "places": [{"entrantId": s["entrantId"], "place": i}
+                             for i, s in enumerate(pod["seats"], 1)]},
+        )
+
+
 def add(client, code, names):
     return client.post(f"/api/tournament/{code}/entrants", json={"names": names}).json()["added"]
 
@@ -1584,3 +1595,79 @@ class TestRecords:
         code = host(client, settings={"podSize": 4, "structure": "mtr_premier"})
         add(client, code, [f"e{i}" for i in range(8)])
         assert client.get(f"/api/tournament/{code}/plan").json()["structure"] == "mtr_premier"
+
+
+class TestDeletingATournament:
+    """Abandoned events pile up in an organizer's list — a test run, a night
+    that never happened — and the list was one-way until now."""
+
+    def test_the_organizer_can_delete_their_event(self, client):
+        organizer(client, "delA")
+        code = host(client)
+        assert client.delete(f"/api/tournament/{code}").status_code == 200
+        assert client.get(f"/api/tournament/{code}").status_code == 404
+
+    def test_it_leaves_their_list(self, client):
+        organizer(client, "delB")
+        code = host(client)
+        client.delete(f"/api/tournament/{code}")
+        mine = client.get("/api/tournament/mine").json()["tournaments"]
+        assert code not in [t["code"] for t in mine]
+
+    def test_the_roster_and_rounds_go_with_it(self, client):
+        organizer(client, "delC")
+        code = host(client)
+        add(client, code, ["Ada", "Bram", "Cleo", "Dev"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        report_all(client, code)
+        assert client.post(f"/api/tournament/{code}/rounds/close").status_code == 200
+        assert client.delete(f"/api/tournament/{code}").status_code == 200
+        # the cascade is the point: nothing may be left pointing at a gone event
+        assert q("SELECT 1 FROM entrants WHERE tournament_code = ?", (code,)).fetchone() is None
+        assert q("SELECT 1 FROM trounds WHERE tournament_code = ?", (code,)).fetchone() is None
+
+    def test_the_pod_rooms_are_closed_not_orphaned(self, client):
+        organizer(client, "delD")
+        code = host(client)
+        add(client, code, ["Ada", "Bram", "Cleo", "Dev"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        rooms = [
+            r["room_code"]
+            for r in q(
+                "SELECT p.room_code FROM pods p JOIN trounds r ON p.round_id = r.id "
+                "WHERE r.tournament_code = ? AND p.room_code IS NOT NULL",
+                (code,),
+            ).fetchall()
+        ]
+        assert rooms, "a round should have seated its pods in rooms"
+        report_all(client, code)
+        assert client.post(f"/api/tournament/{code}/rounds/close").status_code == 200
+        assert client.delete(f"/api/tournament/{code}").status_code == 200
+        for rc in rooms:
+            row = q("SELECT status FROM rooms WHERE code = ?", (rc,)).fetchone()
+            assert row is not None and row["status"] == "closed"
+
+    def test_a_stranger_cannot_delete_it(self, client):
+        organizer(client, "delOwner")
+        code = host(client)
+        organizer(client, "delStranger")
+        assert client.delete(f"/api/tournament/{code}").status_code == 403
+        assert client.get(f"/api/tournament/{code}").status_code == 200
+
+    def test_signed_out_cannot_delete_it(self, client):
+        organizer(client, "delE")
+        code = host(client)
+        client.cookies.clear()
+        assert client.delete(f"/api/tournament/{code}").status_code == 401
+        assert client.get(f"/api/tournament/{code}").status_code == 200
+
+    def test_an_active_round_blocks_it(self, client):
+        organizer(client, "delF")
+        code = host(client)
+        add(client, code, ["Ada", "Bram", "Cleo", "Dev"])
+        client.post(f"/api/tournament/{code}/rounds", json={})
+        # people are at tables right now; a stray tap must not remove the event
+        r = client.delete(f"/api/tournament/{code}")
+        assert r.status_code == 409
+        assert "close the current round" in r.json()["detail"]
+        assert client.get(f"/api/tournament/{code}").status_code == 200

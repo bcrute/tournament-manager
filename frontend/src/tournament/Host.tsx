@@ -7,6 +7,7 @@ import SignIn from "../table/SignIn";
 import { ago } from "../admin/api";
 import {
   createTournament,
+  deleteTournament,
   GameProfile,
   listGames,
   listMine,
@@ -61,6 +62,23 @@ export default function Host() {
       setAcct(r.account);
     } catch (e) {
       setError(e instanceof AccountError ? e.message : "Could not save that address");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(t: MyTournament) {
+    // naming the event in the prompt: these codes look alike in a list, and
+    // this is the one action here that cannot be undone
+    if (!window.confirm(`Delete "${t.name}"? Its roster, rounds and standings go with it.`))
+      return;
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteTournament(t.code);
+      setMine((all) => (all ?? []).filter((x) => x.code !== t.code));
+    } catch (e) {
+      setError(e instanceof TourneyError ? e.message : "Could not delete that tournament");
     } finally {
       setBusy(false);
     }
@@ -179,6 +197,15 @@ export default function Host() {
                     )}
                   </span>
                 </Link>
+                {/* outside the Link on purpose: a delete nested inside the
+                    card's own navigation is a misclick waiting to happen */}
+                <button
+                  className="link tq-mine-delete"
+                  disabled={busy}
+                  onClick={() => void remove(t)}
+                >
+                  <Icon name="close" size={14} /> Delete
+                </button>
               </li>
             ))}
           </ul>
@@ -190,6 +217,8 @@ export default function Host() {
             join by scanning a code, with no account of their own.
           </p>
         )}
+
+        {error && <p className="error">{error}</p>}
 
         <button className="primary" onClick={() => setCreating(true)}>
           <Icon name="plus" /> New tournament

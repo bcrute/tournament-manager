@@ -218,6 +218,10 @@ export const undropEntrant = (code: string, id: string) =>
 export const endTournament = (code: string) =>
   tapi<{ ok: boolean; standings: StandingRow[] }>(`/${code}/end`, { method: "POST" });
 
+/** Ending freezes the standings; this removes the event and its history. */
+export const deleteTournament = (code: string) =>
+  tapi<{ ok: boolean }>(`/${code}`, { method: "DELETE" });
+
 export const closeRound = (code: string) =>
   tapi<{ ok: boolean }>(`/${code}/rounds/close`, { method: "POST" });
 

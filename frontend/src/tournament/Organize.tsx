@@ -11,6 +11,7 @@ import {
   EventPlan,
   getPlan,
   dropEntrant,
+  deleteTournament,
   endTournament,
   formatClock,
   openRound,
@@ -282,6 +283,26 @@ export default function Organize() {
                 }}
               >
                 End tournament
+              </button>
+            )}
+            {!roundOpen && (
+              <button
+                className="danger"
+                disabled={busy}
+                title="Remove this event and its history"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Delete "${tournament.name}"? Its roster, rounds and standings go with it. This cannot be undone.`,
+                    )
+                  )
+                    void run(async () => {
+                      await deleteTournament(code);
+                      navigate("/tournament", { replace: true });
+                    });
+                }}
+              >
+                Delete tournament
               </button>
             )}
           </div>
