@@ -1741,14 +1741,13 @@ button.ghost.danger {
   font-variant-numeric: tabular-nums;
 }
 
-.cmd-cell.zero {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-/* An empty square is not noise — it is the map. Without it the grid collapses
-   into a couple of floating numbers and stops reading as the table. */
+/* A square at zero is not noise — it is the map. Without it the grid collapses
+   into a couple of floating numbers and stops reading as the table. It shows
+   its 0 rather than sitting blank, dimmed so the totals that matter still
+   carry across a table. */
 .cmd-cell.zero {
   background: rgba(255, 255, 255, 0.09);
+  opacity: 0.45;
 }
 
 /* your own square in the miniature — your commander can be turned against you,
@@ -1813,6 +1812,7 @@ button.ghost.danger {
 
 .cmd-panel header {
   padding: 0.7rem 1rem;
+  margin-bottom: 0; /* the global page-title margin, 40px of it, inside a card */
   border-bottom: 1px solid #322747;
 }
 
@@ -1885,12 +1885,6 @@ button.ghost.danger {
   justify-content: space-between;
   padding: 0 3.2rem;
   pointer-events: none;
-}
-
-.cmd-row-src b {
-  display: inline-block;
-  min-width: 1.4em;
-  opacity: 0.6;
 }
 
 .cmd-row-src em {

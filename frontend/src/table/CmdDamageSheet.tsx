@@ -23,9 +23,10 @@ export default function CmdDamageSheet({
   onClose,
 }: {
   defender: PlayerInfo;
-  /** Every seat that could have dealt damage, in turn order. Includes the
-   *  defender: a player's own commander can be turned against them. */
-  sources: { pid: number; seat: number; name: string }[];
+  /** Every seat that could have dealt damage, in turn order — the order is
+   *  the meaning, which is why no seat number is shown beside a name.
+   *  Includes the defender: a commander can be turned against its owner. */
+  sources: { pid: number; name: string }[];
   onChange: (attackerPid: number, delta: number) => void;
   onClose: () => void;
 }) {
@@ -78,7 +79,7 @@ export default function CmdDamageSheet({
 
                 <span className="cmd-row-face">
                   <span className="cmd-row-src">
-                    <b>{s.seat}</b> {s.name}
+                    {s.name}
                     {own && <em> {t("cmd.own")}</em>}
                   </span>
                   <span className="cmd-row-amt">{amount}</span>

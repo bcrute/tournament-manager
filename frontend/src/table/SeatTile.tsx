@@ -188,7 +188,7 @@ export default function SeatTile({
               className={`cmd-cell${c.amount >= 21 ? " lethal" : ""}${c.amount === 0 ? " zero" : ""}${c.own ? " own" : ""}`}
               style={{ gridRow: c.row, gridColumn: `${c.col} / span ${c.colSpan}` }}
             >
-              {c.amount || ""}
+              {c.amount}
             </span>
           ))}
         </button>

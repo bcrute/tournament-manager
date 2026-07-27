@@ -184,6 +184,7 @@ button.link {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  margin-bottom: 0; /* same global page-title margin leaking into a card */
 }
 
 .tq-pod h3 {

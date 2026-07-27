@@ -129,11 +129,7 @@ export default function DisplayView({
   // turn order follows the seating: rearranging the tiles rearranges play order
   const turns = turnPositions(ordered, state.room.firstPid);
   // the grid and the sheet both read positionally, so they must agree on order
-  const seatOrder = ordered.map((p, i) => ({
-    pid: p.pid,
-    seat: turns.get(p.pid) ?? i + 1,
-    name: p.name,
-  }));
+  const seatOrder = ordered.map((p) => ({ pid: p.pid, name: p.name }));
   // the damage grid is a miniature of this exact arrangement, so a seat moved
   // by dragging moves in every card's grid too, with nothing to keep in sync
   const cmdLayout = {
