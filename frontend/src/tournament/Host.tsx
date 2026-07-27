@@ -5,6 +5,7 @@ import { goBack } from "../goBack";
 import { Account, account, AccountError, getAccount } from "../table/account";
 import SignIn from "../table/SignIn";
 import { ago } from "../admin/api";
+import { suggestEventName } from "../username";
 import {
   createTournament,
   deleteTournament,
@@ -26,7 +27,9 @@ export default function Host() {
   const navigate = useNavigate();
   const [acct, setAcct] = useState<Account | null | undefined>(undefined);
   const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
+  // pre-filled rather than blank: naming the event is the only thing standing
+  // between an organizer and their tournament, and most of them don't care
+  const [name, setName] = useState(suggestEventName);
   const [mode, setMode] = useState("life");
   const [podSize, setPodSize] = useState(4);
   const [roundMinutes, setRoundMinutes] = useState(60);

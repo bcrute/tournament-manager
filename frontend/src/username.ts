@@ -86,6 +86,16 @@ export function suggestTableName(): string {
   return `${cap(pick(ADJECTIVES))} ${cap(pick(NOUNS))} ${suffix()}`;
 }
 
+/**
+ * A tournament name like `Sneaky Platypus 42`.
+ *
+ * The same shape, and deliberately the same lists: an organizer naming Friday
+ * night wants something to accept or type over, not an empty field between
+ * them and their event. A separate export so call sites say which thing they
+ * are naming.
+ */
+export const suggestEventName = suggestTableName;
+
 /** Does this look like an email address? Used to prompt, never to block. */
 export function looksLikeEmail(value: string): boolean {
   return value.includes("@");
