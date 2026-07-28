@@ -1831,7 +1831,13 @@ button.ghost.danger {
   overflow-y: auto;
 }
 
-.cmd-row {
+/* Everything below is the table display's sheet, and is scoped to it.
+   `.cmd-row` is also the player's own commander-damage row in LifePanel —
+   two components, one class name — so an unscoped rule here silently
+   restyled a screen it was never written for. It did: a min-height meant
+   for a full-screen sheet stretched the player's own +/- buttons into
+   towers. */
+.cmd-panel .cmd-row {
   position: relative;
   flex: none;
   min-height: 4rem; /* a full thumb, not a fraction of the viewport */
@@ -1840,18 +1846,18 @@ button.ghost.danger {
   border-bottom: 1px solid #241c33;
 }
 
-.cmd-row.lethal {
+.cmd-panel .cmd-row.lethal {
   background: #3a1420;
 }
 
-.cmd-row.own {
+.cmd-panel .cmd-row.own {
   background: rgba(255, 255, 255, 0.04);
 }
 
 /* same gesture as the seat cards behind: left removes, right adds. The
    icons sit at the row's edges so they read as edge affordances, not as
    punctuation floating beside the name and the number. */
-.cmd-half {
+.cmd-panel .cmd-half {
   flex: 1;
   border: none;
   background: none;
@@ -1862,22 +1868,22 @@ button.ghost.danger {
   cursor: pointer;
 }
 
-.cmd-half.dec {
+.cmd-panel .cmd-half.dec {
   justify-content: flex-start;
   padding-left: 1.1rem;
 }
 
-.cmd-half.inc {
+.cmd-panel .cmd-half.inc {
   justify-content: flex-end;
   padding-right: 1.1rem;
 }
 
-.cmd-half:active {
+.cmd-panel .cmd-half:active {
   background: rgba(255, 255, 255, 0.09);
   opacity: 1;
 }
 
-.cmd-row-face {
+.cmd-panel .cmd-row-face {
   position: absolute;
   inset: 0;
   display: flex;
@@ -1887,13 +1893,13 @@ button.ghost.danger {
   pointer-events: none;
 }
 
-.cmd-row-src em {
+.cmd-panel .cmd-row-src em {
   font-style: normal;
   opacity: 0.55;
   font-size: 0.85em;
 }
 
-.cmd-row-amt {
+.cmd-panel .cmd-row-amt {
   font-size: clamp(1.3rem, 3.5vw, 2.2rem);
   font-variant-numeric: tabular-nums;
 }
