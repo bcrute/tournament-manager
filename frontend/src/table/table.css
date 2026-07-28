@@ -10,6 +10,8 @@
   position: sticky;
   top: 0;
   z-index: 30;
+  box-sizing: border-box;
+  min-height: var(--room-bar-h); /* the height the toasts offset from */
   display: flex;
   align-items: center;
   gap: 0.6rem;
@@ -189,10 +191,6 @@
   color: #b8b0c8;
   border-radius: 12px;
   padding: 0.7rem;
-}
-
-.toasts {
-  top: calc(3.2rem + env(safe-area-inset-top));
 }
 
 /* sheets: sign-in, notes */
@@ -1190,7 +1188,7 @@ button.ghost {
 /* Reveal toasts — below the room bar, never on top of it */
 .toasts {
   position: fixed;
-  top: calc(3.2rem + env(safe-area-inset-top));
+  top: calc(var(--room-bar-h) + env(safe-area-inset-top) + 0.4rem);
   left: 50%;
   transform: translateX(-50%);
   z-index: 40;
@@ -1244,7 +1242,7 @@ button.ghost {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  top: calc(3.2rem + env(safe-area-inset-top));
+  top: calc(var(--room-bar-h) + env(safe-area-inset-top) + 0.4rem);
   z-index: 45;
   width: min(94vw, 420px);
   text-align: center;

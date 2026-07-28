@@ -13,6 +13,13 @@
   --danger: #e06c75;
   --good: #6fd08c;
   --icon-stroke: 1.75;
+
+  /* The room bar's height, derived rather than guessed: a 44px touch target
+     for the menu button plus the bar's own padding. Everything that floats
+     beneath the bar — toasts, the countdown — offsets from this. Three of
+     them had hard-coded 3.2rem against a bar that is 3.65rem, so a toast
+     covered the room code and the way out of the room. */
+  --room-bar-h: calc(44px + 0.9rem);
 }
 
 .icon {
