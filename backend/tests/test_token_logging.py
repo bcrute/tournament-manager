@@ -159,7 +159,15 @@ class TestProxyVhost:
     @pytest.fixture(scope="class")
     def vhost(self):
         # backend/tests/… → repo root
-        path = Path(__file__).resolve().parents[2] / "deploy" / "caddy" / "sites" / "mtg.caddy"
+        deploy = Path(__file__).resolve().parents[2] / "deploy"
+        # The image build runs this suite with only `app/`, `tests/` and `data/`
+        # copied in, because the vhost is shipped by the deploy job and not by
+        # the container. No `deploy/` tree at all means we are inside that build
+        # and there is nothing here to check. The assertion below still bites in
+        # a real checkout, where the tree exists and the file must.
+        if not deploy.is_dir():
+            pytest.skip("no deploy/ tree — running against the app image, not the repo")
+        path = deploy / "caddy" / "sites" / "mtg.caddy"
         assert path.is_file(), path
         return path.read_text()
 
