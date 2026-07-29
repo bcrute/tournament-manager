@@ -47,8 +47,19 @@ class GameProfile:
     #: resource is comparable between players.
     time_called_policies: tuple[str, ...] = ("draw_all",)
 
-    #: label for the optional publisher-account email an organizer may need to
-    #: collect for sanctioned play. None means the game has no such concept.
+    #: the policy that decides an unfinished *single-elimination* pod at time.
+    #: Kept apart from `time_called_policies` because it is not the organizer's
+    #: choice: a bracket has to produce one advancing player, so a game whose
+    #: rules rank the table on its resource says so here. None means the game
+    #: publishes no such rule, and then nobody but the organizer may decide —
+    #: inventing a tiebreak for a cut is exactly what a rules engine would do.
+    elimination_time_policy: str | None = None
+
+    #: label for the id an organizer may need to collect for sanctioned play —
+    #: an account email for one publisher, a membership number for another. It
+    #: is the only wording the server uses when it asks for or refuses that id.
+    #: None means the game has no sanctioning body, and collection cannot be
+    #: turned on at all: there would be nothing to ask for and no name for it.
     sanctioning_account: str | None = None
 
     #: turns played after time is called before the game is decided. The app
@@ -61,6 +72,22 @@ class GameProfile:
 
     #: free-form notes surfaced in the organizer UI, e.g. rules citations.
     notes: dict = field(default_factory=dict)
+
+    def resource_rank_key(self, value: int) -> int:
+        """Sort key for ranking players on this game's resource, best first.
+
+        `resource_goal` is the value that ends the game for the player who
+        reaches it, and `resource_direction` is the way the resource travels to
+        get there. The player who has travelled *least* — who is furthest from
+        the value that ends their game — ranks highest. MTG life counts down to
+        0, so 30 beats 12; a resource that counts up to its goal (damage,
+        poison, corruption) ranks the other way and 2 beats 9.
+
+        Time-called ranking used to hardcode "higher is better", which is only
+        the MTG answer: an up-counting game would have been ranked backwards
+        with nothing in the code to notice.
+        """
+        return -value if self.resource_direction == "down" else value
 
 
 
@@ -225,9 +252,16 @@ MTG = GameProfile(
     modes=("life",),
     # draw_all first: MTR 2.4 makes an unfinished game a draw *in Swiss*. In
     # single elimination the same section says highest life wins — so
-    # highest_life is the official behaviour for a cut, not a house rule, and
-    # only draw_survivors is purely a house convention.
-    time_called_policies=("draw_all", "draw_survivors", "highest_life", "organizer_decides"),
+    # highest_resource is the official behaviour for a cut, not a house rule,
+    # and only draw_survivors is purely a house convention.
+    time_called_policies=("draw_all", "draw_survivors", "highest_resource", "organizer_decides"),
+    # MTR 2.4 again, the other half of it: a single-elimination match may not
+    # end in a draw, so after the additional turns the highest life total wins.
+    # In a cut this is the official ruling, not the house rule it would be in
+    # Swiss — which is why it is not read from the tournament's settings.
+    # Spelled with the profile-neutral name the policies were renamed to: life
+    # is MTG's resource, and the ranking goes through the profile either way.
+    elimination_time_policy="highest_resource",
     sanctioning_account="Wizards account email",
     # MTR 2.4: the current turn is finished, then five additional turns.
     # (Two-Headed Giant uses three; that would be its own profile.)
@@ -323,6 +357,17 @@ _PROFILES: dict[str, GameProfile] = {p.key: p for p in (MTG, LORCANA)}
 
 DEFAULT_GAME = "mtg"
 
+#: Old spellings of time-called policies. `highest_life` was named for MTG's
+#: resource before the ranking went through the profile; it is sitting in the
+#: settings JSON of tournaments that are running right now, so it is accepted
+#: forever. Only the name the server *offers* changed.
+POLICY_ALIASES = {"highest_life": "highest_resource"}
+
+
+def canonical_policy(policy):
+    """The current name for a time-called policy, whatever spelling came in."""
+    return POLICY_ALIASES.get(policy, policy)
+
 
 def profile_for(key: str | None) -> GameProfile:
     """Resolve a profile, falling back to the default rather than raising —
@@ -363,8 +408,15 @@ def known_games() -> list[dict]:
             "defaultPodSize": p.default_pod_size,
             "defaultRoundMinutes": p.default_round_minutes,
             "modes": list(p.modes),
+            # the whole resource family, not just its name: a client that only
+            # learns "life" cannot tell 40-down-to-0 from 0-up-to-20, and so
+            # cannot render or rank the resource for a game it does not know.
             "resource": p.resource,
+            "resourceStart": p.resource_start,
+            "resourceDirection": p.resource_direction,
+            "resourceGoal": p.resource_goal,
             "timeCalledPolicies": list(p.time_called_policies),
+            "eliminationTimePolicy": p.elimination_time_policy,
             "sanctioningAccount": p.sanctioning_account,
             "extraTurnsAtTime": p.extra_turns_at_time,
             "structures": [

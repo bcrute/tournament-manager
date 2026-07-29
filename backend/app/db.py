@@ -110,7 +110,9 @@ _db.executescript(
         organizer_account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
         mode TEXT NOT NULL DEFAULT 'life',
         settings TEXT NOT NULL DEFAULT '{}',
-        status TEXT NOT NULL DEFAULT 'setup',   -- setup | running | ended
+        status TEXT NOT NULL DEFAULT 'setup',   -- setup | running | ended | expired
+                                                -- 'ended' is the organizer's call, 'expired' the
+                                                -- idle sweep's; only the first freezes standings
         created_at INTEGER NOT NULL DEFAULT (unixepoch()),
         last_active INTEGER
     );
@@ -120,7 +122,12 @@ _db.executescript(
         name TEXT NOT NULL,
         token TEXT UNIQUE,          -- null until someone claims the seat
         account_id INTEGER,
-        wizards_email TEXT,         -- only when the organizer enables it
+        -- the sanctioning id (whatever the game's profile calls it), stored
+        -- only when the organizer enables collection. The column keeps its
+        -- MTG-era name while the setting and the wire field are already
+        -- generic; it is internal and never served, and the rename waits
+        -- because a test reads it by this name.
+        wizards_email TEXT,
         dropped_at INTEGER,
         created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
@@ -158,7 +165,11 @@ _db.executescript(
         pod_id INTEGER NOT NULL REFERENCES pods(id) ON DELETE CASCADE,
         version INTEGER NOT NULL,
         kind TEXT NOT NULL,          -- placement | draw | bye | unfinished
-        source TEXT NOT NULL,        -- auto | organizer
+        source TEXT NOT NULL,        -- auto | organizer | import
+                                     -- 'import' is a result decided in another
+                                     -- system entirely; it is kept apart from
+                                     -- 'organizer' so nobody reads a scorekeeper
+                                     -- ruling into a row nobody here ruled on
         note TEXT,
         decided_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
@@ -242,6 +253,10 @@ _ensure_column("entrants", "external_ref", "TEXT")
 _ensure_column("tournaments", "game", "TEXT NOT NULL DEFAULT 'mtg'")
 # extra turns left after time was called; NULL means time hasn't been called
 _ensure_column("pods", "turns_remaining", "INTEGER")
+# An organizer's name for the table ("Feature", "Bar side"). NULL means the pod
+# is known by its number, which stays its identity either way — a name is a
+# label people call across a hall, never a key anything looks up.
+_ensure_column("pods", "label", "TEXT")
 # The id shown to clients. The integer primary key stays internal: it is
 # sequential, and the roster is public to anyone holding a tournament code, so
 # exposing it would disclose roughly how many entrants have ever been created.
@@ -255,6 +270,16 @@ _db.execute(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_entrants_public ON entrants(public_id) "
     "WHERE public_id IS NOT NULL"
 )
+# Swiss or a bracket round. The distinction is not cosmetic: a single-
+# elimination round is paired from bracket seeds instead of standings, and a
+# game whose rules forbid a draw in elimination is adjudicated differently at
+# time. It is also the "cut flag" an import adapter needs to land "Top 8" on
+# (§9 of the API contract): number stays an integer, kind carries the rest.
+_ensure_column("trounds", "kind", "TEXT NOT NULL DEFAULT 'swiss'")   # swiss | elimination
+# Bracket seed from the standings at the moment of the cut, 1 = top seed.
+# NULL means this entrant did not make the cut, which is also how "no cut has
+# been made" is stored: nobody has a seed.
+_ensure_column("entrants", "cut_seed", "INTEGER")
 _ensure_column("players", "eliminated_at", "INTEGER")
 # A seated player showing the table view on their own phone. Unlike is_display
 # this changes no game state: they keep their seat, life, card and host role.

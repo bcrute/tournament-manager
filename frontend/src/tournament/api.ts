@@ -216,8 +216,13 @@ export const callTime = (code: string) =>
 export const undropEntrant = (code: string, id: string) =>
   tapi<{ ok: boolean }>(`/${code}/entrants/${id}/undrop`, { method: "POST" });
 
-export const endTournament = (code: string) =>
-  tapi<{ ok: boolean; standings: StandingRow[] }>(`/${code}/end`, { method: "POST" });
+/** `force` closes an open round on the way out — for an event that dissolved
+ *  mid-round and can never report the results `closeRound` would demand. */
+export const endTournament = (code: string, force = false) =>
+  tapi<{ ok: boolean; standings: StandingRow[] }>(`/${code}/end`, {
+    method: "POST",
+    body: { force },
+  });
 
 /** Ending freezes the standings; this removes the event and its history. */
 export const deleteTournament = (code: string) =>

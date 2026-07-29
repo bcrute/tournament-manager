@@ -60,10 +60,10 @@ async def check_last_standing(room):
                     room["code"],
                     f"final identity: {p['name']} — {card['name']} ({card['types']['subtype']})",
                 )
-    report_tournament_result(room)
+    await report_tournament_result(room)
 
 
-def report_tournament_result(room):
+async def report_tournament_result(room):
     """If this room backs a tournament pod, record the result automatically.
 
     Placement comes from elimination order: last standing is 1st, and the rest
@@ -98,7 +98,48 @@ def report_tournament_result(room):
         return
     from .tournaments import record_room_result
 
-    record_room_result(room["code"], room["game_no"], order)
+    # awaited, not fired and forgotten: recording the result also pushes the new
+    # standings to everyone watching the tournament
+    await record_room_result(room["code"], room["game_no"], order)
+
+
+def seat_resources(room_code: str) -> list[dict]:
+    """Each seat's live state, in the vocabulary the tournament layer speaks.
+
+    The room stores the tracked resource in a column called `life`, because this
+    started as a life counter and the schema is older than game profiles. That
+    name is the room's business and nobody else's: a tournament ranking an
+    unfinished pod asks what each seat *has* and who is out, and the game
+    profile says which way those numbers rank. Reading `players.life` from the
+    tournament layer put MTG's word for the resource in code that is supposed
+    not to know what Magic is.
+    """
+    return [
+        {
+            "token": r["token"],
+            "resource": r["life"],
+            "eliminated": bool(r["eliminated"]),
+            "eliminatedAt": r["eliminated_at"] or 0,
+        }
+        for r in q(
+            "SELECT token, life, eliminated, eliminated_at FROM players WHERE room_code = ?",
+            (room_code,),
+        ).fetchall()
+    ]
+
+
+def note_mid_game_arrival(room, name: str):
+    """Say at the table whatever this room's mode makes true of a player seated
+    into a game already under way.
+
+    The organizer moving an entrant between pods is a tournament action; what it
+    means at the table is the room's business. Treachery deals hidden identities
+    once, at the start of a game, and nothing deals one mid-game — so the table
+    is told rather than leaving somebody silently card-less. A mode with nothing
+    to add says nothing, and a game with no such mode never gets here.
+    """
+    if room["mode"] == "treachery":
+        log_event(room["code"], f"{name} has no identity card — deal one or restart the game")
 
 
 def log_event(code: str, text: str):
@@ -149,11 +190,22 @@ def card_public(card):
 
 def expire_idle_rooms():
     """Close rooms nobody has touched in IDLE_TIMEOUT. History is kept — only the
-    room stops accepting play, so an abandoned code can't be rejoined forever."""
+    room stops accepting play, so an abandoned code can't be rejoined forever.
+
+    A pod of a live tournament is exempt: three hours is a room's clock, and a
+    field breaking for lunch must not come back to closed tables. The exemption
+    lasts exactly as long as the tournament does — see tournaments.LIVE_TOURNAMENT
+    — so an ended or expired event's rooms come back under this sweep instead of
+    living forever behind a tournament that no longer exists as a live thing.
+    """
+    from .tournaments import IDLE_TIMEOUT as TOURNAMENT_IDLE_TIMEOUT
+    from .tournaments import LIVE_TOURNAMENT_ROOMS
+
     q(
         "UPDATE rooms SET status = 'closed' WHERE status != 'closed' "
-        "AND COALESCE(last_active, created_at) < unixepoch() - ?",
-        (IDLE_TIMEOUT,),
+        "AND COALESCE(last_active, created_at) < unixepoch() - ? "
+        f"AND code NOT IN ({LIVE_TOURNAMENT_ROOMS})",
+        (IDLE_TIMEOUT, TOURNAMENT_IDLE_TIMEOUT),
     )
 
 
@@ -162,7 +214,17 @@ def touch(code: str):
 
 
 def _is_tournament_room(code: str) -> bool:
-    return bool(q("SELECT 1 FROM pods WHERE room_code = ? LIMIT 1", (code,)).fetchone())
+    """Is a still-live tournament holding this room open? Asking whether a pods
+    row merely exists would exempt the pods of events that ended months ago."""
+    from .tournaments import IDLE_TIMEOUT as TOURNAMENT_IDLE_TIMEOUT
+    from .tournaments import LIVE_TOURNAMENT_ROOMS
+
+    return bool(
+        q(
+            f"SELECT 1 FROM ({LIVE_TOURNAMENT_ROOMS}) WHERE room_code = ? LIMIT 1",
+            (TOURNAMENT_IDLE_TIMEOUT, code),
+        ).fetchone()
+    )
 
 
 def note_bad_join(request: Request):
@@ -263,7 +325,8 @@ def tournament_context(room_code: str):
     looking at. One query, and None for an ordinary room.
     """
     row = q(
-        "SELECT p.id AS pod_id, p.number AS table_no, p.turns_remaining, p.extension_seconds, "
+        "SELECT p.id AS pod_id, p.number AS table_no, p.label AS table_name, "
+        "p.turns_remaining, p.extension_seconds, "
         "r.number AS round_no, r.status AS round_status, r.ends_at, r.paused_at, "
         "t.code AS tournament_code, t.name AS tournament_name "
         "FROM pods p JOIN trounds r ON r.id = p.round_id "
@@ -281,6 +344,7 @@ def tournament_context(room_code: str):
         "name": row["tournament_name"],
         "podId": row["pod_id"],
         "table": row["table_no"],
+        "tableName": row["table_name"],   # null unless the organizer named it
         "round": row["round_no"],
         "roundStatus": row["round_status"],
         "endsAt": ends_at,

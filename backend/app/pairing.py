@@ -77,6 +77,38 @@ def pod_sizes(n: int, preferred: int = 4) -> list[int]:
     return sorted(sizes, reverse=True)
 
 
+def bracket_pods(order: list[int], pod_size: int = 2) -> list[Pod]:
+    """Single-elimination pods for a field already in bracket order.
+
+    `order` is strongest first — bracket seeds in the first cut round, and the
+    previous round's pod order after that. Ordering by the pod a player came
+    out of, rather than re-seeding on standings, is what keeps the bracket
+    *fixed*: MTR Appendix E has the 1v8 winner meet the 4v5 winner whoever
+    actually won, and a re-seeded bracket quietly rewards an upset.
+
+    Any remainder is taken off the top as byes, one pod of one each, because a
+    bye is worth most to the seed who earned it. The rest snake across the
+    tables — 1 and 8 together, 2 and 7, 3 and 6, 4 and 5 — which for a duel is
+    exactly the published bracket and for pods is its natural generalisation.
+
+    A pod of one is a bye and the caller treats it as such: no room, no game.
+    Returns [] when there is nobody left to play, i.e. the bracket is decided.
+    """
+    size = max(2, pod_size)
+    if len(order) < 2:
+        return []
+    if len(order) <= size:
+        return [Pod(seats=list(order))]
+
+    byes, rest = order[: len(order) % size], order[len(order) % size :]
+    tables: list[list[int]] = [[] for _ in range(len(rest) // size)]
+    for i, entrant_id in enumerate(rest):
+        row, col = divmod(i, len(tables))
+        # serpentine: the strongest table takes the weakest of the next band
+        tables[col if row % 2 == 0 else len(tables) - 1 - col].append(entrant_id)
+    return [Pod(seats=[b]) for b in byes] + [Pod(seats=t) for t in tables]
+
+
 def _pod_cost(pod: list[Entrant]) -> float:
     """Lower is better: rematches first, then how far apart the pod's standings are."""
     repeats = 0
@@ -152,7 +184,8 @@ def seat_pods(
     this is a fairness setting rather than cosmetics:
       random       — shuffled (default)
       by_standings — highest points seated first
-      manual       — left as-is for the organizer to arrange
+      manual       — left as-is for the organizer to arrange, which they do
+                     through POST /pods/{id}/seats once the round is open
     """
     if mode == "manual":
         return pods

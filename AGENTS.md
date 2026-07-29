@@ -155,7 +155,7 @@ fail, the change is wrong until proven otherwise:
 
 | Boundary | Test |
 | --- | --- |
-| A pod's room token reaches only its own seat holder | `TestPlayerView` |
+| A pod's room token reaches only its own seat holder | `TestPlayerView` (poll), `TestTournamentSocket` (push) |
 | Entrant ids on the wire are opaque; the integer PK never leaves the server | `TestEntrantIdsAreOpaque` |
 | Claiming a tournament spot never links an account, even when signed in | `TestIdentityStaysSeparate` |
 | An organizer's ruling is never overwritten by an automatic result | `TestResults` |
@@ -244,6 +244,19 @@ hands focus back).
 | `SiteLayout` | `/`, `/privacy` | The public website: `SiteNav` plus a footer |
 | `PlayLayout` | table lobby, dashboard, tournament host & player | `SiteNav` over a mobile-first single column |
 | `ConsoleLayout` | tournament organizer, admin | `SiteNav`, then the event bar (title, status slot for the round clock), then sections — a tab strip on a phone, a sidebar past 52rem |
+
+**Navigation is one bar, `layouts/SiteNav.tsx`, and every layout renders it.**
+Links sit across the top past 60rem and collapse behind a hamburger below it —
+the room bar's breakpoint, so the two are never in different modes on one
+screen. Before this the app had three answers: the site had a top bar, the play
+shell duplicated that markup *and* carried a bottom tab strip, and the console
+had no app navigation at all, so running an event was a dead end. Adding a
+destination is a line in `SITE_NAV` and it appears everywhere at once.
+
+The console's section tabs are a **different axis** — they move within one
+event, not around the app — so they stay visible rather than folding into the
+same menu. The room (`bare`) keeps its own bar for the same reason it always
+did: it owns the whole viewport.
 
 **Why three and not one:** a player screen is one task, thumb-first. A console
 is several sections someone moves between while an event runs, with state that

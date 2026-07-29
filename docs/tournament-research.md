@@ -213,4 +213,7 @@ Recorded so it is not mistaken for an oversight, and so the reasoning survives:
 - **A tournament WebSocket.** Polling proved sufficient at this scale and costs
   nothing idle. The one case that could not tolerate a poll delay — a paused
   clock still visibly running on a player's phone — is pushed over the room's
-  existing socket instead.
+  existing socket instead. *Since built*: `WS /api/tournament/ws/{code}`, on
+  top of the poll rather than in place of it — see the contract's §3. What
+  changed the answer was everything happening *outside* a pod room: pairings,
+  results and the calls queue reach nobody through a room socket.

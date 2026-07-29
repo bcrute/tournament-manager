@@ -12,3 +12,6 @@ mtg.env
 coverage/
 frontend/test-results/
 frontend/playwright-report/
+
+# stray db from running the app inside backend/
+backend/treachery.db
