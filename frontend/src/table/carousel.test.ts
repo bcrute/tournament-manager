@@ -23,6 +23,7 @@ const player = (over: Partial<PlayerInfo> & { pid: number }): PlayerInfo => ({
   eliminated: false,
   isMe: false,
   life: 40,
+  poison: 0,
   cmdDamage: {},
   card: null,
   ...over,

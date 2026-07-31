@@ -34,7 +34,7 @@ async function table(page: Page, browser: import("@playwright/test").Browser, n:
   }
   await expect(page.locator(".tr-players li")).toHaveCount(n, { timeout: 20_000 });
   await page.getByRole("button", { name: /start/i }).first().click();
-  await expect(page.getByRole("button", { name: /i.m dead/i })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: /i lost some other way/i })).toBeVisible({ timeout: 15_000 });
   const menu = page.getByRole("button", { name: /menu/i });
   if (await menu.isVisible().catch(() => false)) await menu.click();
   await page.getByRole("button", { name: /show table view here/i }).click();

@@ -163,6 +163,15 @@ export default function SeatTile({
           <span className="seat-life" style={{ fontSize: font.life }}>
             {p.eliminated ? <Icon name="skull" label={t("status.eliminated")} /> : (p.life ?? "—")}
           </span>
+          {/* Only once someone has been poisoned. Ten is a second clock running
+              on this player, and the table has to be able to watch it — but a
+              zero on every card would just be noise in the games that never
+              use them. */}
+          {p.poison > 0 && !p.eliminated && (
+            <span className={`seat-poison${p.poison >= 10 ? " lethal" : ""}`}>
+              <Icon name="skull" size={12} /> {p.poison}
+            </span>
+          )}
         </div>
 
         <button

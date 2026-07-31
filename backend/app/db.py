@@ -281,6 +281,16 @@ _ensure_column("trounds", "kind", "TEXT NOT NULL DEFAULT 'swiss'")   # swiss | e
 # been made" is stored: nobody has a seed.
 _ensure_column("entrants", "cut_seed", "INTEGER")
 _ensure_column("players", "eliminated_at", "INTEGER")
+# Poison counters. Ten is lethal in every format that uses them, and unlike
+# life this only ever counts up, so it is its own column rather than a negative
+# life total. Zero for everyone who has never been poisoned, which is most
+# games — the UI only shows the row once it matters.
+_ensure_column("players", "poison", "INTEGER NOT NULL DEFAULT 0")
+# When a death would end the game, the room does not end immediately: this is
+# the absolute moment it will, unless the player who just died says they are
+# not. NULL means nothing is pending. Absolute rather than a duration for the
+# same reason the round clock is — see `trounds.ends_at`.
+_ensure_column("rooms", "concludes_at", "INTEGER")
 # A seated player showing the table view on their own phone. Unlike is_display
 # this changes no game state: they keep their seat, life, card and host role.
 # It only grants the one capability the display has — adjusting other players.

@@ -699,6 +699,22 @@ mid-event does not silently rewrite history.
 When a game ends in a pod's room, the room reports placement from **elimination
 order** — last standing is 1st. Written with `source: "auto"`.
 
+Since players stopped confirming their own deaths, that order is written by the
+counters rather than by a tap: the table surface eliminates a player when their
+life reaches 0, when one commander has dealt them 21, or at 10 poison, and
+`eliminated_at` is stamped exactly as the manual path stamped it — so placement
+is derived from the same column and did not change shape. Two things about that
+matter here:
+
+- A player who has declared **"I can't lose"** is never eliminated
+  automatically, at any threshold. An organizer ruling is still the way to
+  decide a table that cannot decide itself.
+- The elimination that would **end the game** is held for ten seconds before
+  the room concludes (`rooms.concludes_at`), so the player it just knocked out
+  can say the board says otherwise. The result is reported when the room
+  actually ends, never at the moment of the death — so a cancelled ending
+  reports nothing, and a pod's result cannot be written twice.
+
 **An `auto` result never overwrites an `organizer` one.** The reverse is allowed:
 that's what override means. This is the least-tested path in the system (§8).
 
