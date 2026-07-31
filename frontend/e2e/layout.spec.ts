@@ -169,3 +169,37 @@ test.describe("the room bar", () => {
       .toBeGreaterThanOrEqual(0);
   });
 });
+
+test.describe("the shell's content column", () => {
+  test("the front page is the same width as the play surfaces", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== "desktop", "the two only diverge once there is room");
+
+    // These drifted apart: the site went to 80% of the viewport while the play
+    // shell stayed capped, so walking from the front page to /table narrowed
+    // the content by a few hundred pixels and read as two different sites.
+    // They share a declaration now; this is what stops it separating again.
+    await page.goto("/");
+    const site = (await page.locator("main.site-body").boundingBox())!;
+
+    await page.goto("/table");
+    const play = (await page.locator("main.play-body").boundingBox())!;
+
+    expect(Math.round(site.width), "front page vs table page width").toBe(
+      Math.round(play.width),
+    );
+    expect(Math.round(site.x), "the two columns start at the same edge").toBe(
+      Math.round(play.x),
+    );
+  });
+
+  test("neither one lets the page scroll sideways on a phone", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== "mobile", "horizontal overflow is a phone problem");
+    for (const path of ["/", "/table", "/account"]) {
+      await page.goto(path);
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      expect(overflow, `${path} scrolls sideways`).toBeLessThanOrEqual(1);
+    }
+  });
+});
