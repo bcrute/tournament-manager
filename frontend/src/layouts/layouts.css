@@ -84,12 +84,22 @@
   background: rgba(255, 255, 255, 0.07);
 }
 
-.site-body {
+/* The front page and the play surfaces are one column, one measure.
+   They drifted apart once — the site went to 80% of the viewport while the
+   table page stayed capped — which read as two different websites when you
+   walked between them. Sharing the declaration is what keeps them honest;
+   each keeps its own padding below, because a page title and a thumb-first
+   form want different room above the fold. */
+.site-body,
+.play-body {
   flex: 1;
   box-sizing: border-box; /* width + padding must still fit a phone */
-  width: min(100%, 60rem);
-  max-width: none; /* the global main cap (860px) silently overrode the 80% */
+  width: min(100%, 34rem);
+  max-width: none; /* the global main cap (860px) silently overrode this */
   margin: 0 auto;
+}
+
+.site-body {
   padding: 1.5rem 1rem 3rem;
 }
 
@@ -128,10 +138,7 @@
     padding: 0.35rem 0.75rem;
   }
 
-  .site-body {
-    /* long text blocks keep their own measure (hero, prose, ch caps) */
-    width: 80%;
-  }
+  /* the widened column is shared with .play-body, further down */
 
   /* let the cards multiply instead of stretching into banner-width tiles */
   .features {
@@ -236,10 +243,6 @@
 }
 
 .play-body {
-  flex: 1;
-  box-sizing: border-box; /* width + padding must still fit a phone */
-  width: min(100%, 34rem);
-  margin: 0 auto;
   padding: 0.5rem 1rem 1rem;
 }
 
@@ -477,11 +480,18 @@ textarea:focus-visible,
      themselves — the life panel and roster have their own max-widths — so this
      only lets pages that want the room have it, rather than stretching
      everything. */
+  /* The base rule caps at 34rem; on a desktop the pages size themselves, so
+     the shell must actually let them. The front page rides the same rule —
+     see the note on the base declaration. Individual surfaces still constrain
+     themselves (the life panel, the roster and .prose have their own caps),
+     so this widens the canvas rather than the prose. */
+  .site-body,
   .play-body {
-    /* the base width rule caps at 34rem; on a desktop the pages size
-       themselves, so the shell must actually let them */
     width: 100%;
     max-width: 64rem;
+  }
+
+  .play-body {
     padding: 1.5rem 2rem 2rem;
   }
 }

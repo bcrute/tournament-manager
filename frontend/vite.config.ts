@@ -23,6 +23,8 @@ export default defineConfig({
         "src/table/seats.ts",
         "src/tournament/api.ts",
         "src/admin/api.ts",
+        "src/account/api.ts",
+        "src/account/useAccount.ts",
         "src/username.ts",
         "src/goBack.ts",
         "src/nav.ts",

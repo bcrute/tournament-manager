@@ -22,6 +22,9 @@ export type IconName =
   | "card"
   | "heart"
   | "users"
+  | "user"
+  | "shield"
+  | "chart"
   | "sword"
   | "skull"
   | "crown"
@@ -76,6 +79,21 @@ const paths: Record<IconName, React.ReactElement> = {
       <circle cx="9" cy="8.5" r="3" />
       <path d="M3.5 20a5.5 5.5 0 0 1 11 0" />
       <path d="M16 6.2a3 3 0 0 1 0 5.6M17.5 14.5a5.5 5.5 0 0 1 3 5" />
+    </>
+  ),
+  // one figure, where `users` is the group. The account area is about the one
+  // person holding it, and the two glyphs are never a substitute for each other.
+  user: (
+    <>
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
+    </>
+  ),
+  shield: <path d="M12 3l7 3v5.5c0 4.2-2.8 7.4-7 8.5-4.2-1.1-7-4.3-7-8.5V6z" />,
+  chart: (
+    <>
+      <path d="M4 20V4M4 20h16" />
+      <path d="M8 20v-6M12.5 20v-9M17 20v-4" />
     </>
   ),
   sword: (

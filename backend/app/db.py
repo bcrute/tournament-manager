@@ -244,6 +244,12 @@ _ensure_column("players", "life", "INTEGER")
 _ensure_column("players", "eliminated", "INTEGER NOT NULL DEFAULT 0")
 _ensure_column("players", "seat_order", "INTEGER")
 _ensure_column("players", "account_id", "INTEGER")  # optional link to an account
+# The name pre-filled when this account sits down at a table. Kept apart from
+# `username` on purpose: the username is typed to sign in, so it is lowercase,
+# hyphenated and unique, while this is read aloud by four other people and is
+# none of those things. NULL means "no preference" and the device's own last
+# name is used, which is what every account had before this column existed.
+_ensure_column("accounts", "display_name", "TEXT")
 _ensure_column("pod_seats", "room_token", "TEXT")   # this entrant's token in the pod's room
 # "source:id" (e.g. "topdeck:9f3c") so a re-run of an import matches the same
 # person instead of duplicating them. Matching on display name would make names
@@ -312,11 +318,59 @@ _db.execute(
 _db.commit()
 
 
+class Result:
+    """Rows already fetched, plus the bits of the cursor anyone here uses.
+
+    `q()` used to hand back the live cursor, which meant callers fetched from
+    it *after* the lock was released. Every request in this app shares one
+    connection, so another thread's `commit()` could land between `execute()`
+    and `fetchone()` and reset the pending statement — at which point
+    `fetchone()` returns `None` for a row that is certainly there, and raises
+    nothing at all.
+
+    That is the worst shape a bug can have here: a silent wrong answer inside
+    an authorization check. `get_player()` reads its row, gets `None`, and
+    tells a seated player **403 "not a player in this room"** — at random,
+    only under concurrent load, which is the app's normal condition with four
+    phones on one table. It is also why the e2e suite failed a different test
+    on every full run while every test passed alone.
+
+    Fetching inside the lock costs nothing measurable at this scale: the rows
+    are small, and `execute()` already did the work.
+    """
+
+    __slots__ = ("_rows", "_i", "lastrowid")
+
+    def __init__(self, rows, lastrowid):
+        self._rows = rows
+        self._i = 0
+        self.lastrowid = lastrowid
+
+    def fetchone(self):
+        if self._i >= len(self._rows):
+            return None
+        row = self._rows[self._i]
+        self._i += 1
+        return row
+
+    def fetchall(self):
+        rows = self._rows[self._i:]
+        self._i = len(self._rows)
+        return rows
+
+    def __iter__(self):
+        return iter(self.fetchall())
+
+
 def q(sql, params=()):
     with _db_lock:
         cur = _db.execute(sql, params)
+        # Fetch *inside* the lock. This is the whole point — see Result.
+        # A non-row-producing statement returns [] here rather than raising.
+        rows = cur.fetchall()
+        last = cur.lastrowid
         # only writes need a commit; committing after every SELECT was pure cost
         head = sql.lstrip()[:6].upper()
         if head not in ("SELECT", "PRAGMA"):
             _db.commit()
-        return cur
+        return Result(rows, last)

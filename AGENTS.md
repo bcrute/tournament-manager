@@ -207,6 +207,21 @@ it lives.
 - If it acts across events, or on someone else's data, or needs to see the
   instance as a whole → **admin**.
 
+**Accounts are not a fourth surface.** They are shared ground, like
+`layouts/` and `nav.ts`: `backend/app/accounts.py` and
+`frontend/src/account/` hold sign-in, the account area (`/account`, with
+overview, games, notes and settings sections) and the `useAccount` hook, and
+all three surfaces use them. The rule that follows is about *direction*, and it
+is the same one the surfaces have: **`account/` may not import from `table/`,
+`tournament/` or `admin/`.** It sits underneath all three. Sign-in used to live
+in `table/`, which meant the tournament and admin consoles both reached
+sideways into the table surface to find it — the import that made the split
+obvious.
+
+An account is still optional for playing, and that is not negotiable: the
+account area is somewhere to *go*, never somewhere you are *sent*. Nothing in
+the table surface may require one.
+
 **Rules that follow from the split:**
 
 - **Never solve an admin problem in the table surface.** "Let the host force-end
@@ -242,7 +257,7 @@ hands focus back).
 | Layout | Used by | Shape |
 | --- | --- | --- |
 | `SiteLayout` | `/`, `/privacy` | The public website: `SiteNav` plus a footer |
-| `PlayLayout` | table lobby, dashboard, tournament host & player | `SiteNav` over a mobile-first single column |
+| `PlayLayout` | table lobby, the account area, tournament host & player | `SiteNav` over a mobile-first single column |
 | `ConsoleLayout` | tournament organizer, admin | `SiteNav`, then the event bar (title, status slot for the round clock), then sections — a tab strip on a phone, a sidebar past 52rem |
 
 **Navigation is one bar, `layouts/SiteNav.tsx`, and every layout renders it.**
@@ -295,6 +310,17 @@ holding a phone and walking between tables.
   `accounts.py` optional accounts; `limits.py` rate limiting and bans;
   `games.py` game profiles; `pairing.py` the pod pairer; `audit.py` the audit
   and security logs.
+  - **`db.py`'s `q()` returns rows, not a cursor, and that is load-bearing.**
+    One SQLite connection is shared by every request. `q()` used to hand back
+    the live cursor with `_db_lock` already released, so callers fetched
+    outside it — and another thread's `commit()` landing between `execute()`
+    and `fetchone()` reset the pending statement, making `fetchone()` return
+    `None` for a row that was certainly there. No exception, just a wrong
+    answer, inside `get_player()`, which turned it into **403 "not a player in
+    this room"** for a seated player at random under load. Everything is
+    fetched inside the lock now and returned as a `Result`. If you add a query
+    helper here, fetch inside the lock; a bare cursor escaping it is the bug.
+    Pinned by `tests/test_db_concurrency.py`.
   - **`pairing.py` is pure.** No database, no clock, no unseeded randomness —
     deterministic given `(entrants, history, seed)`, which is what makes a
     re-roll reproducible and a disputed pairing re-derivable. Keep it that way;
@@ -302,7 +328,11 @@ holding a phone and walking between tables.
   - **`audit.py` is where two of the rules above are actually implemented** —
     "admin actions are logged" and "log the decision, not the secret".
 - `frontend/src/` — Vite + React + TS. `site/` the public page, `table/`,
-  `tournament/`, `admin/`, with `layouts/` and `nav.ts` shared between them.
+  `tournament/`, `admin/`, with `account/`, `layouts/` and `nav.ts` shared
+  between them. Each area owns its own stylesheet and its own class prefix
+  (`account.css` is entirely `acct-`); `table.css` is the flat one that taught
+  us why, having shipped three regressions from two components accidentally
+  sharing a class name.
   End-to-end specs are in `frontend/e2e/`, run by `npm run e2e` and excluded
   from vitest.
 - `docs/` — `tournament-api-contract.md` is what the server actually serves and

@@ -8,6 +8,7 @@ import Icon from "../Icon";
 import QrScanner, { scanSupported } from "./QrScanner";
 import { getItem, removeItem, setItem } from "../storage";
 import { suggestTableName } from "../username";
+import { useAccount } from "../account/useAccount";
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -15,6 +16,10 @@ export default function Landing() {
   const [name, setName] = useState(
     () => getItem("table.name") ?? getItem("treachery.name") ?? suggestTableName(),
   );
+  const acct = useAccount();
+  // once they touch the field the name is theirs, and an account default
+  // arriving late must not overwrite what they are in the middle of typing
+  const [nameTouched, setNameTouched] = useState(false);
   const [joinCode, setJoinCode] = useState(params.get("join") ?? "");
   const [mode, setMode] = useState<"join" | "create">(params.get("join") ? "join" : "create");
   const [gameMode, setGameMode] = useState<GameMode>("life");
@@ -54,6 +59,20 @@ export default function Landing() {
   }
   const [autoJoining, setAutoJoining] = useState(() => landingAction(loadSession(), params.get("join")) === "autojoin");
   const autoRan = useRef(false);
+
+  /**
+   * A signed-in player's default table name follows them to any device, so it
+   * beats this device's last-used name. It is written back to storage as well:
+   * every other read of the name — the QR auto-join path included — goes
+   * through `table.name`, and leaving those on a stale value would mean the
+   * setting applied everywhere except the one screen that skips this form.
+   */
+  useEffect(() => {
+    const preferred = acct?.displayName?.trim();
+    if (!preferred) return;
+    setItem("table.name", preferred);
+    if (!nameTouched) setName(preferred);
+  }, [acct, nameTouched]);
 
   useEffect(() => {
     const joinParam = params.get("join");
@@ -290,7 +309,10 @@ export default function Landing() {
               placeholder="Your name"
               maxLength={24}
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                setNameTouched(true);
+              }}
             />
             <span className="hint">
               Shown to the other players. We generated one — change it if you like.

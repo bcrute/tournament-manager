@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import Icon from "../Icon";
+import { useAccount } from "../account/useAccount";
 import { t } from "../i18n";
-import { SITE_NAV } from "../nav";
+import { accountNavItem, SITE_NAV } from "../nav";
 
 /**
  * The site's one header: logo plus `SITE_NAV`, inline links on a wide screen,
@@ -15,6 +16,14 @@ export default function SiteNav() {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const acct = useAccount();
+
+  // `undefined` is "we haven't asked yet". Rendering "Sign in" through that
+  // gap would flash the wrong word at everyone who *is* signed in, so the
+  // account entry waits one tick rather than guessing.
+  const items = SITE_NAV.map((n) =>
+    n.to === "/account" ? accountNavItem(acct === undefined ? null : (acct?.username ?? null)) : n,
+  ).filter((n) => n.listed && !(n.to === "/account" && acct === undefined));
 
   useEffect(() => {
     if (!open) return;
@@ -51,7 +60,7 @@ export default function SiteNav() {
       </Link>
       {/* always in the DOM; a class shows it, so Escape hides rather than removes */}
       <nav className={`site-nav${open ? " open" : ""}`} aria-label="Site">
-        {SITE_NAV.filter((n) => n.listed).map((n) => (
+        {items.map((n) => (
           <NavLink
             key={n.to}
             to={n.to}
