@@ -149,8 +149,22 @@ def defaults_for(game: str | None) -> dict:
 
 def new_public_id() -> str:
     """Client-facing entrant id. Random, so it carries no ordering and leaks no
-    count — the roster is readable by anyone holding the tournament code."""
-    return secrets.token_urlsafe(8)
+    count — the roster is readable by anyone holding the tournament code.
+
+    Never starts with `-`. `token_urlsafe` uses the base64url alphabet, so
+    about one id in sixty-four began with one, and a leading `-` is the one
+    character in that alphabet a spreadsheet reads as the start of a formula.
+    That put an identifier in front of the CSV escaping rule below — see
+    `csv_text` — where it either got a quote glued to it or showed up as
+    `#NAME?`. Neither is acceptable for a value whose whole job is to match.
+
+    Rerolling is simpler than mapping the character away, which would make ids
+    from before this change indistinguishable from ids after it.
+    """
+    while True:
+        candidate = secrets.token_urlsafe(8)
+        if not candidate.startswith("-"):
+            return candidate
 
 
 def resolve_entrant(code: str, public_id) -> "object | None":
@@ -435,6 +449,14 @@ def results_rows(code: str) -> list[dict]:
 #: reads correctly to a human and to any CSV parser, and no spreadsheet
 #: evaluates it. Applied to text cells only — never to the numeric columns,
 #: where a leading `-` is a real minus sign.
+#:
+#: **Not to identifiers either.** `entrantId` was in this set, and roughly one
+#: id in sixty-four starts with `-`, so that many exports shipped an id with a
+#: quote glued to the front — a value whose entire purpose is to match something
+#: on the other side, silently altered. Nobody noticed because it needed the
+#: right random id to show up. Ids are opaque and machine-read: they are escaped
+#: by being generated without a leading `-` (see `new_public_id`), not by being
+#: rewritten on the way out.
 _FORMULA_START = re.compile(r"^[=+\-@\t\r]")
 
 
@@ -1515,9 +1537,9 @@ def export(code: str, request: Request, what: str = "standings", format: str = "
                  "dropped": str(bool(r["dropped"])).lower()}
                 for r in export_standings(t["code"])
             ]
-            body = as_csv(STANDINGS_COLUMNS, rows, {"entrantId", "name"})
+            body = as_csv(STANDINGS_COLUMNS, rows, {"name"})
         else:
-            body = as_csv(RESULTS_COLUMNS, results_rows(t["code"]), {"entrantId", "name", "note"})
+            body = as_csv(RESULTS_COLUMNS, results_rows(t["code"]), {"name", "note"})
         return Response(
             content=body,
             media_type="text/csv; charset=utf-8",
