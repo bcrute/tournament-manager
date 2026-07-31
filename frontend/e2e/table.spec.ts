@@ -121,7 +121,7 @@ test.describe("the commander damage grid", () => {
     // be under way — clicking straight through raced the joins
     await expect(page.locator(".tr-players li")).toHaveCount(4, { timeout: 15_000 });
     await page.getByRole("button", { name: /start/i }).first().click();
-    await expect(page.getByRole("button", { name: /i.m dead/i })).toBeVisible({
+    await expect(page.getByRole("button", { name: /i lost some other way/i })).toBeVisible({
       timeout: 15_000,
     });
 
@@ -146,33 +146,59 @@ test.describe("the commander damage grid", () => {
   });
 });
 
-test.describe("cards that say you can't lose", () => {
-  test("the offer appears only at a threshold, and silences it once taken", async ({
+test.describe("dying happens to you", () => {
+  test("zero life ends it without being asked, and can be argued with", async ({
     page,
     isMobile,
   }) => {
     const code = await createRoom(page, "ada");
     expect(code).toMatch(/^[A-Z0-9]{5}$/);
     await page.getByRole("button", { name: /^start/i }).first().click();
-    await expect(page.getByRole("button", { name: /i.m dead/i })).toBeVisible({
+    await expect(page.getByRole("button", { name: /i lost some other way/i })).toBeVisible({
       timeout: 15_000,
     });
 
-    // nothing on offer while the player is comfortably alive
-    await expect(page.getByRole("button", { name: /i.m alive/i })).toHaveCount(0);
+    // nothing about dying on screen while comfortably alive
+    await expect(page.getByRole("button", { name: /i.m not dead/i })).toHaveCount(0);
 
-    // drop to zero — the app still doesn't kill anyone, it just stops nagging
+    // 20 life, four taps of −5
     for (let i = 0; i < 4; i++) await page.getByRole("button", { name: "−5" }).click();
-    await expect(page.getByRole("button", { name: /i.m alive/i })).toBeVisible({
-      timeout: 10_000,
+
+    // the app decides, rather than waiting for the player to confirm it
+    await expect(page.getByText(/you.re out/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/you hit 0 life/i)).toBeVisible();
+
+    // the only player, so this death would end the game — and that is the one
+    // that gets a countdown, because it is the one nobody can undo afterwards
+    await expect(page.getByText(/game ends in \d+s/i)).toBeVisible({ timeout: 5_000 });
+
+    await page.getByRole("button", { name: /i.m not dead/i }).click();
+
+    // back in, still at zero, and the app has stopped calling that lethal —
+    // without which the next −1 would kill them all over again
+    await expect(page.getByText(/can.t lose the game/i).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/game ends in/i)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /can lose again/i })).toBeVisible();
+
+    await page.getByRole("button", { name: "−1" }).click();
+    await expect(page.getByText(/you.re out/i)).toHaveCount(0);
+    void isMobile;
+  });
+
+  test("ten poison does it too, and the table can watch it coming", async ({ page }) => {
+    await createRoom(page, "ada");
+    await page.getByRole("button", { name: /^start/i }).first().click();
+    await expect(page.getByRole("button", { name: /i lost some other way/i })).toBeVisible({
+      timeout: 15_000,
     });
 
-    await page.getByRole("button", { name: /i.m alive/i }).click();
-    await expect(page.getByText(/can.t lose the game/i).first()).toBeVisible({
-      timeout: 10_000,
-    });
-    // and it can be handed back when the card leaves the battlefield
-    await expect(page.getByRole("button", { name: /can lose again/i })).toBeVisible();
-    void isMobile;
+    const plus = page.getByRole("button", { name: /add a poison counter/i });
+    for (let i = 0; i < 9; i++) await plus.click();
+    // nine is not ten, and the app must not round up
+    await expect(page.getByText(/you.re out/i)).toHaveCount(0);
+
+    await plus.click();
+    await expect(page.getByText(/you.re out/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/you hit 10 poison/i)).toBeVisible();
   });
 });

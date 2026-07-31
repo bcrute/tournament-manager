@@ -21,6 +21,8 @@ export interface PlayerInfo {
   cantLose: boolean;
   isMe: boolean;
   life: number | null;
+  /** Poison counters. Ten is lethal; zero for almost every game. */
+  poison: number;
   cmdDamage: Record<string, number>;
   card: CardInfo | null;
 }
@@ -61,6 +63,13 @@ export interface RoomState {
     firstPid: number | null;
     firstPlayer: string | null;
     options: { rarities?: string[] };
+    /** When a death would end the game the room does not end at once: this is
+     *  the moment it will, unless the player who died says they are not.
+     *  Null when nothing is pending. */
+    concludesAt: number | null;
+    /** The server's clock, so a device whose own clock is wrong still shows
+     *  the right countdown — the same correction the round clock makes. */
+    now: number;
     displays: number;
     distribution: Record<string, number>;
   };
@@ -76,6 +85,7 @@ export interface RoomState {
     revealed: boolean;
     eliminated: boolean;
     life: number | null;
+    poison: number;
     cmdDamage: Record<string, number>;
     card: CardInfo | null;
   };

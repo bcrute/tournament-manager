@@ -24,6 +24,17 @@ MODES = ["life", "treachery"]
 IDLE_TIMEOUT = int(os.environ.get("TABLE_IDLE_TIMEOUT", 3 * 60 * 60))  # 3h of no activity
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O/1/I/L
 
+#: Lethal commander damage from a single source (CR 903.10a).
+LETHAL_COMMANDER_DAMAGE = 21
+#: Lethal poison counters (CR 104.3c, ten in every format that uses them).
+LETHAL_POISON = 10
+#: How long a player has to say "I'm not dead" when their death would end the
+#: game. Only that case waits: they are already looking at the screen when the
+#: counter crosses, so this is about the one death nobody can undo afterwards,
+#: not about second-guessing every elimination. Deaths that leave the game
+#: running stay undoable for as long as it runs, so they need no window.
+CONCLUDE_GRACE_SECONDS = 10
+
 _cards_by_id = {}
 _cards_by_role = {"Leader": [], "Guardian": [], "Assassin": [], "Traitor": []}
 for _c in json.loads(CARDS_PATH.read_text())["cards"]:
@@ -31,9 +42,136 @@ for _c in json.loads(CARDS_PATH.read_text())["cards"]:
     _cards_by_role[_c["types"]["subtype"]].append(_c)
 
 
-async def check_last_standing(room):
+def lethal_reason(room, player) -> str | None:
+    """Why this player is dead, or None if they aren't.
+
+    Read from stored state rather than passed in, so it gives the same answer
+    whoever asks and whatever route changed the number — a player tapping −1,
+    the table display adjusting them, or commander damage taking life as a
+    side effect.
+
+    **A player who has said they can't lose is never dead by this.** That flag
+    exists because the app cannot see the battlefield: Platinum Angel, Solemnity,
+    Phyrexian Unlife and a dozen others make a counter stop meaning what it
+    normally means, and guessing wrong here would end someone's game for them.
+    Deciding they are still alive is the safe direction to be wrong in.
+    """
+    if player["cant_lose"]:
+        return None
+    life = player["life"] if player["life"] is not None else room["starting_life"]
+    if life <= 0:
+        return "life"
+    poison = player["poison"] or 0
+    if poison >= LETHAL_POISON:
+        return "poison"
+    worst = q(
+        "SELECT a.name AS attacker, d.amount AS amount FROM cmd_damage d "
+        "JOIN players a ON a.id = d.attacker_id "
+        "WHERE d.room_code = ? AND d.defender_id = ? "
+        "ORDER BY d.amount DESC LIMIT 1",
+        (room["code"], player["id"]),
+    ).fetchone()
+    if worst and worst["amount"] >= LETHAL_COMMANDER_DAMAGE:
+        return f"commander damage from {worst['attacker']}"
+    return None
+
+
+async def check_auto_death(room, player_id: int):
+    """Eliminate a player whose counters have just become lethal.
+
+    Called after anything that moves life, poison or commander damage. Nothing
+    here trusts the client: the caller says *what changed*, this decides what
+    it means, which is why a rigged request can't kill anyone who isn't dead.
+
+    Death is not final. The player gets an "I'm not dead" button either way —
+    this only changes who does the tapping in the ordinary case, where four
+    people used to wait for one of them to notice and confirm it.
+    """
+    if norm_status(room["status"]) != "playing":
+        return
+    player = q(
+        "SELECT * FROM players WHERE id = ? AND is_display = 0 AND left_game = 0 "
+        "AND eliminated = 0",
+        (player_id,),
+    ).fetchone()
+    if not player:
+        return
+    reason = lethal_reason(room, player)
+    if not reason:
+        return
+    q(
+        "UPDATE players SET eliminated = 1, eliminated_at = unixepoch() WHERE id = ?",
+        (player["id"],),
+    )
+    if room["mode"] == "treachery" and player["card_id"] and not player["revealed"]:
+        # CR 907.13: losing the game reveals your identity
+        q("UPDATE players SET revealed = 1 WHERE id = ?", (player["id"],))
+        card = _cards_by_id[player["card_id"]]
+        log_event(
+            room["code"],
+            f"{player['name']} was eliminated by {reason} — revealed as "
+            f"{card['name']} ({card['types']['subtype']})",
+        )
+    else:
+        log_event(room["code"], f"{player['name']} was eliminated by {reason}")
+    await check_last_standing(get_room(room["code"]), grace=True)
+
+
+def cancel_pending_conclusion(code: str):
+    """Called whenever someone comes back from the dead."""
+    q("UPDATE rooms SET concludes_at = NULL WHERE code = ?", (code,))
+
+
+async def resolve_pending_conclusion(code: str):
+    """End a game whose grace window has run out.
+
+    The window is an absolute timestamp rather than a live timer, so this is
+    safe to call from anywhere and any number of times: it ends the game once
+    the moment has passed and does nothing before then. A scheduled task fires
+    it on time; every state read calls it too, so a restarted process — which
+    loses the task — still concludes the game rather than leaving the room
+    stuck behind a countdown that already finished.
+    """
+    room = q("SELECT * FROM rooms WHERE code = ?", (code.upper(),)).fetchone()
+    if not room or room["concludes_at"] is None:
+        return False
+    if norm_status(room["status"]) != "playing":
+        cancel_pending_conclusion(room["code"])
+        return False
+    now = q("SELECT unixepoch() AS n").fetchone()["n"]
+    if now < room["concludes_at"]:
+        return False
+    cancel_pending_conclusion(room["code"])
+    await check_last_standing(get_room(room["code"]), grace=False)
+    return True
+
+
+async def _conclude_after_grace(code: str, delay: int):
+    """Fire the conclusion on time rather than on the next poll.
+
+    Without this the game would end whenever a client next asked, which is up
+    to a poll interval late and looks like the countdown hanging on zero.
+    """
+    try:
+        await asyncio.sleep(delay)
+        if await resolve_pending_conclusion(code):
+            await broadcast(code)
+    except asyncio.CancelledError:  # pragma: no cover - shutdown
+        raise
+    except Exception:  # pragma: no cover - a failed timer must not kill the loop
+        pass
+
+
+async def check_last_standing(room, grace: bool = False):
     """One player left in a live game means it's over — end it so every client
-    can show the result and return to the room together."""
+    can show the result and return to the room together.
+
+    `grace` holds the ending open for `CONCLUDE_GRACE_SECONDS` first. That is
+    for automatic deaths only: the counter crossed on its own, and the player
+    it killed is the one person who can say the board says otherwise. A player
+    who deliberately taps "I lost some other way" has already decided, so their
+    game ends immediately — waiting would only make the app feel unsure.
+    """
     if norm_status(room["status"]) != "playing":
         return
     alive = q(
@@ -42,7 +180,23 @@ async def check_last_standing(room):
         (room["code"],),
     ).fetchall()
     if len(alive) > 1:
+        # more than one player left, so nothing is pending any more either —
+        # someone came back and the game carried on
+        cancel_pending_conclusion(room["code"])
         return
+    if grace:
+        # already counting down from an earlier death: don't restart the clock
+        pending = q(
+            "SELECT concludes_at FROM rooms WHERE code = ?", (room["code"],)
+        ).fetchone()["concludes_at"]
+        if pending is None:
+            q(
+                "UPDATE rooms SET concludes_at = unixepoch() + ? WHERE code = ?",
+                (CONCLUDE_GRACE_SECONDS, room["code"]),
+            )
+            asyncio.create_task(_conclude_after_grace(room["code"], CONCLUDE_GRACE_SECONDS))
+        return
+    cancel_pending_conclusion(room["code"])
     q("UPDATE rooms SET status = 'ended' WHERE code = ?", (room["code"],))
     if len(alive) == 1:
         log_event(room["code"], f"{alive[0]['name']} is the last player standing — game over")
@@ -415,6 +569,7 @@ def personalize(snap, me):
                 "cantLose": bool(p["cant_lose"]),
                 "isMe": p["id"] == me["id"],
                 "life": p["life"],
+                "poison": p["poison"] or 0,
                 "cmdDamage": cmd.get(p["id"], {}),
                 "card": card_public(_cards_by_id[p["card_id"]])
                 if visible and p["card_id"]
@@ -437,6 +592,12 @@ def personalize(snap, me):
             "firstPid": first_pid,
             "firstPlayer": first_name,
             "options": json.loads(room["options"]),
+            # The moment this game ends unless someone says they're not dead,
+            # and the server's own clock to measure it against — a phone whose
+            # clock is wrong would otherwise show the wrong countdown, the same
+            # correction the round clock makes.
+            "concludesAt": room["concludes_at"],
+            "now": int(time.time()),
             "displays": len([p for p in players if p["is_display"] and not p["left_game"]]),
             "distribution": {"Leader": ldr, "Traitor": trt, "Assassin": ass, "Guardian": gdn},
         },
@@ -451,6 +612,7 @@ def personalize(snap, me):
             "revealed": bool(me["revealed"]),
             "eliminated": bool(me["eliminated"]),
             "life": me["life"],
+            "poison": me["poison"] or 0,
             "cmdDamage": cmd.get(me["id"], {}),
             "card": card_public(_cards_by_id[me["card_id"]]) if me["card_id"] else None,
         },
@@ -566,6 +728,13 @@ class CmdDamageBody(BaseModel):
     #: whose total to change. Omitted means the caller. Only the table display,
     #: or a player keeping score, may name someone else.
     defenderPid: int | None = None
+
+
+class PoisonBody(BaseModel):
+    delta: int = Field(ge=-99, le=99)
+    #: whose counters to change. Omitted means the caller. Same rule as life:
+    #: only the table display, or a player keeping score, may name someone else.
+    playerPid: int | None = None
 
 
 class EliminateBody(BaseModel):
@@ -714,11 +883,16 @@ async def reclaim(code: str, body: ReclaimBody):
 
 
 @router.get("/rooms/{code}/me")
-def me(code: str, x_player_token: str | None = Header(default=None)):
+async def me(code: str, x_player_token: str | None = Header(default=None)):
     player = get_player(code, x_player_token)
     if player["left_game"]:
         # a leaver's token must not let them back into the room
         raise HTTPException(403, "you have left this room")
+    # Backstop for the scheduled task: a process restart loses it, and a room
+    # stuck behind a countdown that finished minutes ago is worse than a late
+    # ending. Costs nothing when nothing is pending.
+    if await resolve_pending_conclusion(code):
+        await broadcast(code)
     return room_state(code, x_player_token)
 
 
@@ -859,6 +1033,7 @@ async def adjust_life(code: str, body: LifeBody, x_player_token: str | None = He
     sign = "+" if body.delta > 0 else ""
     suffix = f" (by {who})" if who != target["name"] else ""
     log_event(room["code"], f"{target['name']}: {sign}{body.delta} life, {old} → {new}{suffix}")
+    await check_auto_death(room, target["id"])
     await broadcast(room["code"])
     return {"ok": True, "life": new}
 
@@ -925,9 +1100,57 @@ async def commander_damage(code: str, body: CmdDamageBody, x_player_token: str |
         else f"{defender['name']} undid {-delta} commander damage from {attacker['name']} "
         f"(total {new_amt}, life {old_life} → {new_life}){by}",
     )
-    lethal = new_amt >= 21
+    lethal_cmd = new_amt >= LETHAL_COMMANDER_DAMAGE
+    # one call covers both ways this can kill: 21 from a single commander, and
+    # the life the same damage just took
+    await check_auto_death(room, defender["id"])
     await broadcast(room["code"])
-    return {"ok": True, "total": new_amt, "life": new_life, "lethal": lethal}
+    return {"ok": True, "total": new_amt, "life": new_life, "lethal": lethal_cmd}
+
+
+@router.post("/rooms/{code}/poison")
+async def adjust_poison(code: str, body: PoisonBody, x_player_token: str | None = Header(default=None)):
+    """Poison counters, which only ever count up to ten.
+
+    Kept apart from life rather than folded into it: they are a second, parallel
+    clock on the same player, and a deck that wins with them never touches the
+    first one.
+    """
+    room = get_room(code)
+    player = get_player(code, x_player_token)
+    if norm_status(room["status"]) != "playing":
+        raise HTTPException(409, "no game in progress")
+    if body.playerPid is not None and body.playerPid != player["id"]:
+        if not (player["is_display"] or player["is_tracker"]):
+            raise HTTPException(
+                403, "only the table display, or a player tracking for the table, "
+                     "can adjust other players"
+            )
+        target = q(
+            "SELECT * FROM players WHERE room_code = ? AND id = ? AND is_display = 0 AND left_game = 0",
+            (room["code"], body.playerPid),
+        ).fetchone()
+        if not target:
+            raise HTTPException(404, "player not found")
+        who = "table display" if player["is_display"] else player["name"]
+    else:
+        if player["is_display"]:
+            raise HTTPException(409, "the display holds no counters — pass a player")
+        target = player
+        who = target["name"]
+    old = target["poison"] or 0
+    new = max(0, old + body.delta)  # a counter that goes negative is a bug, not a state
+    if new == old:
+        return {"ok": True, "poison": old}
+    q("UPDATE players SET poison = ? WHERE id = ?", (new, target["id"]))
+    suffix = f" (by {who})" if who != target["name"] else ""
+    log_event(
+        room["code"],
+        f"{target['name']}: {old} → {new} poison{suffix}",
+    )
+    await check_auto_death(room, target["id"])
+    await broadcast(room["code"])
+    return {"ok": True, "poison": new}
 
 
 @router.post("/rooms/{code}/eliminate")
@@ -957,7 +1180,27 @@ async def eliminate(code: str, body: EliminateBody, x_player_token: str | None =
     player = target
     if body.undo:
         q("UPDATE players SET eliminated = 0, eliminated_at = NULL WHERE id = ?", (player["id"],))
-        log_event(room["code"], f"{player['name']} is back in the game")
+        # An undo that leaves the counters lethal is not an undo: the next
+        # change would kill them again, and the player would be arguing with
+        # the app once per turn. So coming back from a death the counters
+        # called also stops them calling it — and *only* then. Someone who was
+        # decked at twenty life has nothing to suppress, and silently marking
+        # them unable to lose would be inventing a board state.
+        #
+        # The server decides rather than the client asking, because every way
+        # back in has the same problem: the player's own "I'm not dead", the
+        # table display reviving someone whose phone died, all of them.
+        revived = q("SELECT * FROM players WHERE id = ?", (player["id"],)).fetchone()
+        if lethal_reason(room, revived):
+            q("UPDATE players SET cant_lose = 1 WHERE id = ?", (player["id"],))
+            log_event(
+                room["code"],
+                f"{player['name']} is not dead — the app will stop calling it",
+            )
+        else:
+            log_event(room["code"], f"{player['name']} is back in the game")
+        # whatever was counting down, it isn't happening now
+        cancel_pending_conclusion(room["code"])
     else:
         q(
             "UPDATE players SET eliminated = 1, eliminated_at = unixepoch() WHERE id = ?",

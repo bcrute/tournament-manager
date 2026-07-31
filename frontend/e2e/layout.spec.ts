@@ -43,7 +43,7 @@ async function seatedRoom(page: Page, browser: import("@playwright/test").Browse
   }
   await expect(page.locator(".tr-players li")).toHaveCount(4, { timeout: 20_000 });
   await page.getByRole("button", { name: /^start/i }).first().click();
-  await expect(page.getByRole("button", { name: /i.m dead/i })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: /i lost some other way/i })).toBeVisible({ timeout: 15_000 });
 }
 
 /** Move to the shared table view this device can show without giving up its seat. */
@@ -68,14 +68,14 @@ test.describe("the player's own screen", () => {
 
     // The table display's sheet uses this same class name. When its thumb-sized
     // min-height leaked here, every row grew to 64px, the +/- buttons stretched
-    // into towers, and "I'm dead" was pushed off the bottom of the screen.
+    // into towers, and the way out was pushed off the bottom of the screen.
     for (let i = 0; i < 4; i++) {
       const box = (await rows.nth(i).boundingBox())!;
       expect(box.height, "a player's own damage row is a line, not a thumb target").toBeLessThan(52);
     }
 
     // the property that actually matters: everything is still reachable
-    await expect(page.getByRole("button", { name: /i.m dead/i })).toBeInViewport();
+    await expect(page.getByRole("button", { name: /i lost some other way/i })).toBeInViewport();
     await expect(page.getByText(/commander damage is damage/i)).toBeInViewport();
   });
 });
