@@ -1,0 +1,309 @@
+/**
+ * The account area's own stylesheet.
+ *
+ * Every class here is `acct-` prefixed and nothing else in the app uses that
+ * prefix. That is deliberate: `table.css` is one flat sheet, and three layout
+ * regressions have shipped from two components sharing a class name they never
+ * meant to share. A new area gets a new namespace rather than another neighbour
+ * in the flat file.
+ *
+ * Mobile-first, like everything else: the base rules are the phone, and the
+ * media query adds room without taking any away.
+ */
+
+.acct {
+  display: grid;
+  gap: 1rem;
+}
+
+.acct-head h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 1.4rem;
+  overflow-wrap: anywhere; /* a 64-character username must not widen the page */
+}
+
+.acct-head .tagline {
+  margin: 0.25rem 0 0;
+  opacity: 0.7;
+  font-size: 0.9rem;
+}
+
+/* ---------- section tabs ---------- */
+
+/* A scrolling strip on a phone, the same grammar as the console's tabs. These
+   move within the account rather than around the app, which is why they are
+   here and not in SITE_NAV. */
+.acct-tabs {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid #2a2f3a;
+  scrollbar-width: none;
+}
+
+.acct-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.acct-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.8rem;
+  border-radius: 0.5rem;
+  text-decoration: none;
+  color: inherit;
+  opacity: 0.7;
+  white-space: nowrap;
+  min-height: 44px; /* a thumb target, not a link */
+}
+
+.acct-tab.active {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ---------- cards ---------- */
+
+.acct-card {
+  background: #161a23;
+  border: 1px solid #2a2f3a;
+  border-radius: 0.6rem;
+  padding: 1rem;
+}
+
+.acct-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.acct-card .hint {
+  margin: 0 0 0.75rem;
+  opacity: 0.75;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  max-width: 70ch;
+}
+
+.acct-card > button {
+  margin-top: 0.25rem;
+}
+
+.acct-danger {
+  border-color: #4a2a2a;
+}
+
+/* ---------- stats ---------- */
+
+.acct-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  list-style: none;
+}
+
+.acct-stats li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.acct-stat-n {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.acct-stat-l {
+  font-size: 0.78rem;
+  opacity: 0.7;
+  line-height: 1.3;
+}
+
+/* ---------- lists ---------- */
+
+.acct-list {
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.acct-list li {
+  display: grid;
+  gap: 0.15rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid #232833;
+}
+
+.acct-list li:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.acct-list-main {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.acct-list-main a {
+  color: inherit;
+}
+
+.acct-dim {
+  opacity: 0.65;
+  font-size: 0.85rem;
+}
+
+.acct-games {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.acct-game-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.acct-game-room {
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.acct-note {
+  margin: 0.5rem 0;
+  padding: 0.6rem 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 2px solid #3a4152;
+  border-radius: 0 0.4rem 0.4rem 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-wrap; /* a note is written with its own line breaks */
+  overflow-wrap: anywhere;
+}
+
+.acct-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: inherit;
+  font-size: 0.9rem;
+  min-height: 44px;
+}
+
+/* The shared chevron points down, which on a link reads as "expand me" rather
+   than "go there". Rotating it here keeps one glyph in `Icon.tsx` doing both
+   jobs instead of adding a near-duplicate to the set. */
+.acct-more svg {
+  transform: rotate(-90deg);
+}
+
+/* ---------- forms ---------- */
+
+.acct-label {
+  display: block;
+  margin: 0.5rem 0 0.25rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.7;
+}
+
+.acct-input,
+.acct-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.7rem 0.75rem;
+  background: #0f1218;
+  border: 1px solid #2a2f3a;
+  border-radius: 0.5rem;
+  color: inherit;
+  font: inherit;
+  min-height: 44px;
+}
+
+.acct-textarea {
+  line-height: 1.5;
+  resize: vertical;
+}
+
+/* input plus its suggest button; the input takes the slack */
+.acct-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.acct-row .acct-input {
+  /* without this the input's intrinsic width wins in a flex row and the
+     button is pushed off a narrow screen — the Firefox-only bug this project
+     has already shipped once */
+  min-width: 0;
+  flex: 1;
+}
+
+.acct-row button {
+  white-space: nowrap;
+}
+
+.acct-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.acct-done {
+  margin: 0.5rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #7fd6a0;
+  font-size: 0.9rem;
+}
+
+.acct-delete {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #4a2a2a;
+}
+
+.acct-bullets {
+  margin: 0 0 0.75rem;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  opacity: 0.85;
+}
+
+@media (min-width: 48rem) {
+  /* Two columns once there is room. The cards are independent, so they reflow
+     rather than needing a fixed arrangement. */
+  .acct-tabs {
+    border-bottom: none;
+  }
+
+  .acct-stats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

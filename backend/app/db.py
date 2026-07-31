@@ -244,6 +244,12 @@ _ensure_column("players", "life", "INTEGER")
 _ensure_column("players", "eliminated", "INTEGER NOT NULL DEFAULT 0")
 _ensure_column("players", "seat_order", "INTEGER")
 _ensure_column("players", "account_id", "INTEGER")  # optional link to an account
+# The name pre-filled when this account sits down at a table. Kept apart from
+# `username` on purpose: the username is typed to sign in, so it is lowercase,
+# hyphenated and unique, while this is read aloud by four other people and is
+# none of those things. NULL means "no preference" and the device's own last
+# name is used, which is what every account had before this column existed.
+_ensure_column("accounts", "display_name", "TEXT")
 _ensure_column("pod_seats", "room_token", "TEXT")   # this entrant's token in the pod's room
 # "source:id" (e.g. "topdeck:9f3c") so a re-run of an import matches the same
 # person instead of duplicating them. Matching on display name would make names

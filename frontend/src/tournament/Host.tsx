@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Icon from "../Icon";
 import { goBack } from "../goBack";
-import { Account, account, AccountError, getAccount } from "../table/account";
-import SignIn from "../table/SignIn";
+import { Account, account, AccountError, getAccount } from "../account/api";
+import SignIn from "../account/SignIn";
 import { ago } from "../admin/api";
 import { suggestEventName } from "../username";
 import {

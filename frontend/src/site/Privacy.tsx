@@ -68,6 +68,17 @@ export default function Privacy() {
               <td>Keeps you signed in. It is httpOnly and Secure, so scripts can&rsquo;t read it</td>
               <td>90 days, or 30 days idle, or until you sign out</td>
             </tr>
+            <tr>
+              <td>
+                A default table name <em>(only if you set one)</em>
+              </td>
+              <td>Your account</td>
+              <td>
+                So the name you play under follows you to any device you sign in from,
+                instead of being retyped on each one
+              </td>
+              <td>Until you change or clear it</td>
+            </tr>
           </tbody>
         </table>
 
@@ -105,7 +116,7 @@ export default function Privacy() {
         <h2>Deleting your account</h2>
         <p>
           If you made one, you can delete it from{" "}
-          <Link to="/table/me">your games &amp; notes</Link>. That erases the account, its
+          <Link to="/account/settings">your account settings</Link>. That erases the account, its
           notes and its recovery codes. Games you played in stay, unlinked from you —
           deleting them would punch holes in other players&rsquo; history and in
           organizers&rsquo; standings.

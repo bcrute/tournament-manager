@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import SignIn from "../table/SignIn";
+import SignIn from "../account/SignIn";
 import { goBack } from "../goBack";
 import ConsoleLayout from "../layouts/ConsoleLayout";
 import { ADMIN_SECTIONS } from "../nav";

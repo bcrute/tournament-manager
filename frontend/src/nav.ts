@@ -26,7 +26,44 @@ export interface NavItem {
 export const SITE_NAV: NavItem[] = [
   { label: "Play", to: "/table", icon: "heart", listed: true },
   { label: "Tournaments", to: "/tournament", icon: "crown", listed: true },
+  { label: "Account", to: "/account", icon: "user", listed: true },
 ];
+
+/**
+ * Where the account entry points, and what it is called, depends on whether
+ * anyone is signed in — a signed-out visitor is not going to "Account", they
+ * are going to a form, and labelling it otherwise is a dead end.
+ *
+ * It names **both** actions on purpose. "Sign in" alone is the conventional
+ * label and it was the wrong one here: this app has never had a sign-up link
+ * anywhere, so a visitor reading "Sign in" has no reason to think an account
+ * is something they could make. Creating one is the action that needs
+ * advertising, so it goes first.
+ */
+export const accountNavItem = (username: string | null): NavItem =>
+  username
+    ? { label: username, to: "/account", icon: "user", listed: true }
+    : { label: "Sign up / Sign in", to: "/account", icon: "user", listed: true };
+
+export type AccountSection = "overview" | "games" | "notes" | "settings";
+
+/**
+ * Sections of the account area.
+ *
+ * The same axis as the console's tabs — movement *within* one thing rather
+ * than around the app — so they render as their own strip rather than folding
+ * into `SITE_NAV`, which would put four near-identical entries in the site
+ * menu for a signed-out visitor who has no account at all.
+ */
+export const ACCOUNT_SECTIONS: { id: AccountSection; label: string; icon: IconName }[] = [
+  { id: "overview", label: "Overview", icon: "chart" },
+  { id: "games", label: "Games", icon: "heart" },
+  { id: "notes", label: "Notes", icon: "note" },
+  { id: "settings", label: "Settings", icon: "shield" },
+];
+
+export const accountPath = (section: AccountSection) =>
+  section === "overview" ? "/account" : `/account/${section}`;
 
 export type ConsoleSection = "pods" | "roster" | "standings" | "calls" | "settings";
 

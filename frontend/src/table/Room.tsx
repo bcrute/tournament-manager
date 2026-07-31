@@ -12,7 +12,7 @@ import LifePanel from "./LifePanel";
 import NotesSheet from "./NotesSheet";
 import RoomBar from "./RoomBar";
 import RoundClock from "./RoundClock";
-import { getAccount } from "./account";
+import { getAccount } from "../account/api";
 import TournamentSheet from "./TournamentSheet";
 import QrSheet from "./QrSheet";
 import RulesSheet from "./RulesSheet";
@@ -296,7 +296,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
           onDisplay={() => void toggleDisplay(true)}
           onTrack={() => void toggleTracking(true)}
           onShowQr={() => setQrOpen(true)}
-          onMyGames={signedIn ? () => navigate("/table/me") : undefined}
+          onMyGames={signedIn ? () => navigate("/account") : undefined}
           onLeave={() => void leave("Leave this room?")}
           leaveLabel="Leave room"
         />
@@ -344,7 +344,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         onDisplay={() => void toggleDisplay(true)}
         onTrack={() => void toggleTracking(true)}
         onShowQr={() => setQrOpen(true)}
-        onMyGames={signedIn ? () => navigate("/table/me") : undefined}
+        onMyGames={signedIn ? () => navigate("/account") : undefined}
         onLeave={() => void leave(leaveMsg())}
       />
       {rulesOpen && (
@@ -361,7 +361,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
           onClose={() => setNotesOpen(false)}
           onNeedsAccount={() => {
             setNotesOpen(false);
-            window.location.href = "/table/me";
+            window.location.href = "/account";
           }}
         />
       )}

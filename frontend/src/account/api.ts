@@ -5,9 +5,27 @@
  */
 
 export interface Account {
+  /** Typed to sign in: unique, and changing it costs a password. */
   username: string;
+  /** Pre-filled when this account sits down at a table. Null means the device
+   *  decides, which is how every account behaved before this existed. */
+  displayName: string | null;
   hasEmail: boolean;
   createdAt: number;
+}
+
+/** Totals across the whole history, not the page `/history` returns. */
+export interface AccountStats {
+  /** Times you sat down. A room can run several games from one seat, so this
+   *  is what the seat rows can actually support — see the server's docstring. */
+  games: number;
+  tables: number;
+  eliminated: number;
+  notes: number;
+  firstAt: number | null;
+  lastAt: number | null;
+  byMode: Record<string, number>;
+  memberSince: number;
 }
 
 export interface HistoryGame {
@@ -73,7 +91,39 @@ export const login = (username: string, password: string) =>
 
 export const logout = () => account<{ ok: boolean }>("/logout", { method: "POST" });
 
-export const getHistory = () => account<{ games: HistoryGame[] }>("/history");
+export const getHistory = (limit?: number) =>
+  account<{ games: HistoryGame[] }>(limit ? `/history?limit=${limit}` : "/history");
+
+export const getStats = () => account<AccountStats>("/stats");
+
+export const getNotes = () => account<{ notes: StoredNote[] }>("/notes");
+
+/** Renaming needs the password as well as the session: it is the one change
+ *  the owner cannot undo unaided. See the server handler. */
+export const changeUsername = (username: string, password: string) =>
+  account<{ account: Account }>("/username", {
+    method: "POST",
+    body: { username, password },
+  });
+
+/** Empty clears it, putting the device's own last name back in charge. */
+export const setDisplayName = (displayName: string) =>
+  account<{ ok: boolean; displayName: string | null }>("/display-name", {
+    method: "POST",
+    body: { displayName },
+  });
+
+export const setEmail = (email: string) =>
+  account<{ ok: boolean; hasEmail: boolean }>("/email", { method: "POST", body: { email } });
+
+/** Every other device is signed out, which is the server's behaviour, not a
+ *  courtesy — a password change that leaves old sessions alive is not one. */
+export const changePassword = (current: string, next: string) =>
+  account<{ ok: boolean }>("/password", { method: "POST", body: { current, new: next } });
+
+/** Replaces every unused code. The previous set stops working. */
+export const regenerateRecoveryCodes = () =>
+  account<{ recoveryCodes: string[] }>("/recovery-codes", { method: "POST" });
 
 export const getNote = (code: string, gameNo: number) =>
   account<{ text: string; updatedAt: number | null }>(`/notes/${code}/${gameNo}`);

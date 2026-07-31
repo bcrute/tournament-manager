@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AccountError, getNote, saveNote } from "./account";
+import { AccountError, getNote, saveNote } from "../account/api";
 import Icon from "../Icon";
 
 /**

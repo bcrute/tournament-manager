@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Icon from "../Icon";
-import { Account, AccountError, login, signup } from "./account";
+import { Account, AccountError, getAccount, login, signup } from "./api";
 import { looksLikeEmail, suggestUsername } from "../username";
 import { getItem } from "../storage";
 
@@ -202,7 +202,8 @@ export default function SignIn({
 }
 
 async function getAccountThen(onDone: (a: Account) => void) {
-  const { getAccount } = await import("./account");
+  // signup returns the codes, not the account, so this re-reads /me to hand
+  // the caller the same shape a login would
   const res = await getAccount();
   if (res.account) onDone(res.account);
 }

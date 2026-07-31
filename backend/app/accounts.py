@@ -33,6 +33,9 @@ RECOVERY_CODE_COUNT = 8
 # discourage it — see the note in signup — but the choice is the user's, and a
 # regex that silently refuses is a worse experience than a clear warning.
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.+@-]{3,64}$")
+# The table caps a display name at 24 characters (`table.py`'s join bodies), and
+# a default that the table would reject is worse than no default at all.
+DISPLAY_NAME_MAX = 24
 
 # scrypt parameters: ~64 MB of memory per hash, which is the point.
 _SCRYPT = {"n": 2**16, "r": 8, "p": 1, "maxmem": 96 * 1024 * 1024}
@@ -165,6 +168,19 @@ class EmailBody(BaseModel):
     email: str | None = Field(default=None, max_length=200)
 
 
+class UsernameChange(BaseModel):
+    username: str = Field(min_length=3, max_length=64)
+    #: renaming is confirmed with the password, not just the session — see the
+    #: handler for why a cookie alone is not enough here
+    password: str = Field(min_length=1, max_length=200)
+
+
+class DisplayNameBody(BaseModel):
+    #: empty or absent clears it, which puts the device's own last name back in
+    #: charge rather than leaving the field stuck on an old value
+    displayName: str | None = Field(default=None, max_length=DISPLAY_NAME_MAX)
+
+
 class PasswordChange(BaseModel):
     current: str = Field(min_length=1, max_length=200)
     new: str = Field(min_length=8, max_length=200)
@@ -203,6 +219,8 @@ def _issue_recovery_codes(account_id: int) -> list[str]:
 def _public(acct) -> dict:
     return {
         "username": acct["username"],
+        # the name this account brings to a table; null means the device decides
+        "displayName": acct["display_name"],
         "hasEmail": bool(acct["email"]),
         "createdAt": acct["created_at"],
     }
@@ -284,13 +302,75 @@ def set_email(body: EmailBody, request: Request):
     return {"ok": True, "hasEmail": bool(email)}
 
 
+@router.post("/username")
+def change_username(body: UsernameChange, request: Request):
+    """Rename the account.
+
+    The password is required as well as the session. A session cookie proves
+    "this browser was signed in at some point"; changing the name someone signs
+    in with is the first move in taking an account over, and it is the one
+    change the real owner cannot undo by themselves — they'd no longer know
+    what to type. Everywhere else a stolen cookie can only read.
+
+    Sessions survive: the account is the same account, and logging the owner
+    out of their other devices for choosing a new name would punish the
+    ordinary case to no benefit.
+    """
+    acct = require_account(request)
+    if not verify_password(body.password, acct["pw_hash"]):
+        security_event(AUTH_FAIL, acct["username"], "username-change")
+        raise HTTPException(403, "your password is wrong")
+    username = body.username.strip()
+    if not USERNAME_RE.match(username):
+        raise HTTPException(
+            400, "usernames are 3-64 characters: letters, numbers, and . _ - + @"
+        )
+    # unchanged-but-for-case is a rename to yourself; the UNIQUE index is
+    # NOCASE, so without this exemption "ada" -> "Ada" would collide with itself
+    clash = q(
+        "SELECT 1 FROM accounts WHERE username = ? AND id != ?", (username, acct["id"])
+    ).fetchone()
+    if clash:
+        raise HTTPException(409, "that username is taken")
+    q("UPDATE accounts SET username = ? WHERE id = ?", (username, acct["id"]))
+    return {"account": _public(q("SELECT * FROM accounts WHERE id = ?", (acct["id"],)).fetchone())}
+
+
+@router.post("/display-name")
+def set_display_name(body: DisplayNameBody, request: Request):
+    """The name pre-filled when this account sits down at a table.
+
+    Cosmetic and public by nature — the other players read it off the table —
+    so unlike the username it needs no password and has no uniqueness rule. Two
+    people called Grumpy Platypus 42 is a joke, not a collision: seats are
+    identified by token, never by name.
+    """
+    acct = require_account(request)
+    name = (body.displayName or "").strip()
+    if len(name) > DISPLAY_NAME_MAX:
+        raise HTTPException(400, f"table names are at most {DISPLAY_NAME_MAX} characters")
+    q("UPDATE accounts SET display_name = ? WHERE id = ?", (name or None, acct["id"]))
+    return {"ok": True, "displayName": name or None}
+
+
 @router.post("/password")
 def change_password(body: PasswordChange, request: Request):
+    """Change the password and end **every** session, this one included.
+
+    Note what that means: the caller is signed out by their own successful
+    request, and their next call returns 401. That is deliberate and pinned by
+    `test_changing_password_logs_other_devices_out` — but the neighbouring
+    comment used to read "every other device", which is not what the code does,
+    and `/recover` takes the opposite line (it drops every session and then
+    issues a fresh one for the caller). The two are worth reconciling; until
+    someone does, this is the behaviour, and the settings screen tells the user
+    they will have to sign in again rather than discovering it on the next
+    request.
+    """
     acct = require_account(request)
     if not verify_password(body.current, acct["pw_hash"]):
         raise HTTPException(403, "current password is wrong")
     q("UPDATE accounts SET pw_hash = ? WHERE id = ?", (hash_password(body.new), acct["id"]))
-    # every other device is logged out
     q("DELETE FROM sessions WHERE account_id = ?", (acct["id"],))
     return {"ok": True}
 
@@ -377,6 +457,47 @@ def history(request: Request, limit: int = 50):
             }
             for r in rows
         ]
+    }
+
+
+@router.get("/stats")
+def stats(request: Request):
+    """Totals across everything this account has played.
+
+    Counted over the whole history rather than the page `/history` returns, so
+    the numbers don't quietly shrink to the size of a list.
+
+    A "game" here is one seat at one room, exactly as in `/history` — a room can
+    run several games from one seat, so this counts times you sat down, which is
+    the number the seat rows can actually support. Nothing here is a win rate:
+    the life counter records who was eliminated, not who won, and inferring one
+    from the other would be a statistic the data doesn't hold.
+    """
+    acct = require_account(request)
+    row = q(
+        "SELECT COUNT(*) AS games, COUNT(DISTINCT p.room_code) AS tables, "
+        "       MIN(p.joined_at) AS first_at, MAX(p.joined_at) AS last_at, "
+        "       SUM(p.eliminated) AS eliminated "
+        "FROM players p WHERE p.account_id = ? AND p.is_display = 0",
+        (acct["id"],),
+    ).fetchone()
+    modes = q(
+        "SELECT r.mode, COUNT(*) AS n FROM players p JOIN rooms r ON r.code = p.room_code "
+        "WHERE p.account_id = ? AND p.is_display = 0 GROUP BY r.mode",
+        (acct["id"],),
+    ).fetchall()
+    notes = q(
+        "SELECT COUNT(*) AS n FROM notes WHERE account_id = ?", (acct["id"],)
+    ).fetchone()
+    return {
+        "games": row["games"] or 0,
+        "tables": row["tables"] or 0,
+        "eliminated": row["eliminated"] or 0,
+        "notes": notes["n"] or 0,
+        "firstAt": row["first_at"],
+        "lastAt": row["last_at"],
+        "byMode": {m["mode"]: m["n"] for m in modes},
+        "memberSince": acct["created_at"],
     }
 
 

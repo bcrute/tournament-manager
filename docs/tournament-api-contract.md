@@ -834,6 +834,36 @@ and searchable encryption means deterministic encryption or a blind index, both
 of which leak equality. That's why signup discourages email-as-username — a
 warning, not a block.
 
+### 6b. The two names on an account
+
+An account carries two names, and conflating them is the mistake this section
+exists to prevent.
+
+| | `username` | `display_name` |
+| --- | --- | --- |
+| What it's for | Signing in | The name filled in when you sit at a table |
+| Unique | Yes, `COLLATE NOCASE` | No, deliberately — seats are keyed by token |
+| Changing it | `POST /api/account/username`, **password required** | `POST /api/account/display-name`, no password |
+| Shape | 3–64 chars, `USERNAME_RE` | ≤ 24 chars, matching `table.py`'s join cap |
+| Visible to | Nobody but the account holder | Every other player at the table |
+| Absent | Impossible | Normal — `NULL` means the device decides |
+
+The password on a rename is not ceremony. A session cookie proves only that a
+browser was signed in at some point; renaming is the first move in taking an
+account over and the one change the real owner cannot undo unaided, because
+they would no longer know what to type. Everywhere else a stolen cookie can
+only read. Sessions deliberately **survive** a rename — it is the same account,
+and signing every device out for choosing a new name would punish the ordinary
+case for nothing. A password change still ends every other session, which is a
+different event with a different cause.
+
+`GET /api/account/stats` returns totals over the whole history rather than the
+page `/history` serves. A "game" there is **one seat at one room**, matching
+`/history`: a room can run several games from one seat, so that is the number
+the rows support. There is deliberately no win rate — the life counter records
+who was *eliminated*, not who won, and deriving one from the other would be a
+statistic the data does not hold.
+
 ---
 
 ## 6a. Settings, as actually accepted

@@ -239,6 +239,13 @@ the banner question returns.
 random default), an optional password, an optional recovery email. No IP-to-user
 association, no location, no device identifiers, no third-party analytics.
 
+An account may also store a **default table name** (`accounts.display_name`) —
+the same user-chosen display name, kept once instead of retyped per device. It
+is the one item that moved *into* the account without being newly collected:
+before, the same string lived in each device's `localStorage`. It is public by
+nature (the other players read it off the table), needs no uniqueness, and is
+cleared by saving an empty value, which returns each device to its own.
+
 ---
 
 ## Session and tenant isolation

@@ -1,0 +1,208 @@
+import { expect, Page, test } from "@playwright/test";
+
+/**
+ * The player account area.
+ *
+ * The endpoints behind this existed and were tested long before any of it was
+ * reachable: the dashboard sat at an address nothing linked to, and the rename,
+ * recovery-code and email endpoints had no user interface at all. So these
+ * tests are deliberately about *reachability and wiring* — that a signed-out
+ * visitor is offered a way in, that each section is its own address, and that
+ * changing a name in one place changes it in the others.
+ *
+ * The server enforces every one of these rules itself; nothing here is a
+ * security check. `backend/tests/test_account_profile.py` is where that lives.
+ */
+
+/** The site nav is a hamburger on a phone and inline links past 60rem. */
+async function siteNav(page: Page) {
+  const menu = page.getByRole("button", { name: /^menu$/i });
+  if (await menu.isVisible().catch(() => false)) await menu.click();
+  return page.getByRole("navigation", { name: "Site" });
+}
+
+/** A fresh account, made through the UI the way a visitor would. */
+async function signUp(page: Page, username: string) {
+  await page.goto("/account");
+  await page.getByRole("button", { name: /^sign up$/i }).click();
+  await page.getByPlaceholder(/^username$/i).fill(username);
+  await page.getByPlaceholder(/^password$/i).fill("a good long password");
+  await page.getByRole("button", { name: /create account/i }).click();
+  // recovery codes are shown once, and the only way past them is acknowledging
+  await expect(page.getByRole("heading", { name: /save your recovery codes/i })).toBeVisible();
+  await page.getByRole("button", { name: /saved them/i }).click();
+  await expect(page.getByRole("navigation", { name: "Account" })).toBeVisible();
+}
+
+const unique = (prefix: string) => `${prefix}-${Date.now().toString(36)}`;
+
+test.describe("finding the account area at all", () => {
+  test("a signed-out visitor is offered a way in from every page", async ({ page }) => {
+    await page.goto("/");
+    const nav = await siteNav(page);
+    // "Account" would be a dead end for someone who has none, and "Sign in"
+    // alone never advertised that making one was an option at all
+    const entry = nav.getByRole("link", { name: /sign up/i });
+    await expect(entry).toBeVisible();
+    await expect(entry).toHaveText(/sign up/i);
+    await expect(entry).toHaveText(/sign in/i);
+    await entry.click();
+    await expect(page).toHaveURL(/\/account$/);
+    await expect(page.getByRole("heading", { name: /your account/i })).toBeVisible();
+    // and creating one is reachable from there in one click
+    await page.getByRole("button", { name: /^sign up$/i }).click();
+    await expect(page.getByRole("button", { name: /create account/i })).toBeVisible();
+  });
+
+  test("the sign-up entry appears on the play and tournament surfaces too", async ({ page }) => {
+    for (const path of ["/table", "/tournament"]) {
+      await page.goto(path);
+      const nav = await siteNav(page);
+      await expect(nav.getByRole("link", { name: /sign up/i })).toBeVisible();
+    }
+  });
+
+  test("the old dashboard address still lands somewhere", async ({ page }) => {
+    // it was linked from the privacy page, and from anyone's history
+    await page.goto("/table/me");
+    await expect(page).toHaveURL(/\/account$/);
+  });
+
+  test("the nav shows who you are once you are signed in", async ({ page }) => {
+    const name = unique("navname");
+    await signUp(page, name);
+    await page.goto("/");
+    const nav = await siteNav(page);
+    await expect(nav.getByRole("link", { name })).toBeVisible();
+  });
+});
+
+test.describe("the sections", () => {
+  test("each one is its own address, so it survives a reload", async ({ page }) => {
+    await signUp(page, unique("sections"));
+
+    for (const [tab, path, marker] of [
+      ["Games", "/account/games", /no games yet/i],
+      ["Notes", "/account/notes", /no notes yet/i],
+      ["Settings", "/account/settings", /default table name/i],
+    ] as const) {
+      await page.getByRole("navigation", { name: "Account" }).getByRole("link", { name: tab }).click();
+      await expect(page).toHaveURL(new RegExp(`${path}$`));
+      await expect(page.getByText(marker).first()).toBeVisible();
+
+      await page.reload();
+      await expect(page.getByText(marker).first()).toBeVisible();
+    }
+  });
+
+  test("the overview shows totals rather than an empty page", async ({ page }) => {
+    await signUp(page, unique("overview"));
+    await expect(page.getByRole("heading", { name: /your play/i })).toBeVisible();
+    await expect(page.getByText(/times you sat down/i)).toBeVisible();
+    // an account with no events is the normal case, not an error state
+    await expect(page.getByRole("heading", { name: /events you run/i })).toBeVisible();
+  });
+});
+
+test.describe("the two names", () => {
+  test("renaming the account updates the nav, not just the form", async ({ page }) => {
+    const before = unique("rename");
+    const after = `${before}-new`;
+    await signUp(page, before);
+    await page.goto("/account/settings");
+
+    await page.getByLabel("Username", { exact: true }).fill(after);
+    await page.getByLabel(/current password/i).first().fill("a good long password");
+    await page.getByRole("button", { name: /change username/i }).click();
+
+    await expect(page.getByText(new RegExp(`you now sign in as ${after}`, "i"))).toBeVisible();
+    const nav = await siteNav(page);
+    await expect(nav.getByRole("link", { name: after })).toBeVisible();
+  });
+
+  test("a wrong password leaves the username alone", async ({ page }) => {
+    const name = unique("badpass");
+    await signUp(page, name);
+    await page.goto("/account/settings");
+
+    await page.getByLabel("Username", { exact: true }).fill(`${name}-nope`);
+    await page.getByLabel(/current password/i).first().fill("not the password");
+    await page.getByRole("button", { name: /change username/i }).click();
+
+    await expect(page.getByText(/your password is wrong/i)).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel("Username", { exact: true })).toHaveValue(name);
+  });
+
+  test("the default table name is filled in at the table", async ({ page }) => {
+    await signUp(page, unique("tablename"));
+    await page.goto("/account/settings");
+
+    await page.getByLabel(/table name/i).fill("Grumpy Platypus 42");
+    await page.getByRole("button", { name: /save table name/i }).click();
+    await expect(page.getByText(/you'll sit down as grumpy platypus 42/i)).toBeVisible();
+
+    // the point of storing it on the account rather than the device
+    await page.goto("/table");
+    await expect(page.getByPlaceholder(/your name/i)).toHaveValue("Grumpy Platypus 42");
+  });
+
+  test("the table name never has to be unique", async ({ page, browser }) => {
+    await signUp(page, unique("dupe-a"));
+    await page.goto("/account/settings");
+    await page.getByLabel(/table name/i).fill("Same Name 7");
+    await page.getByRole("button", { name: /save table name/i }).click();
+    await expect(page.getByText(/you'll sit down as same name 7/i)).toBeVisible();
+
+    const ctx = await browser.newContext();
+    const other = await ctx.newPage();
+    await signUp(other, unique("dupe-b"));
+    await other.goto("/account/settings");
+    await other.getByLabel(/table name/i).fill("Same Name 7");
+    await other.getByRole("button", { name: /save table name/i }).click();
+    await expect(other.getByText(/you'll sit down as same name 7/i)).toBeVisible();
+    await ctx.close();
+  });
+});
+
+test.describe("games and notes", () => {
+  test("a game played while signed in shows up with its note", async ({ page }) => {
+    await signUp(page, unique("player"));
+
+    await page.goto("/table");
+    await page.getByRole("button", { name: /^create$/i }).click();
+    await page.getByPlaceholder(/your name/i).fill("Ada");
+    await page.getByRole("button", { name: /create room/i }).click();
+    await page.waitForURL(/\/table\/r\/.+/);
+    const code = (await page.locator(".bar-code").first().textContent())!.trim();
+
+    await page.goto("/account/games");
+    await expect(page.getByText(code, { exact: false }).first()).toBeVisible();
+
+    await page.getByRole("button", { name: /add note/i }).first().click();
+    await page.getByLabel(/your private note/i).fill("Ada mulliganed to four.");
+    await page.getByRole("button", { name: /save note/i }).click();
+    await expect(page.getByText(/mulliganed to four/i)).toBeVisible();
+
+    // the notes tab is the same rows read the other way round
+    await page.goto("/account/notes");
+    await expect(page.getByText(/mulliganed to four/i)).toBeVisible();
+
+    await page.getByLabel(/search your notes/i).fill("mulligan");
+    await expect(page.getByText(/mulliganed to four/i)).toBeVisible();
+    await page.getByLabel(/search your notes/i).fill("something else entirely");
+    await expect(page.getByText(/nothing matches/i)).toBeVisible();
+  });
+});
+
+test.describe("signing out", () => {
+  test("returns the nav to offering a way in", async ({ page }) => {
+    await signUp(page, unique("signout"));
+    await page.goto("/account/settings");
+    await page.getByRole("button", { name: /^sign out$/i }).click();
+    await expect(page).toHaveURL(/\/table$/);
+
+    const nav = await siteNav(page);
+    await expect(nav.getByRole("link", { name: /sign in/i })).toBeVisible();
+  });
+});
