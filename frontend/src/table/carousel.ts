@@ -10,11 +10,23 @@ export interface CarouselEntry {
 /**
  * Cards you may look at on the card screen: yours first, then every player
  * whose identity is public, in seat order. Hidden players never appear.
+ *
+ * `myCard` is a separate argument because your own card is **not** in
+ * `players`. The server masks every unrevealed identity in that array —
+ * including your own row, on purpose, since the array is the same shape for
+ * everyone — and serves your card once, on `state.me.card`. Reading it from
+ * your row instead yields `null`, and the hold-to-peek gesture then flips a
+ * card back over to reveal another card back. It shipped that way for two
+ * weeks; the unit tests missed it because their fixtures put a card on the
+ * caller's own row, where the real server never does.
  */
-export function carouselEntries(players: PlayerInfo[]): CarouselEntry[] {
+export function carouselEntries(
+  players: PlayerInfo[],
+  myCard: CardInfo | null,
+): CarouselEntry[] {
   const entries: CarouselEntry[] = [];
   const me = players.find((p) => p.isMe);
-  if (me) entries.push({ pid: me.pid, name: me.name, isMe: true, card: me.card });
+  if (me) entries.push({ pid: me.pid, name: me.name, isMe: true, card: myCard });
   for (const p of players) {
     if (p.isMe || !p.card) continue;
     entries.push({ pid: p.pid, name: p.name, isMe: false, card: p.card });

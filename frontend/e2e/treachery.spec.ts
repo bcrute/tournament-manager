@@ -1,0 +1,123 @@
+import { expect, Page, test } from "@playwright/test";
+
+/**
+ * Hidden roles, and the one gesture the whole mode rests on.
+ *
+ * Hold your card to look at it. That shipped broken for two weeks: the carousel
+ * read the caller's own card out of `state.players`, where the server masks
+ * every unrevealed identity — including yours, deliberately, since that array
+ * is the same shape for everyone. Your card is served once, on `state.me.card`.
+ * Holding flipped a card back over to reveal a card back.
+ *
+ * Every unit test stayed green the whole time, because their fixtures put a
+ * card on the caller's own row where the real server never does. Only a browser
+ * with a real pointer, against the real server, can see this one.
+ *
+ * **The Leader is public from the deal** (they start face up in the command
+ * zone), so exactly one of the five players legitimately has a face-up card and
+ * nothing to peek at. These tests find a hidden player rather than assuming the
+ * host is one — an earlier version assumed it and passed or failed on the roll.
+ */
+
+/** Every player's page in a dealt five-handed game. */
+async function dealtGame(page: Page, browser: import("@playwright/test").Browser) {
+  await page.goto("/table");
+  await page.getByRole("button", { name: /^create$/i }).click();
+  await page.getByPlaceholder(/your name/i).fill("Ada");
+  await page.getByRole("button", { name: /treachery/i }).click();
+  await page.getByRole("button", { name: /create room/i }).click();
+  await page.waitForURL(/\/table\/r\/.+/);
+  const code = (await page.locator(".bar-code").first().textContent())!.trim();
+
+  const contexts = [];
+  const pages: Page[] = [page];
+  for (const name of ["Bram", "Cleo", "Dev", "Esme"]) {
+    const ctx = await browser.newContext();
+    const p = await ctx.newPage();
+    await p.goto("/table");
+    await p.evaluate((x) => localStorage.setItem("table.name", x), name);
+    await p.goto(`/table?join=${code}`);
+    await expect(p).toHaveURL(/\/table\/r\/.+/, { timeout: 15_000 });
+    contexts.push(ctx);
+    pages.push(p);
+  }
+
+  await expect(page.locator(".tr-players li")).toHaveCount(5, { timeout: 20_000 });
+  await page.getByRole("button", { name: /deal & start/i }).click();
+  for (const p of pages) {
+    await expect(p.locator(".role-screen")).toBeVisible({ timeout: 20_000 });
+  }
+  return { contexts, pages };
+}
+
+/** A player whose identity is still secret — anyone but the Leader. */
+async function hiddenPlayer(pages: Page[]): Promise<Page> {
+  for (const p of pages) {
+    if ((await p.locator("img.role-card").count()) === 0) return p;
+  }
+  throw new Error("every player's card was face up — the Leader should be the only one");
+}
+
+async function holdCard(page: Page) {
+  const box = (await page.locator(".role-screen").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+}
+
+test.describe("looking at your own hidden role", () => {
+  test("holding the card shows it, releasing hides it again", async ({ page, browser }) => {
+    const { contexts, pages } = await dealtGame(page, browser);
+    const me = await hiddenPlayer(pages);
+
+    await expect(me.getByText(/hold/i).first()).toBeVisible();
+
+    await holdCard(me);
+    // the entire point of the mode: your identity, while you hold it
+    await expect(me.locator("img.role-card")).toHaveCount(1, { timeout: 5_000 });
+
+    await me.mouse.up();
+    await expect(me.locator("img.role-card")).toHaveCount(0, { timeout: 5_000 });
+
+    for (const c of contexts) await c.close();
+  });
+
+  test("the card stays face down when nobody is touching it", async ({ page, browser }) => {
+    const { contexts, pages } = await dealtGame(page, browser);
+    const me = await hiddenPlayer(pages);
+    // someone glancing over your shoulder must not find it face up
+    await me.waitForTimeout(1_500);
+    await expect(me.locator("img.role-card")).toHaveCount(0);
+    for (const c of contexts) await c.close();
+  });
+
+  test("peeking shows your own card, not the public Leader's", async ({ page, browser }) => {
+    const { contexts, pages } = await dealtGame(page, browser);
+    const me = await hiddenPlayer(pages);
+
+    // Reading the card out of `players` didn't just yield null — it is also the
+    // array that carries the Leader. Pin that the card under your thumb is the
+    // one labelled yours.
+    await expect(me.locator(".carousel-label")).toContainText(/your card/i);
+    await holdCard(me);
+    await expect(me.locator("img.role-card")).toHaveCount(1, { timeout: 5_000 });
+    await expect(me.locator(".carousel-label")).toContainText(/your card/i);
+    await me.mouse.up();
+
+    for (const c of contexts) await c.close();
+  });
+
+  test("the Leader is face up from the deal, with nothing to hold for", async ({
+    page,
+    browser,
+  }) => {
+    const { contexts, pages } = await dealtGame(page, browser);
+    let leaders = 0;
+    for (const p of pages) {
+      if ((await p.locator("img.role-card").count()) > 0) leaders += 1;
+    }
+    // exactly one, by the rules — and it is why the other tests hunt for a
+    // hidden player instead of assuming the host is one
+    expect(leaders).toBe(1);
+    for (const c of contexts) await c.close();
+  });
+});

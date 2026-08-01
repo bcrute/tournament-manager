@@ -317,12 +317,12 @@ function RoomInner({ code, token }: { code: string; token: string }) {
   const ended = state.room.status === "ended";
   const activeTab: Tab = ended ? "table" : (tab ?? (treachery ? "card" : "life"));
   const zoomPlayer = zoomPid !== null ? state.players.find((p) => p.pid === zoomPid && p.card) : undefined;
-  const entries = carouselEntries(state.players);
+  const entries = carouselEntries(state.players, state.me.card);
   const safeIndex = clampIndex(cardIndex, entries.length);
 
   // tapping a reveal toast carries you to that player's card in the carousel
   const showCardOf = (pid: number) => {
-    const i = indexOfPid(carouselEntries(state.players), pid);
+    const i = indexOfPid(carouselEntries(state.players, state.me.card), pid);
     if (i >= 0) {
       setCardIndex(i);
       setTab("card");
