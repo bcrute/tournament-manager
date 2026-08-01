@@ -106,6 +106,46 @@ test.describe("looking at your own hidden role", () => {
     for (const c of contexts) await c.close();
   });
 
+  test("nothing sits on top of the card you are reading", async ({ page, browser }) => {
+    // Pressing the card used to wake the thumbnail strip, which then covered
+    // the thing you pressed it to see. The strip belongs to sideways movement.
+    const { contexts, pages } = await dealtGame(page, browser);
+    const me = await hiddenPlayer(pages);
+
+    await holdCard(me);
+    await expect(me.locator("img.role-card")).toHaveCount(1, { timeout: 5_000 });
+    await expect(me.locator(".carousel-strip:not(.hidden)")).toHaveCount(0);
+    await me.mouse.up();
+
+    for (const c of contexts) await c.close();
+  });
+
+  test("your win condition is readable alongside your card", async ({ page, browser }) => {
+    const { contexts, pages } = await dealtGame(page, browser);
+    const me = await hiddenPlayer(pages);
+
+    await holdCard(me);
+    const tip = me.locator(".win-condition");
+    await expect(tip).toBeVisible({ timeout: 5_000 });
+    // one of the four roles, with the rule number it came from
+    await expect(tip).toContainText(/leader|guardian|assassin|traitor/i);
+    await expect(tip).toContainText(/907\.8[bcd]/);
+
+    // and it must not be sitting on the card, or on the way out
+    const card = (await me.locator("img.role-card").boundingBox())!;
+    const box = (await tip.boundingBox())!;
+    expect(box.y, "the tip overlaps the card").toBeGreaterThanOrEqual(card.y + card.height - 2);
+    const slider = await me.locator(".unveil, .role-footer").first().boundingBox();
+    if (slider) {
+      expect(box.y + box.height, "the tip runs under the unveil slider").toBeLessThanOrEqual(
+        slider.y + 2,
+      );
+    }
+    await me.mouse.up();
+
+    for (const c of contexts) await c.close();
+  });
+
   test("the Leader is face up from the deal, with nothing to hold for", async ({
     page,
     browser,

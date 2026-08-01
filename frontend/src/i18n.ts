@@ -90,6 +90,11 @@ export const en: Catalog = {
   "card.unveiledAs": "Unveiled — {name} ({role})",
   "card.artBy": "art by {artist}",
   "card.tapToClose": "tap to close",
+  "card.winTitle": "How you win",
+  "card.winLeader": "You and your Guardians lose the moment every Leader is out \u2014 even if a Guardian is still alive (907.8b).",
+  "card.winGuardian": "Keep the Leader in. Your team loses the moment every Leader is out, however well you are doing (907.8b).",
+  "card.winAssassin": "Your team wins once every Leader has lost and at least one Assassin is still in (907.8c).",
+  "card.winTraitor": "You play alone and win only when every other player has left the game \u2014 other Traitors included (907.8d).",
 
   // status
   "status.reconnecting": "reconnecting…",

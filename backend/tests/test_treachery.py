@@ -51,9 +51,21 @@ class TestDeal:
         assert any("tier" in e["text"] for e in log)
 
     def test_life_set_in_treachery_too(self, api, treachery_room):
+        """40 for the table, and 50 for the Leader — a house rule this project
+        chose, not something 907.6 asks for. See `test_treachery_setup.py`."""
+        from app.db import q
+        from app.table import LEADER_BONUS_LIFE
+
         code, tokens = treachery_room
         s = api.me(code, tokens["host"])
-        assert all(p["life"] == 40 for p in s["players"])
+        leader = q(
+            "SELECT p.name FROM players p JOIN rooms r ON r.code = p.room_code "
+            "WHERE p.room_code = ? AND p.id = r.first_pid",
+            (code,),
+        ).fetchone()["name"]
+        for p in s["players"]:
+            expected = 40 + LEADER_BONUS_LIFE if p["name"] == leader else 40
+            assert p["life"] == expected, f"{p['name']} on {p['life']}, expected {expected}"
 
 
 class TestVisibility:

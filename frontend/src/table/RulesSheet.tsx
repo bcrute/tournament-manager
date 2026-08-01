@@ -55,6 +55,13 @@ export default function RulesSheet({
             Leader is known from the start and takes the first turn (907.4a, 907.7).
           </li>
           <li>Starting life is 40 when paired with Commander, as it usually is (907.6).</li>
+          <li>
+            <strong>House rule at this table:</strong> the Leader starts 10 higher, so 50 at
+            the usual total. That is <em>ours, not the variant&rsquo;s</em> — 907.6 gives
+            every player the same starting life and says nothing about the Leader. They begin
+            face up and get focused for it, so the table hands them a cushion. Everything
+            else on this page is the real document.
+          </li>
         </ul>
 
         <h3>Teams</h3>

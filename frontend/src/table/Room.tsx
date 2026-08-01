@@ -628,7 +628,10 @@ function RoleScreen({
   function onPointerDown(e: React.PointerEvent) {
     start.current = { x: e.clientX, y: e.clientY };
     swiping.current = false;
-    strip.poke();
+    // Deliberately no `strip.poke()` here. Pressing the card is how you look at
+    // it, and waking the thumbnails on press put a row of other people's cards
+    // over the one you were trying to read. The strip belongs to sideways
+    // movement, so that is the only thing that summons it.
     if (entry?.isMe && !me.revealed) setPeek(true);
   }
 
@@ -639,6 +642,7 @@ function RoleScreen({
     if (!swiping.current && Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
       swiping.current = true; // a swipe, not a peek
       setPeek(false);
+      strip.poke(); // now you're browsing, so show what there is to browse
     }
   }
 
@@ -654,9 +658,13 @@ function RoleScreen({
     }
   }
 
+  // the tip takes room from the card rather than sitting on top of it — the
+  // point of this screen is that the card is readable
+  const showWin = showFace && !!card && !!entry?.isMe && !!WIN_CONDITIONS[card.role];
+
   return (
     <div
-      className={`role-screen${entries.length > 1 ? " has-strip" : ""}`}
+      className={`role-screen${entries.length > 1 ? " has-strip" : ""}${showWin ? " has-win" : ""}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -672,7 +680,16 @@ function RoleScreen({
       </div>
 
       {showFace && card ? (
-        <img className="role-card" src={card.image} alt="" draggable={false} />
+        <>
+          <img className="role-card" src={card.image} alt="" draggable={false} />
+          {/* Read alongside the card, not instead of it. The card says what it
+              does; this says what you are trying to achieve with it, which is
+              the part a first-time player has to ask the table about. Wording
+              and rule numbers come from the same summary as the rules sheet —
+              nothing here is invented. Only on your own card: reading someone
+              else's tells you which team they are on. */}
+          {showWin && <WinCondition role={card.role} />}
+        </>
       ) : (
         <CardBack label={me.name} hint={t("card.holdToPeek")} />
       )}
@@ -680,7 +697,9 @@ function RoleScreen({
       <div className="role-footer" onPointerDown={(e) => e.stopPropagation()}>
         {entries.length > 1 && (
           <div
-            className={`carousel-strip${strip.visible ? "" : " hidden"}`}
+            // `peek` wins over `visible`: whatever woke the strip a moment ago,
+            // nothing sits on top of the card while someone is reading it.
+            className={`carousel-strip${strip.visible && !peek ? "" : " hidden"}`}
             onPointerDown={() => strip.poke()}
           >
             {entries.map((e2, i) => {
@@ -720,6 +739,29 @@ function RoleScreen({
         )}
       </div>
     </div>
+  );
+}
+
+/** Rule numbers are from the Treachery variant rules (v6.0), the same source
+ *  `RulesSheet` cites and links. A role the deck ever gains and this map does
+ *  not know simply shows nothing, rather than guessing at a win condition. */
+const WIN_CONDITIONS: Record<string, string> = {
+  Leader: "card.winLeader",
+  Guardian: "card.winGuardian",
+  Assassin: "card.winAssassin",
+  Traitor: "card.winTraitor",
+};
+
+function WinCondition({ role }: { role: string }) {
+  const key = WIN_CONDITIONS[role];
+  if (!key) return null;
+  return (
+    <aside className="win-condition">
+      <span className="win-title">
+        <Icon name="crown" /> {t("card.winTitle")} — {role}
+      </span>
+      <p>{t(key)}</p>
+    </aside>
   );
 }
 

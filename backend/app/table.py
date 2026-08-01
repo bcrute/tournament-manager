@@ -28,6 +28,12 @@ CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O/1/I/L
 LETHAL_COMMANDER_DAMAGE = 21
 #: Lethal poison counters (CR 104.3c, ten in every format that uses them).
 LETHAL_POISON = 10
+#: Extra starting life for the Leader in a treachery game. **A house rule, not
+#: a format one** — rule 907.6 gives every player the same starting total and
+#: says nothing about the Leader. They start face up and get focused for it, so
+#: the table gives them a cushion; the rules sheet says as much rather than
+#: implying the variant asks for this.
+LEADER_BONUS_LIFE = 10
 #: How long a player has to say "I'm not dead" when their death would end the
 #: game. Only that case waits: they are already looking at the screen when the
 #: counter crosses, so this is about the one death nobody can undo afterwards,
@@ -989,10 +995,29 @@ async def start_game(code: str, x_player_token: str | None = Header(default=None
         first_row = random.choice(players)
         log_event(room["code"], f"rolled for first turn — {first_row['name']} goes first")
 
+    # Poison and "I can't lose" are per-game state, like life: a counter from
+    # last game would put someone one tick from dying before a card is drawn,
+    # and a flag declared for a Platinum Angel that is no longer on the
+    # battlefield would quietly make them unkillable for the rest of the night.
     q(
-        "UPDATE players SET life = ?, eliminated = 0 WHERE room_code = ? AND is_display = 0",
+        "UPDATE players SET life = ?, eliminated = 0, poison = 0, cant_lose = 0 "
+        "WHERE room_code = ? AND is_display = 0",
         (room["starting_life"], room["code"]),
     )
+    if room["mode"] == "treachery" and first_row is not None:
+        # House rule, not a format one: rule 907.6 gives every player the same
+        # starting total and says nothing about the Leader. They start face up,
+        # known to the table from turn one, and get focused accordingly — this
+        # is the table's answer to that, not the variant's. `RulesSheet` says so
+        # in the same words, because a summary that implied 907.6 said this
+        # would be worse than no summary.
+        leader_life = room["starting_life"] + LEADER_BONUS_LIFE
+        q("UPDATE players SET life = ? WHERE id = ?", (leader_life, first_row["id"]))
+        log_event(
+            room["code"],
+            f"{first_row['name']} starts on {leader_life} — the Leader carries "
+            f"{LEADER_BONUS_LIFE} extra (house rule)",
+        )
     q(
         "UPDATE rooms SET status = 'playing', first_pid = ? WHERE code = ?",
         (first_row["id"], room["code"]),
@@ -1435,7 +1460,8 @@ async def reopen(code: str, x_player_token: str | None = Header(default=None)):
     if not player["is_host"]:
         raise HTTPException(403, "host only")
     q(
-        "UPDATE players SET card_id = NULL, revealed = 0, life = NULL, eliminated = 0 WHERE room_code = ?",
+        "UPDATE players SET card_id = NULL, revealed = 0, life = NULL, eliminated = 0, "
+        "poison = 0, cant_lose = 0 WHERE room_code = ?",
         (room["code"],),
     )
     q("DELETE FROM players WHERE room_code = ? AND left_game = 1", (room["code"],))

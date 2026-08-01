@@ -1203,6 +1203,63 @@ button.ghost {
   width: min(88vw, calc((100dvh - 17rem) * 0.716));
 }
 
+/* The win-condition tip takes its room from the card rather than covering it.
+   This screen exists to be read; a panel over the art is the problem the
+   thumbnail strip already caused once.
+
+   The screen is a centring flex row and was built around having exactly one
+   child in flow — the card. A second one landed beside it and shoved both off
+   the edges, so the tip switches it to a column. */
+.role-screen.has-win {
+  flex-direction: column;
+  box-sizing: border-box;
+  /* The unveil slider and the strip are absolutely positioned over the bottom
+     of this screen. Padding lifts the centred stack clear of them — without it
+     the tip's last line reads through the slider. */
+  padding-bottom: 9rem;
+}
+
+.role-screen.has-win.has-strip {
+  padding-bottom: 13rem;
+}
+
+.role-screen.has-win .role-card {
+  max-height: calc(100dvh - 20rem);
+}
+
+.role-screen.has-win.has-strip .role-card {
+  max-height: calc(100dvh - 25rem);
+}
+
+.win-condition {
+  box-sizing: border-box;
+  width: min(88vw, 30rem);
+  margin: 0.6rem auto 0;
+  padding: 0.6rem 0.8rem;
+  background: rgba(29, 22, 40, 0.92);
+  border: 1px solid #322747;
+  border-left: 3px solid #c9a84c;
+  border-radius: 10px;
+  text-align: left;
+}
+
+.win-title {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #c9a84c;
+}
+
+.win-condition p {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: #d8d2e4;
+}
+
 .card-back {
   position: relative;
   width: min(88vw, calc((100dvh - 11rem) * 0.716));

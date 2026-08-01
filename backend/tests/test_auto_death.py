@@ -359,7 +359,9 @@ class TestTreachery:
     def test_an_automatic_death_still_reveals_the_identity(self, api, treachery_room):
         """CR 907.13 doesn't care how you died."""
         code, tok = treachery_room
-        life(api, code, tok["p2"], -40)
+        # more than any starting total: p2 may have been dealt the Leader, who
+        # now begins on 50, and -40 would leave them standing
+        life(api, code, tok["p2"], -99)
         p2 = next(p for p in api.me(code, tok["host"])["players"] if p["name"] == "p2")
         assert p2["eliminated"] is True
         assert p2["revealed"] is True
