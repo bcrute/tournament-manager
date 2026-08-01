@@ -1394,8 +1394,12 @@ async def set_order(code: str, body: OrderBody, x_player_token: str | None = Hea
     """Rearrange the seats — dragged on the table display, mirrored to every device."""
     room = get_room(code)
     player = get_player(code, x_player_token)
-    if not (player["is_display"] or player["is_host"]):
-        raise HTTPException(403, "only the table display or host can rearrange seats")
+    if not (player["is_display"] or player["is_tracker"] or player["is_host"]):
+        raise HTTPException(
+            403,
+            "only the table display, a player keeping score, or the host can "
+            "rearrange seats",
+        )
     seated = {
         r["id"]
         for r in q(

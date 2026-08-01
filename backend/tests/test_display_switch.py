@@ -117,3 +117,45 @@ class TestRoomOpenedByADisplay:
         s = api.me(r["code"], r["playerToken"])
         assert s["me"]["isDisplay"] is False
         assert "tv" in [p["name"] for p in s["players"]]
+
+
+class TestAScorekeeperCanRearrangeToo:
+    """`/order` was the one table-wide power that excluded a tracker.
+
+    Everything else a player keeping score can do — adjust anyone's life,
+    record commander damage, eliminate them, set "can't lose" — already checks
+    `is_display or is_tracker`. Only seat order asked for `is_display or
+    is_host`, so a non-host scorekeeper dragged a seat, watched it snap back,
+    and got a 403 nobody surfaced.
+    """
+
+    def order_of(self, api, code, token):
+        return [p["name"] for p in api.me(code, token)["players"]]
+
+    def test_a_non_host_keeping_score_may_reorder(self, api, life_room):
+        code, tok = life_room
+        api.call("POST", f"/rooms/{code}/tracker", token=tok["p2"], body={"tracking": True})
+        pids = [p["pid"] for p in api.me(code, tok["p2"])["players"]]
+        api.call(
+            "POST", f"/rooms/{code}/order", token=tok["p2"],
+            body={"pids": list(reversed(pids))},
+        )
+        assert [p["pid"] for p in api.me(code, tok["host"])["players"]] == list(reversed(pids))
+
+    def test_an_ordinary_player_still_may_not(self, api, life_room):
+        """The rule is about who is keeping the table, not about being seated."""
+        code, tok = life_room
+        pids = [p["pid"] for p in api.me(code, tok["p3"])["players"]]
+        api.call(
+            "POST", f"/rooms/{code}/order", token=tok["p3"],
+            body={"pids": list(reversed(pids))}, expect=403,
+        )
+
+    def test_the_host_still_may(self, api, life_room):
+        code, tok = life_room
+        pids = [p["pid"] for p in api.me(code, tok["host"])["players"]]
+        api.call(
+            "POST", f"/rooms/{code}/order", token=tok["host"],
+            body={"pids": list(reversed(pids))},
+        )
+        assert [p["pid"] for p in api.me(code, tok["host"])["players"]] == list(reversed(pids))

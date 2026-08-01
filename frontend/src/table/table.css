@@ -1993,7 +1993,7 @@ button.ghost.danger {
 
 /* held in a hand (or on a desktop), not read across a table: a narrow sheet,
    not a wall-sized one */
-.display-view.upright .cmd-panel {
+.display-view.handheld .cmd-panel {
   width: min(94vw, 34rem);
 }
 

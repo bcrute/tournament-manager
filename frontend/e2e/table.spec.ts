@@ -202,3 +202,108 @@ test.describe("dying happens to you", () => {
     await expect(page.getByText(/you hit 10 poison/i)).toBeVisible();
   });
 });
+
+/**
+ * The shared table view, on both the devices that can show it.
+ *
+ * A dedicated display lies in the middle of the table; a player "keeping score"
+ * shows the same view on their own phone without giving up their seat. They had
+ * drifted apart in two ways nobody had a test for: the player's version flattened
+ * every card to 0°, turning a table into a top-to-bottom list, and the server let
+ * only a display or the host reorder seats — so a scorekeeper who wasn't the host
+ * dragged a seat, watched it snap back, and got a 403 nothing surfaced.
+ */
+async function fourPlayerTable(page: Page, browser: import("@playwright/test").Browser) {
+  await page.goto("/table");
+  await page.getByRole("button", { name: /^create$/i }).click();
+  await page.getByPlaceholder(/your name/i).fill("Ada");
+  await page.getByRole("button", { name: /create room/i }).click();
+  await page.waitForURL(/\/table\/r\/.+/);
+  const code = (await page.locator(".bar-code").first().textContent())!.trim();
+
+  const contexts = [];
+  const others: Record<string, Page> = {};
+  for (const name of ["Bram", "Cleo", "Dev"]) {
+    const ctx = await browser.newContext();
+    const p = await ctx.newPage();
+    await p.goto("/table");
+    await p.evaluate((x) => localStorage.setItem("table.name", x), name);
+    await p.goto(`/table?join=${code}`);
+    await expect(p).toHaveURL(/\/table\/r\/.+/, { timeout: 15_000 });
+    contexts.push(ctx);
+    others[name] = p;
+  }
+  await expect(page.locator(".tr-players li")).toHaveCount(4, { timeout: 20_000 });
+  await page.getByRole("button", { name: /^start/i }).first().click();
+  return { code, contexts, others };
+}
+
+/** Switch a seated player to the shared table view. */
+async function keepScore(p: Page, isMobile: boolean) {
+  const menu = p.getByRole("button", { name: /menu/i });
+  if (await menu.isVisible().catch(() => false)) await menu.click();
+  await p.getByRole("button", { name: /show table view here/i }).click();
+  await expect(p.locator(".tracker-bar")).toBeVisible({ timeout: 10_000 });
+  void isMobile;
+}
+
+/** Rotation of every seat card, in degrees. */
+async function seatRotations(p: Page): Promise<number[]> {
+  await expect(p.locator(".seat-card").first()).toBeVisible({ timeout: 10_000 });
+  return p.locator(".seat-card").evaluateAll((els) =>
+    els.map((e) => {
+      const m = getComputedStyle(e).transform.match(/matrix\(([^)]+)\)/);
+      if (!m) return 0;
+      const [a, b] = m[1].split(",").map(Number);
+      return Math.round((Math.atan2(b, a) * 180) / Math.PI);
+    }),
+  );
+}
+
+test.describe("the shared table view", () => {
+  test("faces each card at the player sitting there", async ({ page, browser, isMobile }) => {
+    const { contexts } = await fourPlayerTable(page, browser);
+    await keepScore(page, isMobile);
+
+    // a table is people around an edge, not a list down a page: the seats down
+    // each side are turned to face inwards
+    const rots = await seatRotations(page);
+    expect(rots.some((r) => r !== 0), `every seat was upright: [${rots}]`).toBe(true);
+    expect(rots).toContain(90);
+    expect(rots).toContain(-90);
+
+    for (const c of contexts) await c.close();
+  });
+
+  test("a player keeping score can rearrange the table without being the host", async ({
+    page,
+    browser,
+    isMobile,
+  }) => {
+    const { contexts, others } = await fourPlayerTable(page, browser);
+    const bram = others["Bram"]; // seated, keeping score, and not the host
+    await keepScore(bram, isMobile);
+
+    const names = () => bram.locator(".seat-name").allInnerTexts();
+    const before = await names();
+    const a = (await bram.locator(".seat-card").nth(0).boundingBox())!;
+    const b = (await bram.locator(".seat-card").nth(1).boundingBox())!;
+    await bram.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+    await bram.mouse.down();
+    await bram.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 12 });
+    await bram.mouse.up();
+
+    // it must stick rather than snap back — the seats are stored, not local
+    await expect.poll(async () => (await names()).join(","), { timeout: 10_000 }).not.toBe(
+      before.join(","),
+    );
+    // and it survives a reload, which is what proves the server took it rather
+    // than the tiles having merely moved on this device
+    const after = (await names()).join(",");
+    await bram.reload();
+    await expect(bram.locator(".tracker-bar")).toBeVisible({ timeout: 15_000 });
+    await expect.poll(async () => (await names()).join(","), { timeout: 10_000 }).toBe(after);
+
+    for (const c of contexts) await c.close();
+  });
+});

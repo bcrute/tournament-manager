@@ -265,9 +265,10 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         {/* no onLeave: this is a player showing the table view, not a
             dedicated display. "Disconnect" belongs to a device that gave up its
             seat, and offering it here would drop them out of their own game —
-            "Back to my view" below is the way out. upright: this device is in
-            someone's hand, not lying flat in the middle of the table. */}
-        <DisplayView state={state} code={code} token={token} upright />
+            "Back to my view" below is the way out. handheld: this device is in
+            someone's hand, so the sheets stay narrow — but the seats still face
+            their players, because that is what makes it a table. */}
+        <DisplayView state={state} code={code} token={token} handheld />
         <div className="tracker-bar">
           <span>
             <Icon name="monitor" /> Keeping score for the table
