@@ -92,4 +92,18 @@ test("six players still gets the full table view", async ({ page, browser }, tes
   // the boundary is inclusive: six is supported, seven is not
   await expect(page.locator(".seat-card")).toHaveCount(6);
   await expect(page.locator(".display-toomany")).toHaveCount(0);
+
+  // The damage grid is a map of the table, so it has to be oriented like one.
+  // Six players sit three along each long edge — which from any of those
+  // chairs is three across and two deep. The grid was drawing the screen's
+  // arrangement instead, handing every player a 2x3 map of a 3x2 table.
+  const shapes = await page.locator(".seat-cmd-grid").evaluateAll((els) =>
+    els.map((e) => {
+      const cs = getComputedStyle(e);
+      return `${cs.gridTemplateColumns.split(" ").length}x${cs.gridTemplateRows.split(" ").length}`;
+    }),
+  );
+  expect(shapes, "every seat's damage grid should read 3 across by 2 deep").toEqual(
+    Array(6).fill("3x2"),
+  );
 });

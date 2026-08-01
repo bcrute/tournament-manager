@@ -6,8 +6,63 @@ export interface SeatSlot {
   row: number;
   col: number;
   colSpan: number;
+  rowSpan: number;
   /** degrees to rotate so the card faces that seat */
   rotate: number;
+}
+
+/** A grid of seats — the table, or the miniature of it on every card. */
+export interface TableLayout {
+  rows: number;
+  cols: number;
+  cells: { pid: number; row: number; col: number; colSpan: number; rowSpan: number }[];
+}
+
+/**
+ * The same table, as it looks from one seat.
+ *
+ * The damage grid is a map of the table, and a map has to be oriented like the
+ * territory. The layout is built in the screen's frame — for six players that
+ * is two columns of three, one column per long edge. A player sitting on an
+ * edge is looking at the display side-on, so *from their chair* that same table
+ * is three across and two deep. Their card is rotated to face them, and drawing
+ * the screen-frame grid inside it handed them a 2x3 map of a 3x2 table.
+ *
+ * Rotating the grid with the card would fix the shape and lay every number on
+ * its side. So the cells are re-placed instead: the shape matches what they can
+ * see, and the digits stay upright.
+ */
+export function orientLayout(layout: TableLayout, rotate: number): TableLayout {
+  const turn = ((Math.round(rotate) % 360) + 360) % 360;
+  if (turn !== 90 && turn !== 270) return layout;
+  const { rows, cols, cells } = layout;
+  if (turn === 90) {
+    // left-hand seat: their "up" is the screen's right, so a screen column
+    // becomes a row counted from the far edge inwards
+    return {
+      rows: cols,
+      cols: rows,
+      cells: cells.map((c) => ({
+        pid: c.pid,
+        row: cols + 1 - (c.col + c.colSpan - 1),
+        col: c.row,
+        colSpan: c.rowSpan,
+        rowSpan: c.colSpan,
+      })),
+    };
+  }
+  // right-hand seat: the mirror of the above
+  return {
+    rows: cols,
+    cols: rows,
+    cells: cells.map((c) => ({
+      pid: c.pid,
+      row: c.col,
+      col: rows + 1 - (c.row + c.rowSpan - 1),
+      colSpan: c.rowSpan,
+      rowSpan: c.colSpan,
+    })),
+  };
 }
 
 export interface SeatGrid {
@@ -46,13 +101,13 @@ export function seatGrid(n: number): SeatGrid {
   const slots: SeatSlot[] = [];
 
   for (let i = 0; i < perSide; i++) {
-    slots.push({ side: "left", row: i + 1, col: 1, colSpan: 1, rotate: 90 });
+    slots.push({ side: "left", row: i + 1, col: 1, colSpan: 1, rowSpan: 1, rotate: 90 });
   }
   for (let i = 0; i < perSide; i++) {
-    slots.push({ side: "right", row: i + 1, col: 2, colSpan: 1, rotate: -90 });
+    slots.push({ side: "right", row: i + 1, col: 2, colSpan: 1, rowSpan: 1, rotate: -90 });
   }
   if (hasBottom) {
-    slots.push({ side: "bottom", row: rows, col: 1, colSpan: 2, rotate: 0 });
+    slots.push({ side: "bottom", row: rows, col: 1, colSpan: 2, rowSpan: 1, rotate: 0 });
   }
   return { rows: Math.max(rows, 1), cols: 2, slots };
 }

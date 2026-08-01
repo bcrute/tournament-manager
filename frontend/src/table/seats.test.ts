@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  TableLayout,
   assignSeats,
+  orientLayout,
   ringOrder,
   seatFonts,
   seatGrid,
@@ -203,5 +205,120 @@ describe("assignSeats", () => {
 
   it("returns nothing for an empty table", () => {
     expect(assignSeats([])).toEqual([]);
+  });
+});
+
+describe("orientLayout — the damage grid as each seat sees it", () => {
+  /** Six players: two columns of three, one column per long edge. */
+  const six = (): TableLayout => ({
+    rows: 3,
+    cols: 2,
+    cells: [
+      { pid: 1, row: 1, col: 1, colSpan: 1, rowSpan: 1 }, // left edge, top
+      { pid: 2, row: 2, col: 1, colSpan: 1, rowSpan: 1 },
+      { pid: 3, row: 3, col: 1, colSpan: 1, rowSpan: 1 },
+      { pid: 4, row: 1, col: 2, colSpan: 1, rowSpan: 1 }, // right edge, top
+      { pid: 5, row: 2, col: 2, colSpan: 1, rowSpan: 1 },
+      { pid: 6, row: 3, col: 2, colSpan: 1, rowSpan: 1 },
+    ],
+  });
+
+  const at = (l: TableLayout, pid: number) => l.cells.find((c) => c.pid === pid)!;
+
+  it("leaves the bottom seat's view alone — they face the screen squarely", () => {
+    const l = six();
+    expect(orientLayout(l, 0)).toBe(l);
+  });
+
+  it("turns 2x3 into 3x2 for a seat on the left", () => {
+    // the reported bug: six players are three-across-and-two-deep from a chair
+    // on the long edge, but the grid drew them two-across-and-three-deep
+    const o = orientLayout(six(), 90);
+    expect({ rows: o.rows, cols: o.cols }).toEqual({ rows: 2, cols: 3 });
+  });
+
+  it("and for a seat on the right", () => {
+    const o = orientLayout(six(), -90);
+    expect({ rows: o.rows, cols: o.cols }).toEqual({ rows: 2, cols: 3 });
+  });
+
+  it("puts your own edge nearest you", () => {
+    // from a left-hand chair, the players sharing that edge are the near row
+    const o = orientLayout(six(), 90);
+    expect([1, 2, 3].map((p) => at(o, p).row)).toEqual([2, 2, 2]);
+    expect([4, 5, 6].map((p) => at(o, p).row)).toEqual([1, 1, 1]);
+  });
+
+  it("and keeps that edge in order along it", () => {
+    const o = orientLayout(six(), 90);
+    expect([1, 2, 3].map((p) => at(o, p).col)).toEqual([1, 2, 3]);
+  });
+
+  it("mirrors for the opposite edge, so both read left-to-right correctly", () => {
+    const o = orientLayout(six(), -90);
+    // a right-hand chair looks the other way down the table
+    expect([4, 5, 6].map((p) => at(o, p).row)).toEqual([2, 2, 2]);
+    expect([1, 2, 3].map((p) => at(o, p).row)).toEqual([1, 1, 1]);
+  });
+
+  it("never loses or duplicates a seat", () => {
+    for (const turn of [0, 90, -90]) {
+      const o = orientLayout(six(), turn);
+      expect(o.cells.map((c) => c.pid).sort()).toEqual([1, 2, 3, 4, 5, 6]);
+      const taken = new Set(o.cells.map((c) => `${c.row}:${c.col}`));
+      expect(taken.size, `turn ${turn} put two players in one square`).toBe(6);
+    }
+  });
+
+  it("keeps every seat inside the grid it reports", () => {
+    for (const turn of [0, 90, -90]) {
+      const o = orientLayout(six(), turn);
+      for (const c of o.cells) {
+        expect(c.row).toBeGreaterThanOrEqual(1);
+        expect(c.col).toBeGreaterThanOrEqual(1);
+        expect(c.row + c.rowSpan - 1).toBeLessThanOrEqual(o.rows);
+        expect(c.col + c.colSpan - 1).toBeLessThanOrEqual(o.cols);
+      }
+    }
+  });
+
+  it("turns the odd seat's span the right way round", () => {
+    // five players: two a side plus one across the bottom, spanning both
+    // columns. Seen from an edge that seat is one column deep by two rows.
+    const five: TableLayout = {
+      rows: 3,
+      cols: 2,
+      cells: [
+        { pid: 1, row: 1, col: 1, colSpan: 1, rowSpan: 1 },
+        { pid: 2, row: 2, col: 1, colSpan: 1, rowSpan: 1 },
+        { pid: 3, row: 1, col: 2, colSpan: 1, rowSpan: 1 },
+        { pid: 4, row: 2, col: 2, colSpan: 1, rowSpan: 1 },
+        { pid: 5, row: 3, col: 1, colSpan: 2, rowSpan: 1 },
+      ],
+    };
+    const o = orientLayout(five, 90);
+    const odd = o.cells.find((c) => c.pid === 5)!;
+    expect({ colSpan: odd.colSpan, rowSpan: odd.rowSpan }).toEqual({ colSpan: 1, rowSpan: 2 });
+    // and they sit at the far end of the table from this chair
+    expect(odd.col).toBe(o.cols);
+  });
+
+  it("matches the real six-player table produced by seatGrid", () => {
+    // the guard that keeps this honest if the seating ever changes shape
+    const grid = seatGrid(6);
+    const layout: TableLayout = {
+      rows: grid.rows,
+      cols: grid.cols,
+      cells: grid.slots.map((s, i) => ({
+        pid: i + 1,
+        row: s.row,
+        col: s.col,
+        colSpan: s.colSpan,
+        rowSpan: s.rowSpan,
+      })),
+    };
+    expect({ rows: layout.rows, cols: layout.cols }).toEqual({ rows: 3, cols: 2 });
+    const seen = orientLayout(layout, grid.slots[0].rotate);
+    expect({ rows: seen.rows, cols: seen.cols }).toEqual({ rows: 2, cols: 3 });
   });
 });

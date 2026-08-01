@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { PlayerInfo } from "./api";
 import { t } from "../i18n";
 import Icon from "../Icon";
-import { SeatSlot, seatFonts } from "./seats";
+import { orientLayout, SeatSlot, seatFonts, TableLayout } from "./seats";
 
 /**
  * One player's seat on the table display, rotated to face them.
@@ -33,13 +33,16 @@ export default function SeatTile({
   turn?: number;
   nameOf: Map<string, string>;
   /**
-   * The table's own arrangement, reused for the damage grid: same rows, same
-   * columns, same positions. A total is then read by *where* someone sits
-   * rather than by matching a name or a number — and because it comes from the
-   * same seat assignment the table uses, dragging a player moves their square
-   * here too, with nothing to keep in sync.
+   * The table's own arrangement, reused for the damage grid: same seats, same
+   * positions. A total is then read by *where* someone sits rather than by
+   * matching a name or a number — and because it comes from the same seat
+   * assignment the table uses, dragging a player moves their square here too,
+   * with nothing to keep in sync.
+   *
+   * Given in the screen's frame; each card turns it to face its own chair with
+   * `orientLayout`, since that is the arrangement its player can actually see.
    */
-  cmdLayout: { rows: number; cols: number; cells: { pid: number; row: number; col: number; colSpan: number }[] };
+  cmdLayout: TableLayout;
   /** Opens the editor for this seat. Omitted on devices that may not edit. */
   onCmdOpen?: (pid: number) => void;
   /** Press and hold: reaches a player whose phone is across the table or dead. */
@@ -84,8 +87,11 @@ export default function SeatTile({
   // and clips its overflow, so deriving from one axis let it spill and get cut
   // off. Cap the whole block to a fraction of the card's *shorter* side and
   // divide by the larger of rows/cols, so it always lands inside.
+  // turned to face this seat before it is measured: the shape decides the cell
+  // size, and a 3x2 map does not fit the box a 2x3 one does
+  const oriented = orientLayout(cmdLayout, slot.rotate);
   const block = Math.min(inner.width, inner.height) * 0.4;
-  const miniCell = Math.max(12, block / Math.max(cmdLayout.rows, cmdLayout.cols));
+  const miniCell = Math.max(12, block / Math.max(oriented.rows, oriented.cols));
   const mini = {
     w: miniCell * cmdLayout.cols,
     h: miniCell * cmdLayout.rows,
@@ -93,8 +99,8 @@ export default function SeatTile({
   };
 
   // A miniature of the table, not a list. No names, no seat numbers — the
-  // position is the label.
-  const cells = cmdLayout.cells.map((c) => ({
+  // position is the label, so the map has to be turned to face this seat.
+  const cells = oriented.cells.map((c) => ({
     ...c,
     amount: p.cmdDamage[String(c.pid)] ?? 0,
     own: c.pid === p.pid,
@@ -187,15 +193,18 @@ export default function SeatTile({
             width: mini.w,
             height: mini.h,
             fontSize: mini.font,
-            gridTemplateRows: `repeat(${cmdLayout.rows}, 1fr)`,
-            gridTemplateColumns: `repeat(${cmdLayout.cols}, 1fr)`,
+            gridTemplateRows: `repeat(${oriented.rows}, 1fr)`,
+            gridTemplateColumns: `repeat(${oriented.cols}, 1fr)`,
           }}
         >
           {cells.map((c) => (
             <span
               key={c.pid}
               className={`cmd-cell${c.amount >= 21 ? " lethal" : ""}${c.amount === 0 ? " zero" : ""}${c.own ? " own" : ""}`}
-              style={{ gridRow: c.row, gridColumn: `${c.col} / span ${c.colSpan}` }}
+              style={{
+                gridRow: `${c.row} / span ${c.rowSpan}`,
+                gridColumn: `${c.col} / span ${c.colSpan}`,
+              }}
             >
               {c.amount}
             </span>

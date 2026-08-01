@@ -142,6 +142,7 @@ export default function DisplayView({
       row: slot.row,
       col: slot.col,
       colSpan: slot.colSpan,
+      rowSpan: slot.rowSpan,
     })),
   };
 
