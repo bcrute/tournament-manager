@@ -94,12 +94,20 @@
 }
 
 .role-screen {
-  padding-top: 3rem;
+  /* Room for the bar and the floating label beneath it, with a two-line label
+     allowed for — a long name wraps, and the card must not start underneath
+     it. Another offset that used to be a flat guess (3rem) against a 3.65rem
+     bar. */
+  padding-top: calc(var(--room-bar-h) + 2.6rem);
 }
 
 .carousel-label {
   position: absolute;
-  top: calc(3.1rem + env(safe-area-inset-top));
+  /* Derived from the bar, not guessed at. 3.1rem was a guess against a bar
+     that is 3.65rem, so the label's top nine pixels sat underneath it — the
+     third time this exact mistake has been made on this screen, and the reason
+     the other two floating elements below already read the variable. */
+  top: calc(var(--room-bar-h) + env(safe-area-inset-top) + 0.4rem);
   left: 0;
   right: 0;
   display: flex;
@@ -1216,19 +1224,22 @@ button.ghost {
   /* The unveil slider and the strip are absolutely positioned over the bottom
      of this screen. Padding lifts the centred stack clear of them — without it
      the tip's last line reads through the slider. */
-  padding-bottom: 9rem;
+  padding-bottom: 11rem;
 }
 
 .role-screen.has-win.has-strip {
-  padding-bottom: 13rem;
+  padding-bottom: 15rem;
 }
 
 .role-screen.has-win .role-card {
-  max-height: calc(100dvh - 20rem);
+  max-height: calc(100dvh - 26rem);
 }
 
+/* The strip is hidden while the card is being read (see Room.tsx), and the tip
+   only appears then — so this reserves room for the tip, not for both at once.
+   Reserving for both left a third of the screen empty under a shrunken card. */
 .role-screen.has-win.has-strip .role-card {
-  max-height: calc(100dvh - 25rem);
+  max-height: calc(100dvh - 26rem);
 }
 
 .win-condition {
@@ -1636,14 +1647,6 @@ button.ghost.danger {
 }
 
 /* artist credit — the identity artwork belongs to its illustrators */
-.art-credit {
-  display: block;
-  font-size: 0.72rem;
-  color: #8a7fa0;
-  font-weight: 400;
-  margin-top: 0.2rem;
-}
-
 /* required attribution */
 .fan-notice {
   max-width: 640px;

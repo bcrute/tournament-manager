@@ -675,9 +675,12 @@ function RoleScreen({
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
+      {/* No "art by" line: the card art carries its own credit along the
+          bottom of the printed frame, and repeating it above the image only
+          takes room from the card. The artist still reaches the screen — it
+          is on the thing being shown. */}
       <div className="carousel-label">
         {entry?.isMe ? t("card.yours") : t("card.theirs", { name: entry?.name ?? "" })}
-        {showFace && card?.artist && <span className="art-credit">{t("card.artBy", { artist: card.artist })}</span>}
       </div>
 
       {showFace && card ? (
@@ -783,7 +786,6 @@ function CardZoom({ p, onClose }: { p: PlayerInfo; onClose: () => void }) {
       <div className="zoom-banner">
         This is <strong>{p.name}</strong>
         {p.isMe ? " (you)" : ""}&rsquo;s role card — {p.card.name} ({p.card.role})
-        {p.card.artist && <span className="art-credit">{t("card.artBy", { artist: p.card.artist })}</span>}
       </div>
       <img src={p.card.image} alt={p.card.name} draggable={false} />
       {p.card.rulings.length > 0 && (

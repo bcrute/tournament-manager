@@ -146,6 +146,35 @@ test.describe("looking at your own hidden role", () => {
     for (const c of contexts) await c.close();
   });
 
+  test("the label clears the room bar and the card, and there is no art credit", async ({
+    page,
+    browser,
+  }) => {
+    // Both offsets on this screen used to be flat guesses against a bar that is
+    // a different height, so the label's top sat under it. And the "art by"
+    // line above the card duplicated a credit already printed on the card.
+    const { contexts, pages } = await dealtGame(page, browser);
+    const me = await hiddenPlayer(pages);
+
+    await expect(me.getByText(/art by/i)).toHaveCount(0);
+
+    const bar = (await me.locator(".room-bar").boundingBox())!;
+    const label = (await me.locator(".carousel-label").boundingBox())!;
+    expect(label.y, "the label is tucked under the room bar").toBeGreaterThanOrEqual(
+      bar.y + bar.height,
+    );
+
+    await holdCard(me);
+    await expect(me.locator("img.role-card")).toHaveCount(1, { timeout: 5_000 });
+    const card = (await me.locator("img.role-card").boundingBox())!;
+    expect(label.y + label.height, "the label is sitting on the card").toBeLessThanOrEqual(
+      card.y + 1,
+    );
+    await me.mouse.up();
+
+    for (const c of contexts) await c.close();
+  });
+
   test("the Leader is face up from the deal, with nothing to hold for", async ({
     page,
     browser,

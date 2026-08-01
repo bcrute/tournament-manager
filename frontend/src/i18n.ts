@@ -88,7 +88,6 @@ export const en: Catalog = {
   "card.slideToUnveil": "Slide to unveil to the table",
   "card.unveiling": "Unveiling…",
   "card.unveiledAs": "Unveiled — {name} ({role})",
-  "card.artBy": "art by {artist}",
   "card.tapToClose": "tap to close",
   "card.winTitle": "How you win",
   "card.winLeader": "You and your Guardians lose the moment every Leader is out \u2014 even if a Guardian is still alive (907.8b).",
