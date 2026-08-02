@@ -73,12 +73,17 @@ class TestLifeReachesZero:
         life(api, code, disp, -20, pid=pid)
         assert alive(api, code, host)["p2"] is False
 
-    def test_gaining_life_back_does_not_resurrect_you(self, api, life_room):
-        """Coming back is a decision, not a side effect of a stray +5."""
+    def test_gaining_life_back_brings_you_in_again(self, api, life_room):
+        """This used to assert the opposite — that coming back was a decision
+        rather than a side effect of a +5. Reviving by giving life replaced the
+        menu that used to be the only way, so touching a dead player's total is
+        now the statement. Fully covered in `test_revive_by_adjusting.py`; kept
+        here so the old expectation can't quietly return."""
         code, tok = life_room
         life(api, code, tok["p2"], -20)
-        life(api, code, tok["p2"], 5)
         assert alive(api, code, tok["host"])["p2"] is False
+        life(api, code, tok["p2"], 5)
+        assert alive(api, code, tok["host"])["p2"] is True
 
 
 class TestCommanderDamage:

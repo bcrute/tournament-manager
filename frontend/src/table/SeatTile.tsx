@@ -3,6 +3,8 @@ import { PlayerInfo } from "./api";
 import { t } from "../i18n";
 import Icon from "../Icon";
 import { orientLayout, SeatSlot, seatFonts, TableLayout } from "./seats";
+import { useHoldRepeat } from "./useHoldRepeat";
+import { hasEmoji, splitEmoji } from "./emoji";
 
 /**
  * One player's seat on the table display, rotated to face them.
@@ -19,7 +21,7 @@ export default function SeatTile({
   nameOf,
   cmdLayout,
   onCmdOpen,
-  onHold,
+  onRepeat,
   dragging,
   dropTarget,
   flash,
@@ -45,14 +47,14 @@ export default function SeatTile({
   cmdLayout: TableLayout;
   /** Opens the editor for this seat. Omitted on devices that may not edit. */
   onCmdOpen?: (pid: number) => void;
-  /** Press and hold: reaches a player whose phone is across the table or dead. */
-  onHold?: (pid: number) => void;
+  /** Press and hold on a half: runs the total in tens until released. */
+  onRepeat?: (pid: number, delta: number) => void;
   dragging: boolean;
   dropTarget?: boolean;
   flash?: number;
   onDragStart: (e: React.PointerEvent) => void;
   onDragMove: (e: React.PointerEvent) => void;
-  onDragEnd: (e: React.PointerEvent) => void;
+  onDragEnd: (e: React.PointerEvent, repeated: boolean) => void;
 }) {
   const cell = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -69,14 +71,7 @@ export default function SeatTile({
     return () => ro.disconnect();
   }, []);
 
-  const holdTimer = useRef<number | null>(null);
-  const held = useRef(false);
-  const cancelHold = () => {
-    if (holdTimer.current !== null) {
-      window.clearTimeout(holdTimer.current);
-      holdTimer.current = null;
-    }
-  };
+  const hold = useHoldRepeat((delta) => onRepeat?.(p.pid, delta));
 
   const turned = slot.rotate !== 0;
   const inner = turned ? { width: size.h, height: size.w } : { width: size.w, height: size.h };
@@ -116,27 +111,25 @@ export default function SeatTile({
         gridColumn: `${slot.col} / span ${slot.colSpan}`,
       }}
       onPointerDown={(e) => {
-        // a hold opens the seat's own menu; a drag still rearranges, because the
-        // timer is cancelled as soon as the pointer moves or lifts
-        if (onHold) {
-          holdTimer.current = window.setTimeout(() => {
-            held.current = true;
-            onHold(p.pid);
-          }, 550);
-        }
+        // Which half was pressed decides the direction, and it is fixed for the
+        // whole hold — sliding a thumb across the middle mid-press must not
+        // turn a drain into a gain.
+        const dir = halfDelta(e.target);
+        if (onRepeat && dir !== null) hold.begin(dir);
         onDragStart(e);
       }}
       onPointerMove={(e) => {
-        cancelHold();
+        // a drag rearranges the table, so it is neither a tap nor a hold
+        hold.cancel();
         onDragMove(e);
       }}
       onPointerUp={(e) => {
-        cancelHold();
-        onDragEnd(e);
+        // a press that ran in tens must not also land its single tap
+        onDragEnd(e, hold.end());
       }}
       onPointerCancel={(e) => {
-        cancelHold();
-        onDragEnd(e);
+        hold.cancel();
+        onDragEnd(e, false);
       }}
     >
       <div
@@ -163,7 +156,7 @@ export default function SeatTile({
         <div className="seat-face" style={{ bottom: font.cmdBar }}>
           <span className="seat-name" style={{ fontSize: font.name }}>
             {first && <Icon name="crown" size={13} />}
-            {p.name}
+            <PlayerName name={p.name} />
             {p.card ? ` · ${p.card.role}` : ""}
           </span>
           <span className="seat-life" style={{ fontSize: font.life }}>
@@ -216,6 +209,29 @@ export default function SeatTile({
 }
 
 /** Which half of a seat card a pointer event landed on, if any. */
+/**
+ * A name with its emoji wrapped so they can be aligned to the letters.
+ *
+ * Plain names are rendered as-is: the wrapping only exists to correct a
+ * mismatch, and adding spans to `Ada` would be inventing work.
+ */
+export function PlayerName({ name }: { name: string }) {
+  if (!hasEmoji(name)) return <>{name}</>;
+  return (
+    <>
+      {splitEmoji(name).map((seg, i) =>
+        seg.emoji ? (
+          <span key={i} className="emoji">
+            {seg.text}
+          </span>
+        ) : (
+          <span key={i}>{seg.text}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 export function halfDelta(target: EventTarget | null): number | null {
   const el = (target as HTMLElement | null)?.closest?.("[data-delta]") as HTMLElement | null;
   if (!el) return null;

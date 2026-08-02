@@ -123,6 +123,40 @@ async def check_auto_death(room, player_id: int):
     await check_last_standing(get_room(room["code"]), grace=True)
 
 
+async def revive_if_adjusted_back(room, player_id: int):
+    """Touching a dead player's life says they aren't dead.
+
+    Reviving used to be its own deliberate action. But somebody reaching over
+    to put life back on an eliminated player has already said what they mean,
+    and making them find a menu afterwards to confirm it is ceremony.
+
+    **Only when the counters agree.** Adding life takes them off zero and they
+    are back; taking more away leaves them lethal, so they stay out and nothing
+    happens. That is not a technicality — an elimination carries the moment it
+    happened, `eliminated_at`, and tournament placement is read from the order
+    of those. Clearing and re-stamping it on a stray tap would quietly reorder
+    a pod's results.
+    """
+    if norm_status(room["status"]) != "playing":
+        return
+    player = q(
+        "SELECT * FROM players WHERE id = ? AND is_display = 0 AND left_game = 0 "
+        "AND eliminated = 1",
+        (player_id,),
+    ).fetchone()
+    if not player:
+        return
+    if lethal_reason(room, player):
+        return  # still dead by the numbers; leave the elimination where it is
+    q(
+        "UPDATE players SET eliminated = 0, eliminated_at = NULL WHERE id = ?",
+        (player["id"],),
+    )
+    log_event(room["code"], f"{player['name']} is back in the game")
+    # they might have been the death that was about to end it
+    cancel_pending_conclusion(room["code"])
+
+
 def cancel_pending_conclusion(code: str):
     """Called whenever someone comes back from the dead."""
     q("UPDATE rooms SET concludes_at = NULL WHERE code = ?", (code,))
@@ -1058,6 +1092,7 @@ async def adjust_life(code: str, body: LifeBody, x_player_token: str | None = He
     sign = "+" if body.delta > 0 else ""
     suffix = f" (by {who})" if who != target["name"] else ""
     log_event(room["code"], f"{target['name']}: {sign}{body.delta} life, {old} → {new}{suffix}")
+    await revive_if_adjusted_back(room, target["id"])
     await check_auto_death(room, target["id"])
     await broadcast(room["code"])
     return {"ok": True, "life": new}

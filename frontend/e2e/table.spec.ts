@@ -1,5 +1,20 @@
 import { expect, Page, test } from "@playwright/test";
 
+/**
+ * Press and hold one side of a control for `ms`. The hold starts running in
+ * tens at 1000ms and repeats every 500ms, so 1700ms is reliably two steps —
+ * comfortably clear of both the first at 1000 and the third at 2000.
+ */
+async function holdSide(page: Page, selector: string, ms: number) {
+  // `hover()` rather than a computed centre: these cards are rotated, and
+  // Playwright hit-tests the element for us instead of us doing the geometry
+  // and landing on the neighbouring half.
+  await page.locator(selector).hover();
+  await page.mouse.down();
+  await page.waitForTimeout(ms);
+  await page.mouse.up();
+}
+
 /** Start a game and return its room code. */
 async function createRoom(page: Page, name: string) {
   await page.goto("/table");
@@ -161,8 +176,8 @@ test.describe("dying happens to you", () => {
     // nothing about dying on screen while comfortably alive
     await expect(page.getByRole("button", { name: /i.m not dead/i })).toHaveCount(0);
 
-    // 20 life, four taps of −5
-    for (let i = 0; i < 4; i++) await page.getByRole("button", { name: "−5" }).click();
+    // 20 life, gone in one hold: two steps of ten
+    await holdSide(page, ".life-half.dec", 1_700);
 
     // the app decides, rather than waiting for the player to confirm it
     await expect(page.getByText(/you.re out/i)).toBeVisible({ timeout: 10_000 });
@@ -180,7 +195,7 @@ test.describe("dying happens to you", () => {
     await expect(page.getByText(/game ends in/i)).toHaveCount(0);
     await expect(page.getByRole("button", { name: /can lose again/i })).toBeVisible();
 
-    await page.getByRole("button", { name: "−1" }).click();
+    await page.locator(".life-half.dec").click();
     await expect(page.getByText(/you.re out/i)).toHaveCount(0);
     void isMobile;
   });
@@ -303,6 +318,87 @@ test.describe("the shared table view", () => {
     await bram.reload();
     await expect(bram.locator(".tracker-bar")).toBeVisible({ timeout: 15_000 });
     await expect.poll(async () => (await names()).join(","), { timeout: 10_000 }).toBe(after);
+
+    for (const c of contexts) await c.close();
+  });
+});
+
+/**
+ * Holding a side runs the total in tens.
+ *
+ * Going from 40 to 12 used to be twenty-eight taps. A tap still moves one; a
+ * press that lasts a second starts repeating ten every half second until it is
+ * released. The same gesture on both screens, so learning it once is enough.
+ */
+test.describe("holding to run in tens", () => {
+  test("on your own life total", async ({ page }) => {
+    await createRoom(page, "Ada");
+    await page.getByRole("button", { name: /^start/i }).first().click();
+    await expect(page.locator(".life-number")).toHaveText("20", { timeout: 15_000 });
+
+    // a tap is still worth one
+    await page.locator(".life-half.inc").click();
+    await expect(page.locator(".life-number")).toHaveText("21", { timeout: 5_000 });
+
+    // and a hold runs: two steps inside 1.7s
+    await holdSide(page, ".life-half.dec", 1_700);
+    await expect(page.locator(".life-number")).toHaveText("1", { timeout: 5_000 });
+
+    // upwards too
+    await holdSide(page, ".life-half.inc", 1_700);
+    await expect(page.locator(".life-number")).toHaveText("21", { timeout: 5_000 });
+  });
+
+  test("a press shorter than a second is only a tap", async ({ page }) => {
+    await createRoom(page, "Ada");
+    await page.getByRole("button", { name: /^start/i }).first().click();
+    await expect(page.locator(".life-number")).toHaveText("20", { timeout: 15_000 });
+
+    await holdSide(page, ".life-half.dec", 600);
+    // one, not ten — and not eleven either, which is what forgetting to
+    // suppress the tap after a repeat would give
+    await expect(page.locator(".life-number")).toHaveText("19", { timeout: 5_000 });
+  });
+
+  test("on someone else's seat, from the table view", async ({ page, browser, isMobile }) => {
+    const { contexts } = await fourPlayerTable(page, browser);
+    await keepScore(page, isMobile);
+
+    const seatLife = () => page.locator(".seat-card").first().locator(".seat-life").innerText();
+    await expect(page.locator(".seat-card").first().locator(".seat-life")).toHaveText("20", {
+      timeout: 10_000,
+    });
+
+    // Target the half itself, not a screen-space guess: these cards are
+    // rotated to face their players, so the "left" half of a card is not the
+    // left of the screen. One step only — at zero the card shows a skull
+    // instead of a number, which would tell us nothing about the arithmetic.
+    await holdSide(page, ".seat-card >> nth=0 >> .seat-half.dec", 1_200);
+    await expect.poll(async () => await seatLife(), { timeout: 10_000 }).toBe("10");
+
+    await holdSide(page, ".seat-card >> nth=0 >> .seat-half.inc", 1_700);
+    await expect.poll(async () => await seatLife(), { timeout: 10_000 }).toBe("30");
+
+    for (const c of contexts) await c.close();
+  });
+
+  test("putting life back on a dead player brings them in again", async ({
+    page,
+    browser,
+    isMobile,
+  }) => {
+    // this replaces the hold-for-a-menu that used to be the only way back
+    const { contexts } = await fourPlayerTable(page, browser);
+    await keepScore(page, isMobile);
+    const first = page.locator(".seat-card").first();
+
+    // run them to zero — the app eliminates them on its own
+    await holdSide(page, ".seat-card >> nth=0 >> .seat-half.dec", 1_700);
+    await expect(first).toHaveClass(/dead/, { timeout: 10_000 });
+
+    // a tap on the giving side is enough to say they are not
+    await page.locator(".seat-card").first().locator(".seat-half.inc").click();
+    await expect(first).not.toHaveClass(/dead/, { timeout: 10_000 });
 
     for (const c of contexts) await c.close();
   });

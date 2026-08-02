@@ -5,7 +5,6 @@ import Icon from "../Icon";
 import SeatTile, { halfDelta } from "./SeatTile";
 import { assignSeats, MAX_TABLE_VIEW, seatGrid, swapSeats, turnPositions } from "./seats";
 import CmdDamageSheet from "./CmdDamageSheet";
-import SeatMenu from "./SeatMenu";
 
 export default function DisplayView({
   state,
@@ -33,7 +32,6 @@ export default function DisplayView({
   const joinUrl = `${location.origin}/table?join=${code}`;
   const nameOf = new Map(state.players.map((p) => [String(p.pid), p.name]));
   const [cmdFor, setCmdFor] = useState<number | null>(null);
-  const [menuFor, setMenuFor] = useState<number | null>(null);
 
   // drag to rearrange seats: local order while dragging, committed on release
   const [localOrder, setLocalOrder] = useState<number[] | null>(null);
@@ -86,7 +84,7 @@ export default function DisplayView({
     setOverPid(over && over !== dragPid ? over : null);
   }
 
-  async function onDragEnd(e: React.PointerEvent, pid: number) {
+  async function onDragEnd(e: React.PointerEvent, pid: number, repeated = false) {
     const dragged = dragPid;
     const target = overPid;
     const wasDrag = moved.current;
@@ -95,6 +93,7 @@ export default function DisplayView({
     origin.current = null;
     if (dragged === null) return;
 
+    if (repeated) return; // the hold already moved it, in tens
     if (!wasDrag) {
       // a tap, not a drag: which half of the card was hit?
       const delta = halfDelta(document.elementFromPoint(e.clientX, e.clientY));
@@ -240,13 +239,13 @@ export default function DisplayView({
               nameOf={nameOf}
               cmdLayout={cmdLayout}
               onCmdOpen={state.room.status === "playing" ? setCmdFor : undefined}
-              onHold={state.room.status === "playing" ? setMenuFor : undefined}
+              onRepeat={state.room.status === "playing" ? adjust : undefined}
               dragging={dragPid === player.pid}
               dropTarget={overPid === player.pid}
               flash={flash?.pid === player.pid ? flash.delta : undefined}
               onDragStart={(e) => onDragStart(e, player.pid)}
               onDragMove={onDragMove}
-              onDragEnd={(e) => void onDragEnd(e, player.pid)}
+              onDragEnd={(e, repeated) => void onDragEnd(e, player.pid, repeated)}
             />
           ))}
         </div>
@@ -260,29 +259,6 @@ export default function DisplayView({
         ))}
       </div>
 
-      {menuFor !== null && (() => {
-        const target = ordered.find((pl) => pl.pid === menuFor);
-        return target ? (
-          <SeatMenu
-            player={target}
-            onClose={() => setMenuFor(null)}
-            onCantLose={(value) =>
-              void api(`/rooms/${code}/cantlose`, {
-                method: "POST",
-                token,
-                body: { value, playerPid: target.pid },
-              }).catch(() => {})
-            }
-            onEliminate={(dead) =>
-              void api(`/rooms/${code}/eliminate`, {
-                method: "POST",
-                token,
-                body: { undo: !dead, playerPid: target.pid },
-              }).catch(() => {})
-            }
-          />
-        ) : null;
-      })()}
 
       {cmdTarget && (
         <CmdDamageSheet

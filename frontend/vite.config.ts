@@ -21,6 +21,8 @@ export default defineConfig({
         "src/table/useAutoHide.ts",
         "src/table/fetchPolicy.ts",
         "src/table/seats.ts",
+        "src/table/emoji.ts",
+        "src/table/useHoldRepeat.ts",
         "src/tournament/api.ts",
         "src/admin/api.ts",
         "src/account/api.ts",

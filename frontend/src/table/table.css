@@ -468,12 +468,92 @@
   align-items: center;
 }
 
+/* The total is the control: its left half takes one, its right half gives one,
+   and holding either runs in tens. It is the biggest thing on the screen, which
+   makes it the easiest thing to hit — four small buttons underneath were the
+   hardest. */
 .life-big {
   font-size: 7rem;
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   position: relative;
+  /* The panel centres its children, which shrank this to the width of the
+     digits — a target the size of the number is not a target. Stretch it: each
+     half is then a quarter of the screen. */
+  align-self: stretch;
+  width: 100%;
+  box-sizing: border-box;
+  /* a comfortable slab rather than just the glyphs, so the edges of the number
+     are still a target */
+  min-height: 8.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid #241c33;
+  touch-action: none;          /* a hold must not become a browser scroll */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.life-number {
+  pointer-events: none;        /* the halves underneath own every press */
+}
+
+.life-half {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  border: none;
+  border-radius: 1rem;
+  background: transparent;
+  padding: 0;
+}
+
+.life-half.dec {
+  left: 0;
+}
+
+.life-half.inc {
+  right: 0;
+}
+
+/* A quiet hint at what the two sides do, without labelling the number. */
+.life-half::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 1rem;
+  height: 2px;
+  background: currentColor;
+  opacity: 0.25;
+  transform: translateY(-50%);
+}
+
+.life-half.dec::after {
+  left: 1.1rem;
+}
+
+.life-half.inc::after {
+  right: 1.1rem;
+  box-shadow: 0 0 0 0 transparent;
+}
+
+/* the vertical stroke that turns the right-hand dash into a plus */
+.life-half.inc::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 1.6rem;
+  width: 2px;
+  height: 1rem;
+  background: currentColor;
+  opacity: 0.25;
+  transform: translateY(-50%);
 }
 
 .life-big.zero {
@@ -486,18 +566,6 @@
   right: -2.2rem;
   font-size: 1.1rem;
   color: #c9a84c;
-}
-
-.life-buttons {
-  display: flex;
-  gap: 0.6rem;
-  justify-content: center;
-}
-
-.life-buttons button {
-  font-size: 1.4rem;
-  min-width: 4.2rem;
-  padding: 0.9rem 0;
 }
 
 .life-presets {
@@ -894,6 +962,27 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Emoji come from a colour font whose ascent and descent dwarf the Latin
+     one's. With `line-height: normal` the line box grew to fit them and the
+     letters were pushed to one edge of it, so a name with an emoji in it read
+     as text with the picture hanging off the side — very visible once the card
+     is turned ninety degrees to face its player. Pinning the line box keeps
+     every glyph on one line. */
+  line-height: 1.2;
+}
+
+/* Sized and centred against the letters beside it rather than against its own
+   font's idea of a line. `middle` is what actually puts a picture on the same
+   optical line as text; the size trim stops a tall glyph reopening the line
+   box this just pinned. */
+.emoji {
+  display: inline-block;
+  vertical-align: middle;
+  line-height: 1;
+  font-size: 0.85em;
+  /* nudge onto the letters' optical centre — text sits above its baseline,
+     emoji straddle it */
+  transform: translateY(-0.06em);
 }
 
 .seat-life {

@@ -3,6 +3,8 @@ import { api, RoomState } from "./api";
 import { t } from "../i18n";
 import Icon from "../Icon";
 import { useDebouncedDelta } from "./useDebouncedDelta";
+import { halfDelta } from "./SeatTile";
+import { useHoldRepeat } from "./useHoldRepeat";
 
 const LETHAL_COMMANDER_DAMAGE = 21;
 const LETHAL_POISON = 10;
@@ -52,6 +54,9 @@ export default function LifePanel({
     api(`/rooms/${code}/life`, { method: "POST", token, body: { delta } }).then(() => undefined),
   );
   const [cmdOpen, setCmdOpen] = useState(false);
+  // holding a side runs in tens; each repeat goes through the same debounced
+  // batch as a tap, so a long hold is still one request
+  const hold = useHoldRepeat((delta) => bump(delta));
 
   const life = (me.life ?? state.room.startingLife) + pending;
   // your own commander can be turned against you, so you are on this list too
@@ -130,23 +135,43 @@ export default function LifePanel({
           </button>
         </div>
       ) : (
-        <>
-          <div className={`life-big${pending !== 0 ? " pending" : ""}${life <= 0 ? " zero" : ""}`}>
-            {life}
-            {pending !== 0 && (
-              <span className="pending-tag">
-                {pending > 0 ? "+" : ""}
-                {pending}
-              </span>
-            )}
-          </div>
-          <div className="life-buttons">
-            <button onClick={() => bump(-5)}>−5</button>
-            <button onClick={() => bump(-1)}>−1</button>
-            <button onClick={() => bump(1)}>+1</button>
-            <button onClick={() => bump(5)}>+5</button>
-          </div>
-        </>
+        // The total is the control. Four fixed buttons meant going from 40 to
+        // 12 was a spelling exercise; tapping a side moves one, holding it runs
+        // in tens. Same gesture the table view uses, so a player who learns it
+        // on one screen has learned it on both.
+        <div
+          className={`life-big${pending !== 0 ? " pending" : ""}${life <= 0 ? " zero" : ""}`}
+          onPointerDown={(e) => {
+            const dir = halfDelta(e.target);
+            if (dir !== null) hold.begin(dir);
+          }}
+          onPointerUp={(e) => {
+            // a hold already moved it in tens; don't add the tap on top
+            if (hold.end()) return;
+            const dir = halfDelta(e.target);
+            if (dir !== null) bump(dir);
+          }}
+          onPointerCancel={() => hold.cancel()}
+          onPointerLeave={() => hold.cancel()}
+        >
+          <button
+            className="life-half dec"
+            data-delta="-1"
+            aria-label={t("life.minus", { name: me.name, n: 1 })}
+          />
+          <button
+            className="life-half inc"
+            data-delta="1"
+            aria-label={t("life.plus", { name: me.name, n: 1 })}
+          />
+          <span className="life-number">{life}</span>
+          {pending !== 0 && (
+            <span className="pending-tag">
+              {pending > 0 ? "+" : ""}
+              {pending}
+            </span>
+          )}
+        </div>
       )}
 
       {me.cantLose && (
