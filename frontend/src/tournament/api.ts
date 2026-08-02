@@ -1,4 +1,3 @@
-import { getItem, removeItem, setItem, storageAvailable } from "../storage";
 /**
  * Tournament API client.
  *
@@ -6,6 +5,9 @@ import { getItem, removeItem, setItem, storageAvailable } from "../storage";
  * entrant token as a query parameter on reads only. Everything is a plain
  * fetch — one snapshot per poll, no per-row requests.
  */
+
+import { apiMessage } from "../retryAfter";
+import { getItem, removeItem, setItem, storageAvailable } from "../storage";
 
 export class TourneyError extends Error {
   constructor(
@@ -33,7 +35,10 @@ export async function tapi<T>(
       .json()
       .then((d: { detail?: string }) => d.detail)
       .catch(() => undefined);
-    throw new TourneyError(r.status, detail ?? r.statusText);
+    throw new TourneyError(
+      r.status,
+      apiMessage(r.status, detail ?? r.statusText, r.headers.get("Retry-After")),
+    );
   }
   return r.json() as Promise<T>;
 }

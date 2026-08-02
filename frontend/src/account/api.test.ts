@@ -19,11 +19,12 @@ import {
   signup,
 } from "./api";
 
-function mockFetch(body: unknown = { ok: true }, status = 200) {
+function mockFetch(body: unknown = { ok: true }, status = 200, headers: Record<string, string> = {}) {
   const fn = vi.fn().mockResolvedValue({
     ok: status < 400,
     status,
     statusText: "Mocked",
+    headers: new Headers(headers),
     json: () => Promise.resolve(body),
   });
   vi.stubGlobal("fetch", fn);
@@ -66,6 +67,7 @@ describe("account transport", () => {
         ok: false,
         status: 500,
         statusText: "Internal Server Error",
+        headers: new Headers(),
         json: () => Promise.reject(new Error("not json")),
       }),
     );

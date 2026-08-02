@@ -28,12 +28,16 @@ import {
 } from "./api";
 
 /** Records the last fetch and replies with `body`. */
-function mockFetch(body: unknown = { ok: true }, init: { status?: number } = {}) {
+function mockFetch(
+  body: unknown = { ok: true },
+  init: { status?: number; headers?: Record<string, string> } = {},
+) {
   const status = init.status ?? 200;
   const fn = vi.fn().mockResolvedValue({
     ok: status < 400,
     status,
     statusText: "Mocked",
+    headers: new Headers(init.headers ?? {}),
     json: () => Promise.resolve(body),
   });
   vi.stubGlobal("fetch", fn);
@@ -75,6 +79,7 @@ describe("tapi transport", () => {
         ok: false,
         status: 500,
         statusText: "Internal Server Error",
+        headers: new Headers(),
         json: () => Promise.reject(new Error("not json")),
       }),
     );

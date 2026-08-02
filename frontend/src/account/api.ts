@@ -4,6 +4,8 @@
  * email. See `tournament/Host.tsx`.
  */
 
+import { apiMessage } from "../retryAfter";
+
 export interface Account {
   /** Typed to sign in: unique, and changing it costs a password. */
   username: string;
@@ -73,7 +75,10 @@ export async function account<T>(
       .json()
       .then((d: { detail?: string }) => d.detail)
       .catch(() => undefined);
-    throw new AccountError(r.status, detail ?? r.statusText);
+    throw new AccountError(
+      r.status,
+      apiMessage(r.status, detail ?? r.statusText, r.headers.get("Retry-After")),
+    );
   }
   return r.json() as Promise<T>;
 }

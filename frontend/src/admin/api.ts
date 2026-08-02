@@ -6,6 +6,8 @@
  * client assumes nothing.
  */
 
+import { apiMessage } from "../retryAfter";
+
 export class AdminError extends Error {
   constructor(
     public status: number,
@@ -32,7 +34,10 @@ export async function adm<T>(
       .json()
       .then((d: { detail?: string }) => d.detail)
       .catch(() => undefined);
-    throw new AdminError(r.status, detail ?? r.statusText);
+    throw new AdminError(
+      r.status,
+      apiMessage(r.status, detail ?? r.statusText, r.headers.get("Retry-After")),
+    );
   }
   return r.json() as Promise<T>;
 }

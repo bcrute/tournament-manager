@@ -121,6 +121,49 @@ test.describe("room addresses", () => {
     await expect(stranger).not.toHaveURL(/\/table\/r\/.+/, { timeout: 5_000 });
     await ctx.close();
   });
+
+  test("someone who was sent the link can paste the whole thing", async ({ browser, page }) => {
+    // The realistic path for a player who isn't in the room to scan a QR: the
+    // host sends them a link over chat, and they paste it. Nobody retypes 22
+    // characters of base64, and the old field would have wrecked it anyway —
+    // it upper-cased its input and capped it at five.
+    const roomId = await createRoom(page, "ada");
+    const link = `${new URL(page.url()).origin}/table#r/${roomId}`;
+
+    const ctx = await browser.newContext();
+    const guest = await ctx.newPage();
+    await guest.goto("/table");
+    await guest.getByRole("button", { name: /^join$/i }).click();
+    await guest.getByPlaceholder(/paste the room id or link/i).fill(link);
+    await guest.getByPlaceholder(/your name/i).fill("bram");
+    await guest.getByRole("button", { name: /join room/i }).click();
+
+    await expect(guest).toHaveURL(/\/table\/r\/.+/, { timeout: 15_000 });
+    await expect(page.getByText(/bram/i).first()).toBeVisible({ timeout: 15_000 });
+    await ctx.close();
+  });
+
+  test("the bare id works too, and case is not thrown away", async ({ browser, page }) => {
+    // Regression shape: the field used to upper-case, which is harmless to a
+    // 31-letter code and fatal to base64url. Pick a room id that actually has
+    // a lowercase letter in it before asserting anything about case.
+    const roomId = await createRoom(page, "ada");
+    test.skip(roomId === roomId.toUpperCase(), "this room's id happens to have no lowercase");
+
+    const ctx = await browser.newContext();
+    const guest = await ctx.newPage();
+    await guest.goto("/table");
+    await guest.getByRole("button", { name: /^join$/i }).click();
+    const field = guest.getByPlaceholder(/paste the room id or link/i);
+    await field.fill(roomId);
+    // what the field holds is what was typed — no transformation on the way in
+    await expect(field).toHaveValue(roomId);
+    await guest.getByPlaceholder(/your name/i).fill("cleo");
+    await guest.getByRole("button", { name: /join room/i }).click();
+
+    await expect(guest).toHaveURL(/\/table\/r\/.+/, { timeout: 15_000 });
+    await ctx.close();
+  });
 });
 
 test.describe("the commander damage grid", () => {
