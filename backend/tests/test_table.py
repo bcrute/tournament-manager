@@ -1,4 +1,6 @@
 
+from conftest import public_id
+
 
 class TestTrackerMode:
     """One player's phone keeping score for the table, without giving up their
@@ -8,8 +10,7 @@ class TestTrackerMode:
         r = client.post("/api/table/rooms", json={"name": names[0], "mode": "life"}).json()
         toks = {names[0]: r["playerToken"]}
         for n in names[1:]:
-            toks[n] = client.post(f"/api/table/rooms/{r['code']}/join",
-                                  json={"name": n, "display": False}).json()["playerToken"]
+            toks[n] = client.post("/api/table/rooms/join", json={"roomId": public_id(r['code']), "name": n, "display": False}).json()["playerToken"]
         client.post(f"/api/table/rooms/{r['code']}/start",
                     headers={"X-Player-Token": toks[names[0]]})
         return r["code"], toks
@@ -111,10 +112,8 @@ class TestDisplayCommanderDamage:
     def _setup(self, client):
         r = client.post("/api/table/rooms", json={"name": "alice", "mode": "life"}).json()
         code, host = r["code"], r["playerToken"]
-        bob = client.post(f"/api/table/rooms/{code}/join",
-                          json={"name": "bob", "display": False}).json()["playerToken"]
-        disp = client.post(f"/api/table/rooms/{code}/join",
-                           json={"name": "screen", "display": True}).json()["playerToken"]
+        bob = client.post("/api/table/rooms/join", json={"roomId": public_id(code), "name": "bob", "display": False}).json()["playerToken"]
+        disp = client.post("/api/table/rooms/join", json={"roomId": public_id(code), "name": "screen", "display": True}).json()["playerToken"]
         client.post(f"/api/table/rooms/{code}/start", headers={"X-Player-Token": host})
         state = client.get(f"/api/table/rooms/{code}/me",
                            headers={"X-Player-Token": host}).json()
@@ -208,19 +207,41 @@ class TestRoomUrlId:
 
     def test_joining_and_state_both_report_it(self, client):
         made = client.post("/api/table/rooms", json={"name": "host", "mode": "life"}).json()
-        joined = client.post(f"/api/table/rooms/{made['code']}/join",
-                             json={"name": "bob", "display": False}).json()
+        joined = client.post("/api/table/rooms/join", json={"roomId": public_id(made['code']), "name": "bob", "display": False}).json()
         assert joined["urlId"] == made["urlId"]
         state = client.get(f"/api/table/rooms/{made['code']}/me",
                            headers={"X-Player-Token": made["playerToken"]}).json()
         assert state["room"]["urlId"] == made["urlId"]
 
-    def test_the_url_id_is_not_a_join_credential(self, client):
-        """It identifies a room in a link; it must not substitute for the code,
-        or the opaque id becomes the very thing it was meant to protect."""
+    def test_the_url_id_is_the_join_credential(self, client):
+        """This asserted the exact opposite until the boundary moved.
+
+        The five-character code was the credential and the url_id was kept out
+        of joining so a link or a screenshot handed over nothing. But the code
+        is thirty-one characters over five places — walkable, which is why it
+        needed a strike-and-ban mitigation to stand up at all. The 128-bit id
+        is now the credential and the code opens nothing, so the property worth
+        pinning is the reverse of what it was.
+        """
         made = client.post("/api/table/rooms", json={"name": "host", "mode": "life"}).json()
-        r = client.post(f"/api/table/rooms/{made['urlId']}/join",
-                        json={"name": "intruder", "display": False})
+        r = client.post("/api/table/rooms/join",
+                        json={"roomId": made["urlId"], "name": "guest", "display": False})
+        assert r.status_code == 200
+
+    def test_the_five_character_code_no_longer_joins_anything(self, client):
+        made = client.post("/api/table/rooms", json={"name": "host", "mode": "life"}).json()
+        r = client.post("/api/table/rooms/join",
+                        json={"roomId": made["code"], "name": "intruder", "display": False})
+        assert r.status_code == 404, "the code must not be an unauthenticated credential"
+
+    def test_the_identifier_is_not_case_folded(self, client):
+        """base64url, so case carries information the old upper-casing destroyed."""
+        made = client.post("/api/table/rooms", json={"name": "host", "mode": "life"}).json()
+        wrong = made["urlId"].upper()
+        if wrong == made["urlId"]:
+            wrong = made["urlId"].lower()
+        r = client.post("/api/table/rooms/join",
+                        json={"roomId": wrong, "name": "intruder", "display": False})
         assert r.status_code == 404
 
     def test_a_tournament_pod_room_gets_one_too(self, client):
@@ -238,8 +259,7 @@ class TestCantLose:
 
     def _room(self, client):
         r = client.post("/api/table/rooms", json={"name": "alice", "mode": "life"}).json()
-        bob = client.post(f"/api/table/rooms/{r['code']}/join",
-                          json={"name": "bob", "display": False}).json()["playerToken"]
+        bob = client.post("/api/table/rooms/join", json={"roomId": public_id(r['code']), "name": "bob", "display": False}).json()["playerToken"]
         client.post(f"/api/table/rooms/{r['code']}/start",
                     headers={"X-Player-Token": r["playerToken"]})
         return r["code"], r["playerToken"], bob
@@ -310,8 +330,7 @@ class TestCantLose:
         """The display is where a long-press reaches this, for a player whose
         phone is across the table or dead."""
         code, host, _ = self._room(client)
-        disp = client.post(f"/api/table/rooms/{code}/join",
-                           json={"name": "screen", "display": True}).json()["playerToken"]
+        disp = client.post("/api/table/rooms/join", json={"roomId": public_id(code), "name": "screen", "display": True}).json()["playerToken"]
         me = client.get(f"/api/table/rooms/{code}/me",
                         headers={"X-Player-Token": host}).json()
         alice = next(p for p in me["players"] if p["name"] == "alice")
@@ -332,8 +351,7 @@ class TestCantLose:
         """Press-and-hold on the table view reaches a player whose phone is
         across the table or out of battery."""
         code, host, _ = self._room(client)
-        disp = client.post(f"/api/table/rooms/{code}/join",
-                           json={"name": "screen", "display": True}).json()["playerToken"]
+        disp = client.post("/api/table/rooms/join", json={"roomId": public_id(code), "name": "screen", "display": True}).json()["playerToken"]
         me = client.get(f"/api/table/rooms/{code}/me",
                         headers={"X-Player-Token": host}).json()
         alice = next(p for p in me["players"] if p["name"] == "alice")
@@ -350,9 +368,8 @@ class TestCantLose:
         r = client.post("/api/table/rooms", json={"name": "alice", "mode": "life"}).json()
         code, host = r["code"], r["playerToken"]
         for n in ("bob", "carol"):
-            client.post(f"/api/table/rooms/{code}/join", json={"name": n, "display": False})
-        disp = client.post(f"/api/table/rooms/{code}/join",
-                           json={"name": "screen", "display": True}).json()["playerToken"]
+            client.post("/api/table/rooms/join", json={"roomId": public_id(code), "name": n, "display": False})
+        disp = client.post("/api/table/rooms/join", json={"roomId": public_id(code), "name": "screen", "display": True}).json()["playerToken"]
         client.post(f"/api/table/rooms/{code}/start", headers={"X-Player-Token": host})
         me = client.get(f"/api/table/rooms/{code}/me",
                         headers={"X-Player-Token": host}).json()

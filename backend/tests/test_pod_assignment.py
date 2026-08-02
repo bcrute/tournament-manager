@@ -1,3 +1,4 @@
+
 """The organizer's override over the pairer: moving an entrant between pods,
 setting turn order at a table, and naming a table.
 
@@ -16,6 +17,7 @@ from app.db import q
 from app.table import router as table_router
 from app.tournaments import met_history
 from app.tournaments import router as tournaments_router
+from conftest import public_id
 
 
 @pytest.fixture(scope="module")
@@ -169,9 +171,11 @@ class TestSeatsAndTokensFollowTheMove:
         src, dest = pods[0], pods[1]
         seat = src["seats"][1]
         move(client, code, dest["podId"], seat["entrantId"])
-        left = client.get(f"/api/table/rooms/{src['roomCode']}/seats").json()["seats"]
+        left = client.post("/api/table/rooms/seats",
+                           json={"roomId": public_id(src["roomCode"])}).json()["seats"]
         assert seat["name"] not in [s["name"] for s in left if not s["vacant"]]
-        joined = client.get(f"/api/table/rooms/{dest['roomCode']}/seats").json()["seats"]
+        joined = client.post("/api/table/rooms/seats",
+                             json={"roomId": public_id(dest["roomCode"])}).json()["seats"]
         assert seat["name"] in [s["name"] for s in joined]
 
     def test_moving_the_host_hands_the_room_on(self, client):
@@ -287,7 +291,9 @@ class TestSeatOrder:
         assert [s["entrantId"] for s in after["seats"]] == wanted
         # the room behind the pod seats the same people in the same order
         room_names = [
-            s["name"] for s in client.get(f"/api/table/rooms/{pod['roomCode']}/seats").json()["seats"]
+            s["name"] for s in client.post(
+                "/api/table/rooms/seats", json={"roomId": public_id(pod["roomCode"])}
+            ).json()["seats"]
         ]
         assert room_names == [s["name"] for s in after["seats"]]
 

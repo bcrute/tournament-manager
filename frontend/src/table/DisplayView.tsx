@@ -3,6 +3,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { api, PlayerInfo, RoomState } from "./api";
 import Icon from "../Icon";
 import SeatTile, { halfDelta } from "./SeatTile";
+import { invitationLink } from "./qrPayload";
 import { assignSeats, MAX_TABLE_VIEW, seatGrid, swapSeats, turnPositions } from "./seats";
 import CmdDamageSheet from "./CmdDamageSheet";
 
@@ -29,7 +30,7 @@ export default function DisplayView({
 }) {
   const lobby = state.room.status === "lobby";
   const ended = state.room.status === "ended";
-  const joinUrl = `${location.origin}/table?join=${code}`;
+  const joinUrl = invitationLink(location.origin, state.room.urlId);
   const nameOf = new Map(state.players.map((p) => [String(p.pid), p.name]));
   const [cmdFor, setCmdFor] = useState<number | null>(null);
 

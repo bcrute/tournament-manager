@@ -8,6 +8,30 @@ import Icon from "../Icon";
 import QrScanner, { scanSupported } from "./QrScanner";
 import { getItem, removeItem, setItem } from "../storage";
 import { suggestTableName } from "../username";
+import { roomIdFromScan } from "./qrPayload";
+
+/**
+ * The room id an invitation carried, taken from the address and then wiped
+ * from it.
+ *
+ * Invitations are `…/table#r/<id>`. A fragment is never sent to a server, so
+ * the one credential that opens a room cannot land in uvicorn's or Caddy's
+ * access log — which a query string would, on every request. It is removed
+ * from the address as soon as it is read so it does not sit in the tab, in
+ * history, or in the next screenshot.
+ *
+ * `?join=` is still honoured, because links shared before this change exist in
+ * the world. Nothing produces it any more.
+ */
+function takeInvitation(search: URLSearchParams): string | null {
+  const fromHash = roomIdFromScan(window.location.hash);
+  if (fromHash) {
+    // same entry, no fragment: no new history step to go "back" through
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    return fromHash;
+  }
+  return roomIdFromScan(search.get("join") ?? "");
+}
 import { useAccount } from "../account/useAccount";
 
 export default function Landing() {
@@ -20,20 +44,23 @@ export default function Landing() {
   // once they touch the field the name is theirs, and an account default
   // arriving late must not overwrite what they are in the middle of typing
   const [nameTouched, setNameTouched] = useState(false);
-  const [joinCode, setJoinCode] = useState(params.get("join") ?? "");
-  const [mode, setMode] = useState<"join" | "create">(params.get("join") ? "join" : "create");
+  // read once, on the first render, because reading it also wipes it
+  const [invitation, setInvitation] = useState(() => takeInvitation(params));
+  const [joinCode, setJoinCode] = useState(invitation ?? "");
+  const [mode, setMode] = useState<"join" | "create">(invitation ? "join" : "create");
   const [gameMode, setGameMode] = useState<GameMode>("life");
   const [asDisplay, setAsDisplay] = useState(false);
   const [busy, setBusy] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // a game already in progress: offer the seats so a dropped player can return
-  const [rejoin, setRejoin] = useState<{ code: string; seats: SeatInfo[] } | null>(null);
+  // keyed by the room's public id: the five-character code opens nothing now
+  const [rejoin, setRejoin] = useState<{ roomId: string; seats: SeatInfo[] } | null>(null);
 
-  async function offerRejoin(roomCode: string) {
+  async function offerRejoin(roomId: string) {
     try {
-      const s = await api<SeatsResponse>(`/rooms/${roomCode}/seats`);
-      setRejoin({ code: roomCode, seats: s.seats });
+      const s = await api<SeatsResponse>("/rooms/seats", { method: "POST", body: { roomId } });
+      setRejoin({ roomId, seats: s.seats });
       return true;
     } catch {
       return false;
@@ -46,8 +73,8 @@ export default function Landing() {
     setBusy(true);
     try {
       const res = await api<{ code: string; urlId?: string; playerToken: string }>(
-        `/rooms/${rejoin.code}/reclaim`,
-        { method: "POST", body: { pid: seat.pid, force: !seat.vacant } },
+        "/rooms/reclaim",
+        { method: "POST", body: { roomId: rejoin.roomId, pid: seat.pid, force: !seat.vacant } },
       );
       saveSession({ code: res.code, urlId: res.urlId, token: res.playerToken });
       navigate(`/table/r/${res.urlId ?? res.code}`, { replace: true });
@@ -57,7 +84,9 @@ export default function Landing() {
       setBusy(false);
     }
   }
-  const [autoJoining, setAutoJoining] = useState(() => landingAction(loadSession(), params.get("join")) === "autojoin");
+  const [autoJoining, setAutoJoining] = useState(
+    () => landingAction(loadSession(), invitation) === "autojoin",
+  );
   const autoRan = useRef(false);
 
   /**
@@ -74,8 +103,30 @@ export default function Landing() {
     if (!nameTouched) setName(preferred);
   }, [acct, nameTouched]);
 
+  /**
+   * An invitation arriving at a tab that is already here.
+   *
+   * `/table` → `/table#r/<id>` changes only the fragment, so the browser does
+   * not reload and this component never remounts — the invitation would sit in
+   * the address doing nothing. That is not just a test artifact: pasting a link
+   * into a tab already showing the landing page does exactly this.
+   */
   useEffect(() => {
-    const joinParam = params.get("join");
+    const onHash = () => {
+      const next = takeInvitation(params);
+      if (!next) return;
+      autoRan.current = false;
+      setInvitation(next);
+      setJoinCode(next);
+      setMode("join");
+      setAutoJoining(landingAction(loadSession(), next) === "autojoin");
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, [params]);
+
+  useEffect(() => {
+    const joinParam = invitation;
     const s = loadSession();
     const action = landingAction(s, joinParam);
     if (action === "none") return;
@@ -90,22 +141,22 @@ export default function Landing() {
           clearSession();
         }
         const nm = (getItem("table.name") ?? "").trim() || suggestTableName();
+        const roomId = joinParam.trim();
         try {
           const res = await api<{ code: string; urlId?: string; playerToken: string }>(
-            `/rooms/${joinParam.trim().toUpperCase()}/join`,
-            { method: "POST", body: { name: nm, display: false } },
+            "/rooms/join",
+            { method: "POST", body: { roomId, name: nm, display: false } },
           );
           setItem("table.name", nm);
           saveSession({ code: res.code, urlId: res.urlId, token: res.playerToken });
           navigate(`/table/r/${res.urlId ?? res.code}`, { replace: true });
         } catch (e) {
-          const roomCode = joinParam.trim().toUpperCase();
           setAutoJoining(false);
           setMode("join");
-          setJoinCode(roomCode);
+          setJoinCode(roomId);
           setName(nm);
           // a game in progress isn't a dead end — offer the seats to reclaim
-          if (e instanceof ApiError && e.status === 409 && (await offerRejoin(roomCode))) return;
+          if (e instanceof ApiError && e.status === 409 && (await offerRejoin(roomId))) return;
           setError(e instanceof ApiError ? e.message : "Could not join the room");
         }
       })();
@@ -125,14 +176,16 @@ export default function Landing() {
     return () => {
       cancelled = true;
     };
-  }, [navigate, params]);
+    //  is a dependency: an invitation can arrive after mount, when
+    // a link is opened in a tab already showing this page.
+  }, [navigate, params, invitation]);
 
   if (autoJoining) {
     return (
       <div className="tr-landing">
         <header>
           <h1>Table</h1>
-          <p className="tagline">Joining room {params.get("join")}…</p>
+          <p className="tagline">Joining…</p>
         </header>
       </div>
     );
@@ -158,15 +211,19 @@ export default function Landing() {
                 display: asDisplay,
               },
             })
-          : await api<{ code: string; urlId?: string; playerToken: string }>(
-              `/rooms/${joinCode.trim().toUpperCase()}/join`,
-              { method: "POST", body: { name: trimmed || "Table display", display: asDisplay } },
-            );
+          : await api<{ code: string; urlId?: string; playerToken: string }>("/rooms/join", {
+              method: "POST",
+              body: {
+                roomId: roomIdFromScan(joinCode) ?? joinCode.trim(),
+                name: trimmed || "Table display",
+                display: asDisplay,
+              },
+            });
       saveSession({ code: res.code, urlId: res.urlId, token: res.playerToken });
       navigate(`/table/r/${res.urlId ?? res.code}`);
     } catch (e) {
-      const roomCode = joinCode.trim().toUpperCase();
-      if (mode === "join" && e instanceof ApiError && e.status === 409 && (await offerRejoin(roomCode))) {
+      const roomId = roomIdFromScan(joinCode) ?? joinCode.trim();
+      if (mode === "join" && e instanceof ApiError && e.status === 409 && (await offerRejoin(roomId))) {
         setBusy(false);
         return;
       }
@@ -180,7 +237,7 @@ export default function Landing() {
     return (
       <div className="tr-landing">
         <header>
-          <h1>Rejoin {rejoin.code}</h1>
+          <h1>Rejoin this game</h1>
           <p className="tagline">That game is already under way — pick your seat</p>
         </header>
         <ul className="seat-picker">
@@ -220,12 +277,12 @@ export default function Landing() {
           <h2>How it works</h2>
           <ol>
             <li>
-              <strong>Start a game</strong> and a five-character room code appears, with a
-              QR code beside it.
+              <strong>Start a game</strong> and you get a QR code and an invitation link
+              to share.
             </li>
             <li>
-              <strong>Everyone else scans or types it.</strong> No app to install, and no
-              account needed to play.
+              <strong>Everyone else scans it, or pastes the link.</strong> No app to
+              install, and no account needed to play.
             </li>
             <li>
               <strong>Each player keeps their own total</strong> on their own phone, and
@@ -268,17 +325,23 @@ export default function Landing() {
         {mode === "join" && (
           <>
             <label className="field">
-              <span>Room code</span>
-            <input
-              type="text"
-              className="code-input"
-              placeholder="ROOM CODE"
-              maxLength={5}
-              autoCapitalize="characters"
-              autoComplete="off"
-              value={joinCode}
-              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-            />
+              <span>Room ID or invitation link</span>
+              {/* No length cap, no upper-casing, no character class. This is
+                  base64url and case is meaningful — the old field did all
+                  three to a five-character code and would silently destroy
+                  this one. Pasting the whole link is the common case, so the
+                  field takes that too and picks the id out of it. */}
+              <input
+                type="text"
+                className="room-id-input"
+                placeholder="Paste the room ID or link"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                autoComplete="off"
+                value={joinCode}
+                onChange={(e) => setJoinCode(e.target.value)}
+              />
             </label>
             {scanSupported() && (
               <button className="ghost" onClick={() => setScanning(true)}>

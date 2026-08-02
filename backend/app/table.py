@@ -440,14 +440,43 @@ def note_bad_join(request: Request):
 
 
 def new_url_id() -> str:
-    """The opaque half of a room's identity.
+    """A room's public identity: 128 random bits, and the only thing that lets
+    an unauthenticated caller into a room.
 
-    The five-character code is what someone reads across a table, so it is
-    short by necessity. This is what goes in the address bar: 128 random bits,
-    so a link, a screenshot or a browser-history entry doesn't hand over
-    something joinable.
+    The five-character `rooms.code` used to be that credential. It is short
+    enough to read across a table, which is exactly what made it short enough
+    to guess — thirty-one characters over five places, which is why this code
+    grew a strike-and-ban mitigation for people walking the space. A number
+    nobody can walk needs no such mitigation. The code stays as the internal
+    key that `players.room_code` and every authenticated route already join on,
+    and as something to say out loud, but it opens nothing.
+
+    Retried against the unique index rather than trusted. A collision is
+    vanishingly unlikely at 128 bits, but "vanishingly unlikely" surfaced as a
+    500 from an IntegrityError, and a retry is three lines.
     """
-    return secrets.token_urlsafe(16)
+    for _ in range(8):
+        candidate = secrets.token_urlsafe(16)
+        if not q("SELECT 1 FROM rooms WHERE url_id = ?", (candidate,)).fetchone():
+            return candidate
+    # 8 straight collisions at 128 bits is not chance; fail loudly rather than
+    # hand back something that will violate the index on insert
+    raise HTTPException(500, "could not allocate a room id")
+
+
+def get_room_by_public_id(room_id: str, allow_closed: bool = False):
+    """Resolve a room from the identifier a client was invited with.
+
+    Case-sensitive and unmodified: this is base64url, so upper-casing it — as
+    the old five-character lookup did — would destroy it.
+    """
+    value = (room_id or "").strip()
+    if not value:
+        raise HTTPException(404, "room not found")
+    row = q("SELECT * FROM rooms WHERE url_id = ?", (value,)).fetchone()
+    if not row:
+        raise HTTPException(404, "room not found")
+    return get_room(row["code"], allow_closed=allow_closed)
 
 
 def get_room(code: str, allow_closed: bool = False):
@@ -747,8 +776,15 @@ class CreateBody(BaseModel):
 
 
 class JoinBody(BaseModel):
+    #: The room's public identifier, as invited. In the body rather than the
+    #: path so it stays out of access logs — the thing it opens is the room.
+    roomId: str = Field(min_length=1, max_length=200)
     name: str = Field(min_length=1, max_length=24)
     display: bool = False
+
+
+class RoomLookupBody(BaseModel):
+    roomId: str = Field(min_length=1, max_length=200)
 
 
 class OptionsBody(BaseModel):
@@ -798,6 +834,7 @@ class OrderBody(BaseModel):
 
 
 class ReclaimBody(BaseModel):
+    roomId: str = Field(min_length=1, max_length=200)
     pid: int
     force: bool = False
 
@@ -832,14 +869,18 @@ def create_room(body: CreateBody, request: Request):
     return {"code": code, "urlId": url_id, "playerToken": token}
 
 
-@router.post("/rooms/{code}/join")
-async def join_room(code: str, body: JoinBody, request: Request):
-    # A room code is short enough to read across a table, which means it is
-    # short enough to guess. The URL id keeps codes out of links and history,
-    # but this is the endpoint an enumerator would actually hammer, so a client
-    # that keeps naming rooms that don't exist is treated as one.
+@router.post("/rooms/join")
+async def join_room(body: JoinBody, request: Request):
+    """Take a seat, using the identifier the room was shared with.
+
+    The identifier is 128 bits and arrives in the body: not in the path, where
+    uvicorn and Caddy would both write it to an access log on every call. It is
+    no longer walkable, but a client naming rooms that don't exist is still fed
+    to the strike machinery — that costs nothing and keeps the one
+    unauthenticated door instrumented.
+    """
     try:
-        room = get_room(code)
+        room = get_room_by_public_id(body.roomId)
     except HTTPException:
         note_bad_join(request)
         raise
@@ -874,11 +915,20 @@ async def join_room(code: str, body: JoinBody, request: Request):
     return {"code": room["code"], "urlId": room["url_id"], "playerToken": token}
 
 
-@router.get("/rooms/{code}/seats")
-def seats(code: str):
+@router.post("/rooms/seats")
+async def seats(body: RoomLookupBody, request: Request):
     """Seats in a room, so someone who dropped out can find their way back in.
-    Knowing the room code is the credential here, same as joining."""
-    room = get_room(code)
+
+    This is the sibling of joining and is gated on the same credential — it
+    names every player at the table, so treating it as a lesser read was the
+    hole: a GET classified as ordinary traffic, at fifteen a second, with no
+    strike when the room didn't exist.
+    """
+    try:
+        room = get_room_by_public_id(body.roomId)
+    except HTTPException:
+        note_bad_join(request)
+        raise
     rows = q(
         "SELECT id, name, left_game, eliminated FROM players WHERE room_code = ? AND is_display = 0 "
         "ORDER BY COALESCE(seat_order, 1000000), joined_at, id",
@@ -899,11 +949,19 @@ def seats(code: str):
     }
 
 
-@router.post("/rooms/{code}/reclaim")
-async def reclaim(code: str, body: ReclaimBody):
+@router.post("/rooms/reclaim")
+async def reclaim(body: ReclaimBody, request: Request):
     """Take back a seat after leaving or losing a session. The seat keeps its
-    life, commander damage and identity — only the device token changes."""
-    room = get_room(code)
+    life, commander damage and identity — only the device token changes.
+
+    Seizing a seat is the most consequential thing an unauthenticated caller
+    can do, so it is gated on the same 128-bit identifier as joining.
+    """
+    try:
+        room = get_room_by_public_id(body.roomId)
+    except HTTPException:
+        note_bad_join(request)
+        raise
     if norm_status(room["status"]) == "ended":
         raise HTTPException(409, "that game has ended")
     row = q(

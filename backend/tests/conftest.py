@@ -19,6 +19,27 @@ def client():
         yield c
 
 
+def public_id(room: str) -> str:
+    """The room's public identifier, from whichever handle a test is holding.
+
+    Tests mostly hold the five-character internal code, because that is what
+    `create()` returns and what every authenticated route keys on. The code is
+    no longer a join credential, so this translates — something a harness with
+    database access may legitimately do and a client cannot. Anything that is
+    already a `url_id` passes straight through.
+
+    That the code itself opens nothing is pinned separately, in
+    `test_table.py::test_the_five_character_code_no_longer_joins_anything`.
+    """
+    from app.db import q as dbq
+
+    if len(room) == 5:
+        row = dbq("SELECT url_id FROM rooms WHERE code = ?", (room.upper(),)).fetchone()
+        if row and row["url_id"]:
+            return row["url_id"]
+    return room
+
+
 class Api:
     """Small wrapper: token-aware calls against /api/table."""
 
@@ -36,9 +57,36 @@ class Api:
             "POST", "/rooms", body={"name": name, "mode": mode, "display": display}, expect=expect
         )
 
-    def join(self, code, name, display=False, expect=200):
+    def join(self, room, name, display=False, expect=200):
+        """Join by the room's public identifier.
+
+        Most tests hold the five-character internal code, because that is what
+        `create()` hands back and what every authenticated route keys on. The
+        code is no longer a join credential, so this translates it — a thing a
+        harness with database access may legitimately do, and a client cannot.
+        Pass a `url_id` directly and it is used as-is.
+
+        The property that matters is pinned separately, in
+        `test_table.py::test_the_five_character_code_no_longer_joins_anything`.
+        """
         return self.call(
-            "POST", f"/rooms/{code}/join", body={"name": name, "display": display}, expect=expect
+            "POST",
+            "/rooms/join",
+            body={"roomId": public_id(room), "name": name, "display": display},
+            expect=expect,
+        )
+
+    def seats(self, room, expect=200):
+        return self.call(
+            "POST", "/rooms/seats", body={"roomId": public_id(room)}, expect=expect
+        )
+
+    def reclaim(self, room, pid, force=False, expect=200):
+        return self.call(
+            "POST",
+            "/rooms/reclaim",
+            body={"roomId": public_id(room), "pid": pid, "force": force},
+            expect=expect,
         )
 
     def me(self, code, token, expect=200):

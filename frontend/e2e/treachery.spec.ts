@@ -27,7 +27,7 @@ async function dealtGame(page: Page, browser: import("@playwright/test").Browser
   await page.getByRole("button", { name: /treachery/i }).click();
   await page.getByRole("button", { name: /create room/i }).click();
   await page.waitForURL(/\/table\/r\/.+/);
-  const code = (await page.locator(".bar-code").first().textContent())!.trim();
+  const code = page.url().split("/table/r/")[1];
 
   const contexts = [];
   const pages: Page[] = [page];
@@ -36,7 +36,7 @@ async function dealtGame(page: Page, browser: import("@playwright/test").Browser
     const p = await ctx.newPage();
     await p.goto("/table");
     await p.evaluate((x) => localStorage.setItem("table.name", x), name);
-    await p.goto(`/table?join=${code}`);
+    await p.goto(`/table#r/${code}`);
     await expect(p).toHaveURL(/\/table\/r\/.+/, { timeout: 15_000 });
     contexts.push(ctx);
     pages.push(p);
