@@ -221,6 +221,22 @@ confirmation link out of a real message rather than skipping confirmation.
   image. Looking only at the workflow would tell you no gate exists. Regression
   tests for user-reported bugs are expected — several exist precisely because a
   bug came back.
+- **Run the gate here, not on GitHub's dime.** `scripts/ci` runs `docker build`,
+  which is the entire thing any workflow does — same signal, no minutes. Use it
+  before opening a PR or pushing to `main`; those are the only two events that
+  spend anything, and a failure discovered on the runner costs a full build to
+  learn what a local one would have told you.
+
+  `scripts/ci --fast` skips Docker and runs the same three checks directly for
+  iteration. It is not a substitute: it uses whatever Python and packages are
+  installed on this machine, which is the class of difference that makes a build
+  pass locally and fail in CI.
+
+  `scripts/ci --e2e` rebuilds the bundle and runs Playwright — **which no
+  workflow runs at all.** There is no browser job anywhere in
+  `.github/workflows/`, so the e2e suite has only ever run on a developer's
+  machine. A green CI badge says nothing about it. It rebuilds first because
+  testing a stale `dist/` has fooled this project more than once.
 - **A settings flag that promises behaviour must implement it.** Adding a
   config key with no code behind it is worse than omitting the feature; see the
   agent rules above for how this one has evolved.

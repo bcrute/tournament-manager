@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+#
+# The gate, run here instead of on GitHub's dime.
+#
+# What GitHub actually runs is `docker build .` — nothing more. The Dockerfile
+# *is* the test suite: the frontend stage runs `npm run test` (vitest behind the
+# coverage thresholds in vite.config.ts) and `npm run build` (which is `tsc &&
+# vite build`, so a type error fails it); the backend-test stage runs pytest
+# behind `--cov-fail-under=90`. Running that same build here gives the identical
+# signal for free.
+#
+# Two things GitHub never runs at all, and this does:
+#
+#   * Playwright. There is no browser job in any workflow, so the e2e suite has
+#     only ever run on a developer's machine. It is the only thing that tests
+#     the built bundle in a real browser against the real server.
+#   * The e2e suite against a *fresh* build. Testing a stale `dist/` has bitten
+#     this project more than once, so `--e2e` rebuilds first, always.
+#
+# Usage:
+#   scripts/ci            the gate GitHub would run (docker build)
+#   scripts/ci --fast     the same checks without Docker — seconds, not minutes
+#   scripts/ci --e2e      rebuild the bundle and run Playwright too
+#   scripts/ci --all      --fast, then docker, then e2e
+#
+# --fast needs a venv at backend/.venv (or $VENV) and node on PATH. It is not a
+# substitute for the real thing before pushing to main: it uses whatever Python
+# and packages happen to be installed here, which is the class of difference
+# that makes a build pass locally and fail in CI.
+
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+ROOT=$(pwd)
+VENV=${VENV:-"$ROOT/backend/.venv"}
+
+FAST=0 DOCKER=1 E2E=0
+for arg in "$@"; do
+  case "$arg" in
+    --fast) FAST=1; DOCKER=0 ;;
+    --e2e)  E2E=1 ;;
+    --all)  FAST=1; DOCKER=1; E2E=1 ;;
+    -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown option: $arg" >&2; exit 2 ;;
+  esac
+done
+
+step() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
+fail() { printf '\n\033[31mFAILED: %s\033[0m\n' "$1" >&2; exit 1; }
+
+if [ "$FAST" = 1 ]; then
+  step "backend: pytest + 90% coverage gate"
+  if [ ! -x "$VENV/bin/python" ]; then
+    fail "no venv at $VENV — create one, or set VENV=/path/to/venv"
+  fi
+  (cd backend && "$VENV/bin/python" -m pytest -q --cov=app --cov-report=term \
+    --cov-fail-under=90) || fail "backend tests or coverage gate"
+
+  step "frontend: vitest + coverage thresholds"
+  (cd frontend && npm run test) || fail "frontend tests or coverage thresholds"
+
+  step "frontend: tsc + build"
+  (cd frontend && npm run build) || fail "type check or bundle build"
+fi
+
+if [ "$DOCKER" = 1 ]; then
+  step "docker build — the exact gate GitHub runs"
+  docker build -t mtg:localci . || fail "docker build (this is what CI would report)"
+fi
+
+if [ "$E2E" = 1 ]; then
+  # Always rebuild. Playwright serves frontend/dist through the real app, so a
+  # stale bundle means testing the previous commit and believing the result.
+  step "frontend: rebuild for the browser tests"
+  (cd frontend && npm run build) || fail "bundle build"
+
+  step "playwright — the suite no workflow runs"
+  (cd frontend && npx playwright test) || fail "browser tests"
+fi
+
+printf '\n\033[32mgreen\033[0m — %s\n' \
+  "$([ "$DOCKER" = 1 ] && echo 'this is what CI would say' || echo 'fast checks only; run without --fast before pushing to main')"

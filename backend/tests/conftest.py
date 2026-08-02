@@ -28,6 +28,28 @@ def _empty_mailbox():
     yield
 
 
+def deployment_file(relative: str):
+    """A path to a deployment file, from wherever this suite is running.
+
+    Two layouts, and the tests that read these have to work in both. In a
+    checkout they sit at the repo root, two levels above `backend/tests/`. In
+    the image's test stage they are copied next to `app/` and `tests/`, one
+    level up — see the Dockerfile for why they are copied in at all. Searching
+    upward for the marker beats hardcoding a `parents[n]` that is right in one
+    layout and silently wrong in the other.
+    """
+    from pathlib import Path
+
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        if (parent / "docker-compose.yml").is_file():
+            return parent / relative
+    raise AssertionError(
+        "no docker-compose.yml above " + str(here) + " — the deployment files "
+        "these tests assert against are missing from the build context"
+    )
+
+
 def verified_email(username: str, email: str | None = None) -> str:
     """Give an account a confirmed recovery address, in the database.
 

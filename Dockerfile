@@ -12,6 +12,15 @@ RUN pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
 COPY backend/app ./app
 COPY backend/tests ./tests
 COPY data ./data
+# Deployment shape, read by the tests and by nothing else. `TestTheTrustBoundary`
+# asserts that no host port is published and that Caddy trusts only private
+# ranges — the two facts that make believing `X-Forwarded-For` safe — and
+# `TestTheVhost` asserts the access log redacts entrant tokens. Without these
+# here they skip, and a guard that skips in CI is a guard that isn't one.
+# This stage is thrown away; the final image copies /tests-passed and nothing
+# else out of it.
+COPY docker-compose.yml ./docker-compose.yml
+COPY deploy ./deploy
 RUN python -m pytest tests -q --cov=app --cov-report=term --cov-fail-under=90 && touch /tests-passed
 
 FROM python:3.12-slim

@@ -32,6 +32,9 @@ export default defineConfig({
         "src/nav.ts",
         "src/table/qrPayload.ts",
         "src/storage.ts",
+        // shared by all four API layers: a bad Retry-After parse shows every
+        // rate-limited user "in NaN seconds"
+        "src/retryAfter.ts",
       ],
       thresholds: {
         statements: 90,

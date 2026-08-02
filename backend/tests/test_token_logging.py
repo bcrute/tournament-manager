@@ -15,6 +15,7 @@ import pytest
 from uvicorn.logging import AccessFormatter
 
 from app.access_log import RedactingFilter, install, redact
+from conftest import deployment_file
 
 TOKEN = "s3cret-entrant-token-abc123"
 
@@ -158,16 +159,13 @@ class TestProxyVhost:
 
     @pytest.fixture(scope="class")
     def vhost(self):
-        # backend/tests/… → repo root
-        deploy = Path(__file__).resolve().parents[2] / "deploy"
-        # The image build runs this suite with only `app/`, `tests/` and `data/`
-        # copied in, because the vhost is shipped by the deploy job and not by
-        # the container. No `deploy/` tree at all means we are inside that build
-        # and there is nothing here to check. The assertion below still bites in
-        # a real checkout, where the tree exists and the file must.
-        if not deploy.is_dir():
-            pytest.skip("no deploy/ tree — running against the app image, not the repo")
-        path = deploy / "caddy" / "sites" / "mtg.caddy"
+        # This used to skip when `deploy/` was absent, which is what happened
+        # in every CI build — the tree was outside the image's build context,
+        # so the one place it mattered was the one place it never ran. The
+        # Dockerfile copies it into the test stage now, and this asserts rather
+        # than skips: if it goes missing again, that is a finding, not a
+        # no-op.
+        path = deployment_file("deploy/caddy/sites/mtg.caddy")
         assert path.is_file(), path
         return path.read_text()
 

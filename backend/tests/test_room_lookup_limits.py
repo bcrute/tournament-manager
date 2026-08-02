@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 
 from app.db import q
 from app.limits import DEFAULT_RULES, RateLimiter, classify
+from conftest import deployment_file
 
 
 class TestClassification:
@@ -198,9 +199,7 @@ class TestTheTrustBoundary:
     """
 
     def compose(self):
-        from pathlib import Path
-
-        return (Path(__file__).resolve().parents[2] / "docker-compose.yml").read_text()
+        return deployment_file("docker-compose.yml").read_text()
 
     def test_the_app_publishes_no_ports(self):
         """The only route in is the proxy: nothing is mapped to the host, so
@@ -216,10 +215,7 @@ class TestTheTrustBoundary:
         """Caddy ignores a client's own X-Forwarded-For by default; the root
         config extends trust only to requests arriving from private ranges, and
         an internet client's address is public."""
-        from pathlib import Path
-
-        root = Path(__file__).resolve().parents[2] / "deploy/caddy/Caddyfile"
-        text = root.read_text()
+        text = deployment_file("deploy/caddy/Caddyfile").read_text()
         assert "trusted_proxies static private_ranges" in text
         assert "trusted_proxies static 0.0.0.0/0" not in text
 
