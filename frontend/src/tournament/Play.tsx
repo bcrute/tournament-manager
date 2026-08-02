@@ -120,13 +120,15 @@ function SeatView({
 
   // the whole point of checking in: the round opens and the phone follows
   useEffect(() => {
-    if (pod?.roomCode && pod.roomToken) {
+    if (pod?.roomUrlId && pod.roomCode && pod.roomToken) {
       // the pod knows the room's code; Room resolves the address from the
       // session, and the code still works as a route for exactly that reason
-      saveSession({ code: pod.roomCode, token: pod.roomToken });
-      navigate(`/table/r/${pod.roomCode}`);
+      // the session keeps the internal code, which every authenticated room
+      // route still keys on; the address carries the public id
+      saveSession({ code: pod.roomCode, urlId: pod.roomUrlId, token: pod.roomToken });
+      navigate(`/table/r/${pod.roomUrlId}`);
     }
-  }, [pod?.roomCode, pod?.roomToken, navigate, pod]);
+  }, [pod?.roomCode, pod?.roomUrlId, pod?.roomToken, navigate, pod]);
 
   const left = useMemo(
     () => secondsLeft(state?.round ?? null, Date.now(), clockOffset.current),

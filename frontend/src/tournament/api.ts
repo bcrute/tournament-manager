@@ -51,7 +51,11 @@ export interface PodView {
   podId: number;
   table: number;
   status: "pending" | "active" | "awaiting_result" | "complete";
+  /** A label the organizer can use to identify a table. Opens nothing. */
   roomCode: string | null;
+  /** The room's public id — what actually lets this seat's holder in. Null
+   *  for everyone but the organizer's own view and the seat's own holder. */
+  roomUrlId: string | null;
   extensionSeconds: number;
   seats: PodSeat[];
   /** Present only on the viewer's own pod. */

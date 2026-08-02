@@ -628,8 +628,14 @@ def pod_rows_for(round_row):
     """
     pods, seats = [], []
     if round_row:
+        # the room's public id comes along for the ride: it is what a seated
+        # entrant's phone needs to reach the table, and the five-character
+        # code no longer opens anything
         pods = q(
-            "SELECT * FROM pods WHERE round_id = ? ORDER BY number", (round_row["id"],)
+            "SELECT p.*, r.url_id AS room_url_id FROM pods p "
+            "LEFT JOIN rooms r ON r.code = p.room_code "
+            "WHERE p.round_id = ? ORDER BY p.number",
+            (round_row["id"],),
         ).fetchall()
         if pods:
             marks = ",".join("?" * len(pods))
@@ -649,8 +655,9 @@ def pod_views_from(pods, by_pod, round_ends_at, viewer_entrant=None, organizer: 
 
     Every rule about who may see what in a pod lives here and nowhere else, so
     the live snapshot, the socket push and the historical round view cannot
-    drift apart — the room code is a credential, the room token belongs to one
-    seat, and the entrant id on the wire is always the public one.
+    drift apart — the room's public id lets its holder into that table, the
+    room token belongs to one seat, and the entrant id on the wire is always
+    the public one.
     """
     my_pod = None
     pod_views = []
@@ -671,10 +678,12 @@ def pod_views_from(pods, by_pod, round_ends_at, viewer_entrant=None, organizer: 
             "endsAt": (
                 round_ends_at + p["extension_seconds"] if round_ends_at is not None else None
             ),
-            # A room code lets its holder take a seat in that room, so it is a
-            # credential, not a label. Only the organizer and the players at
-            # that table get it; it is added to `my_pod` below.
+            # The five-character code is a label now — it opens nothing — so
+            # the organizer may see it to identify a table. The *public id* is
+            # what lets someone in, so it is withheld here exactly as the code
+            # used to be, and added to `my_pod` below for the seat's own holder.
             "roomCode": p["room_code"] if organizer else None,
+            "roomUrlId": None,
             "extensionSeconds": p["extension_seconds"],
             "turnsRemaining": p["turns_remaining"],
             "seats": [
@@ -690,7 +699,9 @@ def pod_views_from(pods, by_pod, round_ends_at, viewer_entrant=None, organizer: 
             # the pod list everyone else sees
             my_pod = {
                 **view,
-                "roomCode": p["room_code"],   # their own table, so they get it
+                "roomCode": p["room_code"],
+                # their own table, so they get what actually opens it
+                "roomUrlId": p["room_url_id"],
                 "roomToken": mine["room_token"],
                 "mySeat": mine["seat"],
             }
