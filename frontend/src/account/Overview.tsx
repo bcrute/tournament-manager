@@ -125,7 +125,7 @@ export default function Overview({ account }: { account: Account }) {
         ) : events.length === 0 ? (
           <p className="hint">
             You aren&rsquo;t running any events. <Link to="/tournament">Host one</Link> — it
-            needs an account with a recovery email, which is what this page is for.
+            needs an account with a confirmed recovery email, which is what this page is for.
           </p>
         ) : (
           <ul className="acct-list">

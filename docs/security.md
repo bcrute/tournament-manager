@@ -33,8 +33,9 @@ decision — which most of the rest follows from — is that **playing requires 
 account and no personal data**. A player supplies a display name they choose,
 and nothing else. **Playing** never requires an account — accounts exist only
 for history and notes. **Hosting** a tournament does require one, plus a
-recovery email, because an organizer losing access mid-event strands every
-table. Stating it as "accounts are optional" without that distinction is
+*confirmed* recovery email, because an organizer losing access mid-event
+strands every table — and an address nobody has proved they can read is exactly
+the one that fails at that moment. Stating it as "accounts are optional" without that distinction is
 inaccurate and sets up an organizer for a surprise.
 
 The practical consequence is that **most data-protection questions are answered
@@ -359,7 +360,9 @@ the banner question returns.
 
 **Personal data actually collected:** a display name (user-chosen, may be a
 random default), an optional password, and a recovery email only if one is
-added from account settings — never at account creation. No IP-to-user
+added from account settings — never at account creation. Where an address is
+stored, it is also *used*: two messages, both requested by the person receiving
+them, and nothing else (see Outbound email). No IP-to-user
 association, no location, no device identifiers, no third-party analytics.
 
 An account may also store a **default table name** (`accounts.display_name`) —

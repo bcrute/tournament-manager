@@ -79,7 +79,7 @@ because the features above are the ones most likely to erode it.*
 - **Playing never requires an account.** Anonymous is a first-class path, not a
   degraded one.
 - **Accounts, display names, emails are all voluntary.** The one exception is
-  hosting, which needs a recovery email, because an organizer locked out
+  hosting, which needs a confirmed recovery email, because an organizer locked out
   mid-event strands every table.
 - **A tournament hands out its own temporary id.** Claiming a spot returns an
   entrant token scoped to that tournament. Being signed in does not change what

@@ -175,7 +175,7 @@ The cheap answer was an organizer secret in localStorage. It lost: a lost
 secret mid-event is unrecoverable and strands every table. `require_organizer`
 matches the session account against `tournaments.organizer_account_id`, which
 is `NOT NULL`. This is also why creating a tournament requires an account with
-a recovery email and returns **409** without one — the requirement lands on the
+a confirmed recovery email and returns **409** without one — the requirement lands on the
 person choosing to host rather than on everyone. The designed `organizerAuth`
 setting offering both modes was dropped rather than built.
 
