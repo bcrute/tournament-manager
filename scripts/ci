@@ -2,18 +2,22 @@
 #
 # The gate, run here instead of on GitHub's dime.
 #
-# What GitHub actually runs is `docker build .` — nothing more. The Dockerfile
-# *is* the test suite: the frontend stage runs `npm run test` (vitest behind the
-# coverage thresholds in vite.config.ts) and `npm run build` (which is `tsc &&
-# vite build`, so a type error fails it); the backend-test stage runs pytest
-# behind `--cov-fail-under=90`. Running that same build here gives the identical
-# signal for free.
+# This matters more than it used to. Since 2026-08-02 the deploy build is
+# `--target runtime` and runs **no tests at all** — that cut the deploy from
+# 2m43s to about a minute, and moved the gate onto whoever is pushing. A push
+# straight to main is checked by this script and by nothing else.
 #
-# Two things GitHub never runs at all, and this does:
+# `docker build --target test` is exactly what the PR check runs: vitest behind
+# the thresholds in vite.config.ts, pytest behind `--cov-fail-under=90`. The
+# runtime target is built too, so a Dockerfile that cannot produce an image
+# still fails here.
 #
-#   * Playwright. There is no browser job in any workflow, so the e2e suite has
-#     only ever run on a developer's machine. It is the only thing that tests
-#     the built bundle in a real browser against the real server.
+# Two things no workflow runs on a push, and this does:
+#
+#   * Playwright. It is the only thing that tests the built bundle in a real
+#     browser against the real server. There is a `full suite` workflow that
+#     runs it on demand — `gh workflow run "full suite"` — but nothing runs it
+#     automatically, on any event.
 #   * The e2e suite against a *fresh* build. Testing a stale `dist/` has bitten
 #     this project more than once, so `--e2e` rebuilds first, always.
 #
@@ -64,8 +68,11 @@ if [ "$FAST" = 1 ]; then
 fi
 
 if [ "$DOCKER" = 1 ]; then
-  step "docker build — the exact gate GitHub runs"
-  docker build -t mtg:localci . || fail "docker build (this is what CI would report)"
+  step "docker build --target test — the exact gate the PR check runs"
+  docker build --target test . || fail "test suites (this is what the PR check would report)"
+
+  step "docker build --target runtime — the image a deploy would ship"
+  docker build --target runtime -t mtg:localci . || fail "runtime image build"
 fi
 
 if [ "$E2E" = 1 ]; then

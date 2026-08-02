@@ -221,6 +221,140 @@ confirmation link out of a real message rather than skipping confirmation.
   image. Looking only at the workflow would tell you no gate exists. Regression
   tests for user-reported bugs are expected — several exist precisely because a
   bug came back.
+- **Run the gate here, not on GitHub's dime — a deploy no longer runs one.**
+  Since 2026-08-02 `deploy.yml` builds `--target runtime`, which runs **no
+  tests at all**. The image build was 2m26s of a 2m43s deploy, nearly all of it
+  re-running a suite that had already passed locally. Measured cold, from
+  scratch: the runtime target is 27s and the test target 155s — the suites are
+  the entire difference. A push straight to `main`
+  is now gated by `scripts/ci` and by nothing else. That is a process gate, not
+  a mechanism: the shipped image used to carry a `/tests-passed` marker making
+  an untested build impossible, and it does not any more.
+
+  | | runs | when |
+  | --- | --- | --- |
+  | `deploy.yml` | `--target runtime`, ship | push to `main` |
+  | `ci.yml` | `--target test` | pull requests |
+  | `full.yml` | `--target test` **and Playwright** | `workflow_dispatch` only |
+  | `security.yml` | semgrep, pip-audit, npm audit | weekly, or a lockfile change |
+
+  Locally, `scripts/ci` builds both targets — the same signal as a PR, for no
+  minutes. `--fast` skips Docker for iteration and is not a substitute: it uses
+  whatever Python and packages this machine has, which is the class of
+  difference that makes a build pass here and fail there. `--e2e` rebuilds the
+  bundle and runs Playwright; `--all` does everything.
+
+- **Nothing runs Playwright automatically, on any event.** Not on push, not on
+  a PR. It needs a browser download and a live server, so it lives in
+  `full.yml` behind `workflow_dispatch` — `gh workflow run "full suite"`, with
+  a `project` input to run just `mobile` or just `desktop`. A green badge says
+  nothing about the browser suite; `scripts/ci --e2e` before anything that
+  touches the table, the account area, or a layout.
+
+- **A settings flag that promises behaviour must implement it.** This project
+  shipped three that were read by nothing (`timeCalledPolicy`,
+  `collectWizardsEmail`, and a status that could never be reached). All three
+  are now genuinely read — but the failure mode inverted rather than went away:
+  settings are whitelist-filtered on create, so a key the server does not
+  implement is **dropped silently and returns 200**. A design doc promising a
+  setting that does not exist is now the likelier defect. See
+  `docs/tournament-api-contract.md` §6a, which is the authoritative list.
+- **Do not invent a citation.** Standards, control IDs, and tournament rules
+  must be ones you have actually read. See `docs/tournament-api-contract.md`
+  for how rules citations are handled.
+- **Surface the tradeoff instead of quietly taking it.** Say the secure option
+  costs something and let a human choose.
+- **Reporting a gap is not fixing it.** The schema endpoints were flagged three
+  times across three sessions before anyone turned them off — they are off now,
+  behind `TABLE_DEV_DOCS`. Three sessions is the number to beat.
+
+### What does not apply here
+
+HIPAA, SOC 2, vendor governance, and audit-evidence process. This project has
+no regulated data, no contractual commitments, no vendors processing data, and
+no auditor. Mapping it to SOC 2 would spend effort away from the controls that
+matter.
+
+**That changes at payment tier 2** (`docs/events-platform.md` §9). Processing
+payment data on a shop's behalf makes them the controller and us the processor,
+which brings data processing agreements, breach notification duties and
+subprocessor disclosure. None of it applies today; all of it applies the day
+automated payment tracking ships, and this section must be rewritten in that
+same change rather than after it.
+
+## Boundaries this project defends
+
+These are enforced and pinned by tests. If a change makes one of these tests
+fail, the change is wrong until proven otherwise:
+
+| Boundary | Test |
+| --- | --- |
+| A room is opened by its 128-bit `url_id`; the five-character `code` opens nothing | `TestTheCodeOpensNothing`, `TestIdentifierQuality` |
+| A pod's room identifier reaches only its own seat holder | `TestPlayerView` (poll), `TestTournamentSocket` (push), `TestTournamentPodHandoff` |
+| Entrant ids on the wire are opaque; the integer PK never leaves the server | `TestEntrantIdsAreOpaque` |
+| Claiming a tournament spot never links an account, even when signed in | `TestIdentityStaysSeparate` |
+| An organizer's ruling is never overwritten by an automatic result | `TestResults` |
+| The anonymous room lookups have a budget of their own, and one flooder cannot deny a room to the people at it | `TestTheBudget`, `TestStrikesInPractice` |
+| `X-Forwarded-For` is trusted only because the deployment makes it unspoofable | `TestTheTrustBoundary` |
+| `hasEmail` means *confirmed*; an unverified address never satisfies anything | `TestHosting`, `TestTheMigration` |
+| The forgotten-password endpoint reveals nothing about which accounts exist | `TestForgotIsBlind` |
+| A confirmation token cannot reset a password, and vice versa | `TestConfirming`, `TestResetting` |
+| No endpoint ever returns a recovery address | `TestRecoveryEmailIsWriteOnly` |
+
+### Two credentials that are not what they look like
+
+Two things in this codebase read like identifiers and behave like passwords.
+Both were treated as the former for a long time, and both were corrected in the
+same week; the shape of the mistake is worth recognising because it will happen
+again somewhere else.
+
+A **room's `url_id`** and an **emailed link token** are credentials. Neither may
+appear in a URL path or query string, because both would then be in an access
+log, a `Referer`, and a browser history. Both travel in POST bodies or link
+fragments, and both are 128 bits or more. When adding anything that hands out
+access without a session, ask which of those two shapes it is — and if it is a
+short human-readable string, it is not a credential and must not be made into
+one.
+
+### The two room identifiers
+
+`rooms.code` is five characters from a 31-letter alphabet — read aloud across a
+table, and therefore walkable in about a day. `rooms.url_id` is
+`secrets.token_urlsafe(16)`, 128 bits, base64url, **case-sensitive**.
+
+Only `url_id` opens a room. Every unauthenticated route — `POST /rooms/join`,
+`POST /rooms/seats`, `POST /rooms/reclaim` — takes it as `roomId` in the request
+**body**, never in the path, so it stays out of access logs and `Referer`
+headers. Invitation links put it in a **fragment** (`/table#r/<id>`), which
+browsers never send to a server. Routes that already have a player token keep
+keying on `code`: it is not a secret, it just is not a credential on its own,
+and sessions held before this change had to keep working.
+
+`ANONYMOUS_DOORS` in `backend/tests/test_room_boundary.py` is the explicit list
+of routes that take a room identifier without a credential. A new one belongs
+in that list.
+
+### Sending email
+
+`backend/app/mail.py` is the only module that talks to an SMTP server, and a
+test asserts that. Nothing is configured by default: `build_mailer` returns
+`OffMailer`, which raises, and the routes turn that into a 503. That is
+deliberate — a silently swallowed send produces a recovery flow that tells the
+user to check an inbox nothing will arrive in. `docker-compose.yml` lists the
+variables and what leaving them unset costs.
+
+Tests use `FakeMailer` (recording, installed in `conftest.py`); the browser
+suite uses `FileMailer` through `TABLE_MAIL_FILE`, so it reads a real
+confirmation link out of a real message rather than skipping confirmation.
+
+## Engineering expectations
+
+- **Tests are a gate, not a courtesy.** The gate is `--cov-fail-under=90` in
+  the **Dockerfile**, alongside `npm run test` and the thresholds in
+  `frontend/vite.config.ts` — not in `.github/workflows/`, which only builds the
+  image. Looking only at the workflow would tell you no gate exists. Regression
+  tests for user-reported bugs are expected — several exist precisely because a
+  bug came back.
 - **Run the gate here, not on GitHub's dime.** `scripts/ci` runs `docker build`,
   which is the entire thing any workflow does — same signal, no minutes. Use it
   before opening a PR or pushing to `main`; those are the only two events that

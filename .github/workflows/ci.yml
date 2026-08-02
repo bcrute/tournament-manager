@@ -1,14 +1,21 @@
 name: ci
 
-# The gates, for commits that are not going to production.
+# The automated gate, for changes arriving through a pull request.
 #
-# Pushes to main are covered by deploy.yml, which runs this same build before
-# it ships anything — so this deliberately does not trigger on main. Adding it
-# there would build the identical image twice per push for one signal.
+# It does not trigger on main. It used to be described as redundant there,
+# because deploy.yml ran the same build — that stopped being true on
+# 2026-08-02, when the deploy build dropped to `--target runtime` and stopped
+# running tests at all. A push straight to main is now gated by whoever pushes
+# running `scripts/ci` first, and by nothing else.
 #
-# The build IS the test suite — see Dockerfile: the frontend stage runs vitest
-# and the production build, the backend-test stage runs pytest behind a 90%
-# coverage gate. A red build here means a deploy that would have failed.
+# `--target test` builds the two suite stages: vitest behind the thresholds in
+# vite.config.ts, and pytest behind a 90% coverage gate. It does not build the
+# runtime image — deploy.yml does that, and since 2026-08-02 the deploy build
+# no longer runs any tests, so this is the automated gate rather than a
+# duplicate of one.
+#
+# Playwright is NOT here. It needs a browser download and a live server, which
+# is minutes rather than seconds; it lives in full.yml, on demand.
 on:
   pull_request:
     branches: [main]
@@ -22,5 +29,5 @@ jobs:
         # pinned to the v4.2.2 commit SHA (mutable tags are a supply-chain risk)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      - name: Build image (runs pytest + coverage gate + vitest + coverage gate)
-        run: docker build -t mtg:latest .
+      - name: Run the suites (vitest + coverage, pytest + coverage gate)
+        run: docker build --target test .
