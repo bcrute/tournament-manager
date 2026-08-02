@@ -305,10 +305,12 @@ _ensure_column("players", "is_tracker", "INTEGER NOT NULL DEFAULT 0")
 # friends. Zero life and 21 commander damage stop meaning anything for this
 # player, so the app stops flagging them — only an explicit "I'm dead" ends it.
 _ensure_column("players", "cant_lose", "INTEGER NOT NULL DEFAULT 0")
-# The id that appears in the address bar. The five-character code has to be
-# readable aloud across a table, which means it is short enough to guess; this
-# is 128 random bits, so a room URL can be shared, screenshotted or left in
-# history without handing over something joinable.
+# The credential that opens a room, and the id that appears in the address bar.
+# The five-character code has to be readable aloud across a table, which means
+# it is short enough to walk; this is 128 random bits. Since 2026-07-31 it is
+# the *only* thing an unauthenticated caller can join with — the code names a
+# room, this one opens it — so treat it like a password: it travels in POST
+# bodies and link fragments, never in a path or a log.
 _ensure_column("rooms", "url_id", "TEXT")
 for _r in _db.execute("SELECT code FROM rooms WHERE url_id IS NULL").fetchall():
     _db.execute("UPDATE rooms SET url_id = ? WHERE code = ?", (secrets.token_urlsafe(16), _r[0]))

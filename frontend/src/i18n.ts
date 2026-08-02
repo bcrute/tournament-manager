@@ -53,13 +53,15 @@ export const en: Catalog = {
   "qr.hint": "Scan with a phone camera, or send someone the link.",
   "qr.copy": "Copy invitation link",
   "qr.copied": "Link copied",
-  "scan.title": "Scan a room code",
+  "scan.title": "Scan the room's QR code",
   "scan.button": "Scan QR code",
   "scan.hint": "Point the camera at the room's QR code.",
   "scan.unsupported": "This browser can't scan QR codes.",
   "scan.denied": "Camera access was declined, so scanning isn't available.",
   "scan.failed": "The camera couldn't be started.",
-  "scan.useCameraApp": "Your phone's own camera app can scan it — that opens the room directly. Or type the five-character code.",
+  // A room id is 22 characters of random base64 — nobody is typing it from
+  // across a table, so the fallback is a pasted link rather than a code.
+  "scan.useCameraApp": "Your phone's own camera app can scan it — that opens the room directly. Or ask the host to send you the invitation link.",
   "menu.tournament": "Tournament standings",
   "menu.track": "Show table view here",
   "menu.display": "Use as table display",

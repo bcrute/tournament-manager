@@ -8,8 +8,18 @@
 # sites/social.caddy belongs to the social app. The split is what lets either
 # app deploy without being able to clobber the other's routing.
 {
-	# don't advertise the server software
 	servers {
+		# Load-bearing for the app's rate limiter, which identifies a client by
+		# the address in X-Forwarded-For. Caddy already discards a client's own
+		# copy of that header by default and appends only the peer address it
+		# observed; this narrows trust further, to requests arriving from
+		# private ranges. An internet client's address is public, so it can
+		# never be a trusted proxy.
+		#
+		# Widening this to 0.0.0.0/0 would let anyone on the internet choose
+		# their own rate-limit identity — evading their own budget and spending
+		# somebody else's. backend/tests/test_room_lookup_limits.py reads this
+		# file and fails if it happens.
 		trusted_proxies static private_ranges
 	}
 }

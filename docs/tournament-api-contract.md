@@ -141,10 +141,13 @@ Optional `?token=` (entrant). Organizer recognized by cookie.
   "round": { "number", "status", "kind": "swiss",   // swiss | elimination
              "endsAt", "pausedAt",
              "now": 1784500123 },      // server clock; clients derive an offset
-  "pods": [ { "podId", "table", "name", "status", "roomCode", "extensionSeconds",
+  "pods": [ { "podId", "table", "name", "status", "extensionSeconds",
+              "roomCode",                // organizer only; null for everyone else
+              "roomUrlId",               // null here, always — see below
               "endsAt",                  // round.endsAt + this pod's extension
               "seats": [ {"seat", "entrantId", "name", "place", "points"} ] } ],
-  "myPod": { /* same shape, plus: */ "roomToken": "…", "mySeat": 2 },
+  "myPod": { /* same shape, plus: */ "roomToken": "…", "mySeat": 2,
+             "roomUrlId": "…" },        // the caller's own pod only
   "me": { "entrantId", "name" },       // null when anonymous
   "standings": [ {"entrantId","name","points","opponentPoints",
                   "podsPlayed","claimed","dropped","rank"} ],
@@ -171,6 +174,13 @@ decided on points; who is still in it, and who won it, are in `cut`.
 `cut.champion` is set only once the last bracket round is closed with one
 player left standing.
 
+`roomUrlId` is how a seated entrant's phone actually reaches its table, and it
+is a credential: it is the only identifier that opens a room, so it appears on
+`myPod` and nowhere else. `roomCode` is a five-character label the organizer
+calls out — it opens nothing on its own, which is why publishing it to the
+organizer is safe and publishing `roomUrlId` to the field would not be. Pinned
+by `TestTournamentPodHandoff`.
+
 `pods[].name` is the organizer's label for the table (§3, *seating overrides*)
 and is `null` until one is set. `table` is the number and stays the pod's
 identity either way — clients show the name and keep the number beside it.
@@ -196,10 +206,10 @@ would be protecting anything.
   "isOrganizer": false }
 ```
 
-The pod view is built by the same code as the snapshot's, so the three rules in
-§1 hold here identically: `roomCode` is organizer-only (plus the caller's own
-pod), `roomToken` appears only on `myPod`, and `entrantId` is always the public
-id. `result` is the latest version — an override appends rather than mutates —
+The pod view is built by the same code as the snapshot's, so the rules in §1
+hold here identically: `roomCode` is organizer-only (plus the caller's own pod),
+`roomToken` and `roomUrlId` appear only on `myPod`, and `entrantId` is always
+the public id. `result` is the latest version — an override appends rather than mutates —
 and it is carried because a draw awards every seat place 1, so seat placings
 alone cannot tell a drawn pod from a four-way win. `result` is `null` for a pod
 with no ruling yet. The organizer's `note` is a ruling written for staff and is
@@ -455,8 +465,8 @@ players are still polling would be worse than either. Pinned by
 ### `POST /api/tournament/{code}/rounds`  *(organizer)*
 Pair, seat, and create one room per pod — unless the game's profile has no
 modes, in which case the pods are seated roomless and the organizer reports each
-result by hand (§8). Such a pod's `roomCode` and `roomToken` are `null`
-everywhere they appear, and time called decides it straight away, since there is
+result by hand (§8). Such a pod's `roomCode`, `roomUrlId` and `roomToken` are
+`null` everywhere they appear, and time called decides it straight away, since there is
 no live table state to rank or turns to count.
 
 ```jsonc

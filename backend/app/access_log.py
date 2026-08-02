@@ -13,6 +13,13 @@ is the leak. The proxy redacts the same parameter in its own log
 (`deploy/caddy/sites/mtg.caddy`); both layers matter because both write logs,
 and neither can redact the other's.
 
+A room's `url_id` is the second credential this has to catch, and it is a
+narrower job: since 2026-07-31 the anonymous room routes take it in a POST body
+and invitation links carry it in a fragment, so it is not in a request target
+to begin with. What remains is the legacy `?join=` form, which the client still
+parses for links already in the world — those do reach the request line, so
+`join` and `room` are matched below.
+
 The value is replaced rather than the whole query dropped: which endpoint was
 called with *a* token is useful when reading logs, the token itself never is.
 """
@@ -36,7 +43,8 @@ _SENSITIVE = re.compile(
     (                                   # 1: separator and parameter name
       [?&]
       [^?&=\s"']*
-      (?: token | secret | passwd | password | api[-_]?key | signature )
+      (?: token | secret | passwd | password | api[-_]?key | signature
+        | join | room )
       [^?&=\s"']*
       =
     )

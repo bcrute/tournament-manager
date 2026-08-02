@@ -27,6 +27,14 @@ mtg.skadoosh.dev {
 	# This is only half the job. The app writes its own access log (uvicorn,
 	# on by default) and Caddy cannot touch it, so it redacts the same
 	# parameter itself in backend/app/access_log.py. Both layers are required.
+	#
+	# Room identifiers need none of this, deliberately. Since 2026-07-31 a
+	# room's credential is its 128-bit url_id, and it never appears in a URL:
+	# the anonymous routes take it in a POST body, and invitation links carry
+	# it in a fragment, which a browser does not transmit. A credential that is
+	# never in a request line cannot be logged out of one — that is the point
+	# of the shape, and why entrant tokens (which are still query parameters)
+	# remain the awkward case.
 	log {
 		format filter {
 			wrap console

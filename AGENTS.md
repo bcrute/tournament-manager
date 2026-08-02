@@ -155,10 +155,31 @@ fail, the change is wrong until proven otherwise:
 
 | Boundary | Test |
 | --- | --- |
-| A pod's room token reaches only its own seat holder | `TestPlayerView` (poll), `TestTournamentSocket` (push) |
+| A room is opened by its 128-bit `url_id`; the five-character `code` opens nothing | `TestTheCodeOpensNothing`, `TestIdentifierQuality` |
+| A pod's room identifier reaches only its own seat holder | `TestPlayerView` (poll), `TestTournamentSocket` (push), `TestTournamentPodHandoff` |
 | Entrant ids on the wire are opaque; the integer PK never leaves the server | `TestEntrantIdsAreOpaque` |
 | Claiming a tournament spot never links an account, even when signed in | `TestIdentityStaysSeparate` |
 | An organizer's ruling is never overwritten by an automatic result | `TestResults` |
+| The anonymous room lookups have a budget of their own, and one flooder cannot deny a room to the people at it | `TestTheBudget`, `TestStrikesInPractice` |
+| `X-Forwarded-For` is trusted only because the deployment makes it unspoofable | `TestTheTrustBoundary` |
+
+### The two room identifiers
+
+`rooms.code` is five characters from a 31-letter alphabet — read aloud across a
+table, and therefore walkable in about a day. `rooms.url_id` is
+`secrets.token_urlsafe(16)`, 128 bits, base64url, **case-sensitive**.
+
+Only `url_id` opens a room. Every unauthenticated route — `POST /rooms/join`,
+`POST /rooms/seats`, `POST /rooms/reclaim` — takes it as `roomId` in the request
+**body**, never in the path, so it stays out of access logs and `Referer`
+headers. Invitation links put it in a **fragment** (`/table#r/<id>`), which
+browsers never send to a server. Routes that already have a player token keep
+keying on `code`: it is not a secret, it just is not a credential on its own,
+and sessions held before this change had to keep working.
+
+`ANONYMOUS_DOORS` in `backend/tests/test_room_boundary.py` is the explicit list
+of routes that take a room identifier without a credential. A new one belongs
+in that list.
 
 ## Engineering expectations
 
