@@ -77,6 +77,60 @@ test.describe("finding the account area at all", () => {
   });
 });
 
+test.describe("creating an account", () => {
+  test("asks for a username and a password, and nothing else", async ({ page }) => {
+    await page.goto("/account");
+    await page.getByRole("button", { name: /^sign up$/i }).click();
+
+    // A recovery email used to ride along here. It is account state a reset
+    // would be sent to, and taking it before anyone can prove they own it had
+    // an unverified string doing a credential's job.
+    await expect(page.locator("input[type=email]")).toHaveCount(0);
+    await expect(page.getByPlaceholder(/email/i)).toHaveCount(0);
+    await expect(page.getByText(/email is optional/i)).toHaveCount(0);
+
+    await expect(page.getByPlaceholder(/^username$/i)).toBeVisible();
+    await expect(page.getByPlaceholder(/^password$/i)).toBeVisible();
+  });
+
+  test("opens blank even when this device remembers a table name", async ({ page }) => {
+    // an account username and the name you play under are different things
+    await page.goto("/table");
+    await page.evaluate(() => localStorage.setItem("table.name", "Grumpy Platypus 42"));
+    await page.goto("/account");
+    await expect(page.getByPlaceholder(/^username$/i)).toHaveValue("");
+    await page.getByRole("button", { name: /^sign up$/i }).click();
+    await expect(page.getByPlaceholder(/^username$/i)).toHaveValue("");
+  });
+
+  test("warns about an email-shaped username only while signing up", async ({ page }) => {
+    await page.goto("/account");
+    const warning = /should not be treated as private recovery information/i;
+
+    // signing in: they already chose it, so second-guessing is just noise
+    await page.getByPlaceholder(/^username$/i).fill("someone@example.com");
+    await expect(page.getByText(warning)).toHaveCount(0);
+
+    await page.getByRole("button", { name: /^sign up$/i }).click();
+    await page.getByPlaceholder(/^username$/i).fill("someone@example.com");
+    await expect(page.getByText(warning)).toBeVisible();
+
+    // it must not promise anything about a field that no longer exists
+    await expect(page.getByText(/field below|copied your address/i)).toHaveCount(0);
+    // it recommends, it does not block: with a password filled the account can
+    // still be created under the email-shaped username
+    await page.getByPlaceholder(/^password$/i).fill("a good long password");
+    await expect(page.getByRole("button", { name: /create account/i })).toBeEnabled();
+  });
+
+  test("still issues recovery codes, which are the only way back in", async ({ page }) => {
+    await signUp(page, unique("codes"));
+    // signUp asserts the codes screen and acknowledges it; getting here proves
+    // the codes still appear without an email in the picture
+    await expect(page.getByRole("navigation", { name: "Account" })).toBeVisible();
+  });
+});
+
 test.describe("the sections", () => {
   test("each one is its own address, so it survives a reload", async ({ page }) => {
     await signUp(page, unique("sections"));

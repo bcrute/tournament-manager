@@ -159,9 +159,17 @@ class Credentials(BaseModel):
 
 
 class SignupBody(Credentials):
-    #: optional at signup, exactly as it is afterwards. Recovery codes are the
-    #: working recovery path either way — see the note in the signup handler.
-    email: str | None = None
+    """Username and password. Nothing else.
+
+    A recovery email used to be offered here. It is account state with security
+    consequences — it is the address a reset would be sent to — and collecting
+    it at the one moment nobody can yet prove they own it meant an unverified
+    string was doing a credential's job. Enrolling one is its own workflow now,
+    behind the account's password.
+
+    Deliberately no `email` field: a stale client still sending one is ignored
+    by Pydantic rather than quietly storing it.
+    """
 
 
 class EmailBody(BaseModel):
@@ -235,12 +243,13 @@ def signup(body: SignupBody, response: Response):
         )
     if q("SELECT 1 FROM accounts WHERE username = ?", (username,)).fetchone():
         raise HTTPException(409, "that username is taken")
-    email = (body.email or "").strip() or None
-    if email and ("@" not in email or len(email) < 5):
-        raise HTTPException(400, "that doesn't look like an email address")
+    # No email column in this INSERT, on purpose. A brand-new account has no
+    # recovery address at all until one is enrolled and confirmed; the recovery
+    # codes below are what stands between the owner and a lost password until
+    # then, which is why they are still issued and still shown once.
     cur = q(
-        "INSERT INTO accounts (username, pw_hash, email) VALUES (?, ?, ?)",
-        (username, hash_password(body.password), email),
+        "INSERT INTO accounts (username, pw_hash) VALUES (?, ?)",
+        (username, hash_password(body.password)),
     )
     account_id = cur.lastrowid
     codes = _issue_recovery_codes(account_id)

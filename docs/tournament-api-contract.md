@@ -838,6 +838,14 @@ true of players and false of organizers, so the UI never says it unqualified.
 It is enforced at create time (**409**), never at signup, so the requirement
 lands on the person choosing to host rather than on everyone.
 
+**Account creation takes a username and a password, and nothing else.** An
+address used to be an optional signup field; it is account state a password
+reset would be sent to, and collecting it at the one moment nobody can prove
+they own it had an unverified string doing a credential's job. `SignupBody` has
+no `email` field, so a stale client still sending one is ignored rather than
+quietly storing it (`test_a_stale_client_sending_one_does_not_store_it`). An
+address is enrolled from account settings instead.
+
 The address is stored plainly and is never returned by any endpoint —
 `/api/account/me` exposes `hasEmail: bool`, not the value. Nor is it read for
 anything else: the only code that touches the column coerces it to a bool (the
@@ -847,8 +855,9 @@ all and `/recover` authenticates on a one-time code (§10).
 
 Usernames, by contrast, cannot be encrypted: they're looked up on every sign-in,
 and searchable encryption means deterministic encryption or a blind index, both
-of which leak equality. That's why signup discourages email-as-username — a
-warning, not a block.
+of which leak equality. That's why account creation discourages
+email-as-username — a warning, not a block, and shown only while creating an
+account rather than while signing back into one.
 
 ### 6b. The two names on an account
 

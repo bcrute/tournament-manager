@@ -105,7 +105,7 @@ These are part of the model, not omissions from it:
 | Question | Decision | Rationale |
 | --- | --- | --- |
 | Session timeout | Account sessions expire server-side; the cookie is httpOnly, Secure, SameSite. | Sessions are a convenience over an optional account, not access to sensitive data. |
-| Second-factor recovery | No second factor. Recovery is 8 single-use codes, shown once at signup. An email may be stored but **email recovery is not implemented**, so the codes are the only working path and the UI says exactly that. | Requiring MFA on an optional account for a game-night app would cost more accounts than it protects. Recovery codes work without collecting an address. |
+| Second-factor recovery | No second factor. Recovery is 8 single-use codes, shown once when the account is created. An address may be stored *after* the fact from account settings — account creation itself takes only a username and a password — but **email recovery is not implemented**, so the codes are the only working path and the UI says exactly that. | Requiring MFA on an optional account for a game-night app would cost more accounts than it protects. Recovery codes work without collecting an address. |
 | Identity provider dependency | None — no external IdP. | No third-party dependency to be unavailable. |
 | Break-glass access | The admin surface *is* the break-glass path. It is off unless `TABLE_ADMINS` names an account, and every action it takes is logged. | A deployment that never sets the variable has no admin surface at all, which is the default. |
 | Strong authenticators | Not supported. | See second-factor recovery. |
@@ -236,7 +236,8 @@ preference nobody asked for, a metric, a hosted font — the position changes an
 the banner question returns.
 
 **Personal data actually collected:** a display name (user-chosen, may be a
-random default), an optional password, an optional recovery email. No IP-to-user
+random default), an optional password, and a recovery email only if one is
+added from account settings — never at account creation. No IP-to-user
 association, no location, no device identifiers, no third-party analytics.
 
 An account may also store a **default table name** (`accounts.display_name`) —

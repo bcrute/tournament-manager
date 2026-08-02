@@ -75,16 +75,18 @@ describe("account transport", () => {
 });
 
 describe("sessions", () => {
-  it("signs up with an explicit null email rather than omitting it", async () => {
+  it("sends only a username and a password", async () => {
+    // A recovery email used to ride along here. It is enrolled and confirmed
+    // separately now, so nothing about it belongs in account creation.
     const fn = mockFetch();
     await signup("ada", "a good long one");
-    expect(last(fn).body).toEqual({ username: "ada", password: "a good long one", email: null });
+    expect(last(fn).body).toEqual({ username: "ada", password: "a good long one" });
   });
 
-  it("passes an email through when one was given", async () => {
+  it("carries no email key at all, not even a null one", async () => {
     const fn = mockFetch();
-    await signup("ada", "a good long one", "ada@example.com");
-    expect(last(fn).body.email).toBe("ada@example.com");
+    await signup("ada", "a good long one");
+    expect("email" in last(fn).body).toBe(false);
   });
 
   it("logs in and out by POST", async () => {

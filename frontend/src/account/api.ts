@@ -80,10 +80,12 @@ export async function account<T>(
 
 export const getAccount = () => account<{ account: Account | null }>("/me");
 
-export const signup = (username: string, password: string, email?: string) =>
+/** Username and password only. A recovery email is enrolled and confirmed
+ *  separately, from account settings — see the server's SignupBody. */
+export const signup = (username: string, password: string) =>
   account<{ account: Account; recoveryCodes: string[] }>("/signup", {
     method: "POST",
-    body: { username, password, email: email ?? null },
+    body: { username, password },
   });
 
 export const login = (username: string, password: string) =>
