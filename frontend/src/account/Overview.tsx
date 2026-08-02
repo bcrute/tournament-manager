@@ -167,7 +167,12 @@ export default function Overview({ account }: { account: Account }) {
           ) : (
             <> and have no default table name set, so each device uses its own.</>
           )}
-          {!account.hasEmail && " No recovery email is on file — recovery codes are your only way back in."}
+          {/* Pending is not "on file" for any purpose that matters, so it gets
+              its own sentence rather than being folded in with confirmed. */}
+          {account.emailPending
+            ? " A recovery email is waiting to be confirmed — until the link is used, your recovery codes are your only way back in."
+            : !account.hasEmail &&
+              " No recovery email is on file — recovery codes are your only way back in."}
         </p>
         <Link className="acct-more" to="/account/settings">
           Manage your account <Icon name="chevron" />

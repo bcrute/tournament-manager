@@ -19,7 +19,10 @@ layer's organizer-authority denials now log (`AUTHZ_DENY`), closing the last
 unlogged authorization chokepoint and lifting T10 to mitigated. Updated
 2026-07-31: the five-character room code stopped being a join credential — the
 128-bit `url_id` is — which reframes T3, T18 and T19 and adds T18a, T20 and
-T21; and account creation stopped collecting a recovery address.
+T21; and account creation stopped collecting a recovery address. Updated
+2026-08-02: a recovery address must now be confirmed before it counts, the app
+sends mail for the first time, and there is a password-reset flow — adding T22
+through T27 and closing the second known gap.
 
 ---
 
@@ -86,6 +89,12 @@ an open threat.
 | T18a | 1 | Read a room identifier out of a log, a `Referer` or a screenshot of a link | The identifier is now a credential, so it travels in POST bodies rather than paths, and invitation links carry it in a fragment the browser never transmits | Mitigated — `TestTheCodeOpensNothing`, `qrcode.test.ts` |
 | T19 | 1 | Guess a room identifier at the join endpoint | 128 bits, so guessing is not a strategy — this stopped being a rate-limiting problem and became an entropy one. The behavioural layer remains underneath: a lookup naming no room is a strike into the existing ban ladder, and the three anonymous lookups share a `room_lookup` budget of 120 per 300s per client, sized so a whole venue behind one NAT is never the thing it stops | Mitigated — `TestJoinEnumeration`, `TestIdentifierQuality`, `TestTheBudget` |
 | T20 | 1 | Lock a venue out of its own room by flooding the lookups | The budget is per client, never per room, and never shared: an attacker spends only their own. A sustained flood escalates to a ban on that client alone | Mitigated — `test_one_client_flooding_does_not_spend_anybody_else_s_budget` |
+| T22 | 5 | Take an account over by pointing its recovery address at yourself | Adding, replacing or removing an address costs the account password, and the new address counts for nothing until a link sent to *it* is clicked | Mitigated — `TestEnrollingAnAddress`, `TestRemoving` |
+| T23 | 5 | Reset somebody else's password with a guessed or stolen link | 256-bit token, stored only as a SHA-256 hash, single-use, one-hour expiry, retired when a new one is minted, and killed outright if the address is removed | Mitigated — `TestResetting` |
+| T24 | 5 | Redeem a confirmation link as a password reset | Separate tables, so the two token stores cannot be confused for one another | Mitigated — `test_a_confirmation_cannot_reset_a_password`, `test_a_reset_token_cannot_confirm_an_address` |
+| T25 | 5 | Enumerate accounts through the forgotten-password form | Identical status and body on every branch; the send is queued rather than awaited so an SMTP round trip cannot leak the answer by timing | Mitigated — `TestForgotIsBlind` |
+| T26 | 5 | Read a reset link out of a log or a link-rewriter | The token is in the URL fragment, which browsers never transmit; the landing page wipes it from the address bar on arrival | Mitigated — `LinkLanding.test.tsx`, `test_the_link_carries_the_token_in_a_fragment` |
+| T27 | 5 | Host an event with an address nobody can actually read | Hosting reads `email_verified_at`, not `email`; every pre-existing address migrated to unverified | Mitigated — `TestHosting`, `TestTheMigration` |
 | T21 | any | Forge `X-Forwarded-For` to evade the limiter or poison another client's budget | Caddy discards an incoming `X-Forwarded-For` by default and is configured `trusted_proxies static private_ranges`; the app publishes no host ports and sits only on the proxy network, so nothing but Caddy can reach uvicorn | Mitigated — `TestTheTrustBoundary`, which reads the deployment files rather than assuming them |
 | T13 | 3 | Alter another player's life total | Every room mutation resolves the actor from `X-Player-Token` scoped to that room | Mitigated |
 | T14 | 4 | Player disputes an organizer's ruling | Results are versioned and never mutated; `source` records `auto` vs `organizer` | Mitigated by design |
@@ -122,7 +131,7 @@ These are part of the model, not omissions from it:
 | Question | Decision | Rationale |
 | --- | --- | --- |
 | Session timeout | Account sessions expire server-side; the cookie is httpOnly, Secure, SameSite. | Sessions are a convenience over an optional account, not access to sensitive data. |
-| Second-factor recovery | No second factor. Recovery is 8 single-use codes, shown once when the account is created. An address may be stored *after* the fact from account settings — account creation itself takes only a username and a password — but **email recovery is not implemented**, so the codes are the only working path and the UI says exactly that. | Requiring MFA on an optional account for a game-night app would cost more accounts than it protects. Recovery codes work without collecting an address. |
+| Second-factor recovery | No second factor. Two recovery paths: 8 single-use codes shown once at signup, and — since 2026-08-02 — a **confirmed** email address. Account creation still takes only a username and a password; an address is enrolled afterwards from settings, costs the password, and counts for nothing until a link sent to it is clicked. On a deployment with no mail transport configured the codes are the only path and the UI says so rather than offering a form that cannot work. | Requiring MFA on an optional account for a game-night app would cost more accounts than it protects. Recovery codes work without collecting an address at all, which is why they remain the floor rather than a fallback. |
 | Identity provider dependency | None — no external IdP. | No third-party dependency to be unavailable. |
 | Break-glass access | The admin surface *is* the break-glass path. It is off unless `TABLE_ADMINS` names an account, and every action it takes is logged. | A deployment that never sets the variable has no admin surface at all, which is the default. |
 | Strong authenticators | Not supported. | See second-factor recovery. |
@@ -162,6 +171,32 @@ Three consequences, each pinned:
 
 Sessions that predate the change keep working: they hold a room token, and
 authenticated routes still key on the code.
+
+**A recovery address means nothing until it is confirmed.** This is the same
+mistake as the room code, in a different place: `hasEmail` was true the moment a
+string was stored, and hosting a tournament — which exists precisely so an
+organizer cannot be locked out mid-event — rested on it. An address with a typo
+in it is exactly the case that produces the locked-out organizer. `hasEmail` now
+means somebody clicked a link sent to that mailbox, `email_verified_at` is where
+that lives, and every address already on file was migrated to unverified rather
+than grandfathered: they were never checked.
+
+**The two link tokens** are `secrets.token_urlsafe(32)`, stored only as a
+SHA-256 hash, single-use, and expiring — 24 hours for a confirmation, one hour
+for a password reset, because a reset link *is* a password. They live in two
+separate tables (`email_verifications`, `password_resets`) rather than one with
+a `purpose` column, so a token minted to confirm an address cannot be redeemed
+to change a password by construction rather than by a `WHERE` clause somebody
+might forget. Minting a new one retires the previous. Both travel in link
+**fragments**, which a browser never transmits, so a credential in an emailed
+link cannot reach an access log — ours, or a mail gateway's link-rewriter.
+
+**`/forgot` is blind.** Whether the username exists, whether it has an address,
+and whether that address is confirmed are answered identically. Sends are queued
+rather than awaited so an SMTP round trip on one branch cannot enumerate
+accounts by stopwatch — the same care `/login` takes with its throwaway scrypt
+verification. The unknown-name case is written to the security log, which is
+where the difference is allowed to live.
 
 **Player and entrant credentials** are bearer tokens, not accounts:
 
@@ -367,11 +402,24 @@ Planned integrations (`docs/ideas.md`) must answer this section before shipping:
 
 ## Outbound email
 
-Not applicable — the app sends no email. An optional recovery address is stored
-but nothing is currently sent to it, which means **account recovery by email is
-not yet implemented**. Recovery codes are the working path. Recorded here
-because storing an address that implies a capability the app lacks is exactly
-the kind of half-built promise worth naming.
+Two messages, both plain text, both a sentence and a link: confirm a recovery
+address, and reset a password. Nothing else is ever sent — no marketing, no
+notifications, no receipts — and there is nothing to unsubscribe from because
+every message is one the recipient just asked for.
+
+| Question | Decision | Rationale |
+| --- | --- | --- |
+| Transport | `backend/app/mail.py`, one `send()` method. Four implementations: `smtp`, `console` and `file` for development, `fake` for tests. | Everything sent is a short message with a link; a richer transport is a richer thing to get wrong. |
+| Default when unconfigured | `off`, which raises. The routes turn that into a **503** naming the limitation, and hosting is unavailable because a confirmed address is unobtainable. | The alternative — silently swallowing sends — is a recovery flow that tells the user to check an inbox nothing will arrive in. A 503 is worse to look at and better to be. |
+| Selection | `TABLE_SMTP_HOST` selects SMTP; `TABLE_MAIL_FILE` and `TABLE_MAIL_CONSOLE=1` are development transports that must be asked for explicitly. | A reset link in a container log, or in a file on disk, is a credential somewhere unencrypted. That is fine on a laptop and not on a deployment, so it never happens by default. |
+| Link origin | `TABLE_PUBLIC_URL`, configured — never derived from the request. | A `Host` header is attacker-controlled. A reset link built from one is a reset link pointed at the attacker's server. |
+| Transport security | STARTTLS on 587 (default) or implicit TLS on 465, certificate verification on via `ssl.create_default_context()`. `TABLE_SMTP_TLS=off` exists for a relay on localhost. | |
+| Content | The username, one link, and what happens if it wasn't you. No tokens beyond the link, no account data. | A mailbox is not a place to put anything that isn't needed to act on the message. |
+| Bounce and delivery handling | None. A message that does not arrive is retried by the user pressing "send it again". | No feedback loop to process, and the recovery codes are the floor underneath all of it. |
+
+The deployment variables are listed in `docker-compose.yml`, next to the
+existing secrets, with the consequence of leaving them unset written down
+there.
 
 ---
 
@@ -411,13 +459,14 @@ internal detail. It was reaching the client and coming back trusted.
 ## Known gaps, carried deliberately
 
 1. **No off-host backup.** The largest real risk. Deferred with a trigger above.
-2. **Email recovery is stored but not implemented.** Account creation no
-   longer collects an address — it takes a username and a password, nothing
-   else — which removes the half-built promise at the point it was most
-   misleading. An address may still be added from account settings, and nothing
-   is sent to it, so the recovery codes remain the only working path and the
-   copy says so. Owner: Ben. Trigger: implement verification and password
-   recovery, or drop the field, before the first outside user.
+2. **Closed 2026-08-02: email recovery is implemented.** The gap that stood
+   here — an address stored, nothing sent to it, `hasEmail` claiming a
+   capability the app lacked — is gone. Confirmation and password reset both
+   work, and hosting requires a confirmed address rather than a stored string.
+   What remains is a *deployment* condition rather than a code gap: a
+   deployment with no SMTP configured sends nothing, says so with a 503, and
+   cannot host tournaments. Owner: Ben. Trigger: configure `TABLE_SMTP_HOST`
+   before the first outside organizer.
 3. **Tournament player-seat denials are unlogged.** The audit's "no application
    logging at all" finding is closed. `tournaments.py` now records the class
    that mattered: organizer-authority denials write `AUTHZ_DENY` at

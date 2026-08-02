@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Icon from "../Icon";
-import { Account, AccountError, getAccount, login, signup } from "./api";
+import { Account, AccountError, forgotPassword, getAccount, login, signup } from "./api";
 import { looksLikeEmail, suggestUsername } from "../username";
 
 /**
@@ -42,6 +42,8 @@ export default function SignIn({
   const [error, setError] = useState<string | null>(null);
   const [codes, setCodes] = useState<string[] | null>(null);
   const [emailWarning, setEmailWarning] = useState(false);
+  const [forgot, setForgot] = useState(false);
+  const [forgotSaid, setForgotSaid] = useState<string | null>(null);
   // generated lazily so the same suggestion persists while the notice is up,
   // rather than shuffling under the user's finger on every keystroke
   const [suggestion, setSuggestion] = useState<string | null>(null);
@@ -62,6 +64,74 @@ export default function SignIn({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function askForReset() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await forgotPassword(username.trim());
+      // Whatever the server says, it says the same thing every time: whether
+      // the account exists, whether it has an address, and whether that
+      // address is confirmed are all things this screen must not reveal. So
+      // the copy comes from the server rather than being assembled here out of
+      // things this client might think it knows.
+      setForgotSaid(r.message);
+    } catch (e) {
+      setError(e instanceof AccountError ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (forgot) {
+    return (
+      <div className="sheet">
+        <button
+          className="sheet-back"
+          onClick={() => {
+            setForgot(false);
+            setForgotSaid(null);
+          }}
+          aria-label="Back to sign in"
+        >
+          <Icon name="back" /> Back to sign in
+        </button>
+        <h2>Forgotten password</h2>
+        {forgotSaid ? (
+          <>
+            <p className="notice">{forgotSaid}</p>
+            <p className="hint">
+              No email? Your recovery codes still work — sign in with one from the
+              account recovery screen.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="hint">
+              If your account has a confirmed recovery address, we'll send a link to
+              it. Otherwise your recovery codes are the way back in.
+            </p>
+            <input
+              type="text"
+              placeholder="Username"
+              autoCapitalize="none"
+              autoComplete="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+            {error && <p className="error">{error}</p>}
+            <button
+              className="primary"
+              disabled={busy || !username.trim()}
+              onClick={() => void askForReset()}
+            >
+              {busy ? "…" : "Send a reset link"}
+            </button>
+          </>
+        )}
+      </div>
+    );
   }
 
   if (codes) {
@@ -174,6 +244,13 @@ export default function SignIn({
       <button className="primary" disabled={busy || !username.trim() || password.length < 8} onClick={() => void go()}>
         {busy ? "…" : mode === "login" ? "Sign in" : "Create account"}
       </button>
+      {/* Only on the sign-in tab: somebody creating an account has no password
+          to have forgotten. */}
+      {mode === "login" && (
+        <button type="button" className="link forgot" onClick={() => setForgot(true)}>
+          Forgotten your password?
+        </button>
+      )}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { expect, Page, test } from "@playwright/test";
+import { linkIn, waitForMail } from "./mailbox";
 
 /**
  * The player account area.
@@ -258,5 +259,144 @@ test.describe("signing out", () => {
 
     const nav = await siteNav(page);
     await expect(nav.getByRole("link", { name: /sign in/i })).toBeVisible();
+  });
+});
+
+test.describe("the recovery address", () => {
+  const pw = "a good long password";
+
+  /** Enrol an address from the settings screen. Returns the address. */
+  async function enrol(page: Page, username: string) {
+    const address = `${username}@example.com`;
+    await page.goto("/account/settings");
+    await page.getByLabel(/^email address$/i).fill(address);
+    await page.getByLabel(/^your password$/i).fill(pw);
+    await page.getByRole("button", { name: /add email/i }).click();
+    return address;
+  }
+
+  test("adding one does not make it count for anything yet", async ({ page }) => {
+    const username = unique("mail");
+    await signUp(page, username);
+    await enrol(page, username);
+
+    // The overview is where a player reads their own state, and it must not
+    // say an unconfirmed address is a recovery address.
+    await expect(page.getByText(/waiting for confirmation/i)).toBeVisible({ timeout: 15_000 });
+    await page.goto("/account");
+    await expect(page.getByText(/recovery codes are your only way back in/i)).toBeVisible();
+  });
+
+  test("hosting stays shut until the link is used, and opens after", async ({ page }) => {
+    const username = unique("mail");
+    await signUp(page, username);
+    const address = await enrol(page, username);
+    await expect(page.getByText(/waiting for confirmation/i)).toBeVisible({ timeout: 15_000 });
+
+    await page.goto("/tournament");
+    await expect(page.getByText(/check your inbox/i)).toBeVisible({ timeout: 15_000 });
+
+    await page.goto(linkIn(await waitForMail(address)));
+    await expect(page.getByRole("heading", { name: /address confirmed/i })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await page.goto("/tournament");
+    await expect(page.getByRole("heading", { name: /your tournaments/i })).toBeVisible({
+      timeout: 15_000,
+    });
+  });
+
+  test("a used link does not work a second time", async ({ page }) => {
+    const username = unique("mail");
+    await signUp(page, username);
+    const address = await enrol(page, username);
+    const link = linkIn(await waitForMail(address));
+
+    await page.goto(link);
+    await expect(page.getByRole("heading", { name: /address confirmed/i })).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.goto(link);
+    await expect(page.getByText(/no longer valid/i)).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("the address never appears in the address bar", async ({ page }) => {
+    const username = unique("mail");
+    await signUp(page, username);
+    const address = await enrol(page, username);
+    await page.goto(linkIn(await waitForMail(address)));
+    // the token was in a fragment and the page wipes it on arrival, so neither
+    // the token nor anything else from the link survives in history
+    expect(page.url()).not.toContain("#");
+    expect(page.url()).toContain("/account/verify");
+  });
+
+  test("adding one costs the password", async ({ page }) => {
+    const username = unique("mail");
+    await signUp(page, username);
+    await page.goto("/account/settings");
+    await page.getByLabel(/^email address$/i).fill(`${username}@example.com`);
+    // no password typed: the button stays out of reach
+    const button = page.getByRole("button", { name: /add email/i });
+    await expect(button).toBeDisabled();
+    await page.getByLabel(/^your password$/i).fill("not the password");
+    await button.click();
+    await expect(page.getByText(/password is wrong/i)).toBeVisible({ timeout: 15_000 });
+  });
+});
+
+test.describe("forgetting a password", () => {
+  const pw = "a good long password";
+
+  test("a confirmed address gets a link that sets a new password", async ({ page }) => {
+    const username = unique("mail");
+    await signUp(page, username);
+
+    const address = `${username}@example.com`;
+    await page.goto("/account/settings");
+    await page.getByLabel(/^email address$/i).fill(address);
+    await page.getByLabel(/^your password$/i).fill(pw);
+    await page.getByRole("button", { name: /add email/i }).click();
+    await page.goto(linkIn(await waitForMail(address)));
+    await expect(page.getByRole("heading", { name: /address confirmed/i })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    // sign out, and forget the password
+    await page.goto("/account/settings");
+    await page.getByRole("button", { name: /^sign out$/i }).click();
+    await page.goto("/account");
+    await expect(page.getByRole("button", { name: /forgotten your password/i })).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByRole("button", { name: /forgotten your password/i }).click();
+    await page.getByPlaceholder(/^username$/i).fill(username);
+    await page.getByRole("button", { name: /send a reset link/i }).click();
+    await expect(page.getByText(/if that account exists/i)).toBeVisible({ timeout: 15_000 });
+
+    await page.goto(linkIn(await waitForMail(address)));
+    await page.getByLabel(/^new password$/i).fill("an entirely new password");
+    await page.getByLabel(/^and again$/i).fill("an entirely new password");
+    await page.getByRole("button", { name: /set new password/i }).click();
+
+    // Signed straight in — they proved control of the address and chose a
+    // password, so being made to type it again immediately proves nothing.
+    // Assert on the account area itself rather than the nav, which is a
+    // collapsed hamburger at this width.
+    await expect(page).toHaveURL(/\/account$/, { timeout: 15_000 });
+    await expect(page.getByRole("button", { name: /^sign up$/i })).toHaveCount(0);
+    await page.goto("/account/settings");
+    await expect(page.getByRole("button", { name: /^sign out$/i })).toBeVisible({
+      timeout: 15_000,
+    });
+  });
+
+  test("a name nobody has is answered exactly the same way", async ({ page }) => {
+    await page.goto("/account");
+    await page.getByRole("button", { name: /forgotten your password/i }).click();
+    await page.getByPlaceholder(/^username$/i).fill("nobody-has-this-name");
+    await page.getByRole("button", { name: /send a reset link/i }).click();
+    await expect(page.getByText(/if that account exists/i)).toBeVisible({ timeout: 15_000 });
   });
 });

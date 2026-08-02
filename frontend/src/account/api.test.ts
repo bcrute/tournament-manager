@@ -138,10 +138,13 @@ describe("credentials", () => {
     expect(last(fn).opts.method).toBe("POST");
   });
 
-  it("sends the email as given", async () => {
+  it("sends the email as given, with the password it now costs", async () => {
     const fn = mockFetch();
-    await setEmail("ada@example.com");
-    expect(last(fn).body).toEqual({ email: "ada@example.com" });
+    await setEmail("ada@example.com", "correct horse battery");
+    expect(last(fn).body).toEqual({
+      email: "ada@example.com",
+      password: "correct horse battery",
+    });
   });
 
   it("requires the typed username to delete", async () => {

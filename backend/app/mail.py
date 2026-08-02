@@ -12,6 +12,11 @@ Three transports, one interface:
 - **console** — writes the message to stdout. For development, and it must be
   asked for explicitly (`TABLE_MAIL_CONSOLE=1`), because a password-reset link
   in a container log on a real deployment is a credential in a log.
+- **file** — appends each message to a file as JSON, the way a local mail
+  catcher would. Selected by `TABLE_MAIL_FILE`. It exists because the browser
+  tests have to read a confirmation link, and the alternative was a test-only
+  bypass of the confirmation itself — which would leave the one flow that most
+  needs end-to-end coverage tested only in unit tests.
 - **off** — the default when nothing is configured. Every send raises, and the
   routes that would send turn that into a 503 saying so.
 
@@ -27,6 +32,7 @@ production goes through, up to the last inch.
 
 from __future__ import annotations
 
+import json
 import os
 import smtplib
 import ssl
@@ -98,6 +104,22 @@ class ConsoleMailer(Mailer):
 
 
 @dataclass
+class FileMailer(Mailer):
+    """Appends one JSON object per message. Deliberately dumb: no locking, no
+    rotation, no reading. Whatever consumes it — a developer, or the browser
+    suite looking for a link — can tail it."""
+
+    path: str
+
+    def send(self, message: Message) -> None:
+        line = json.dumps(
+            {"to": message.to, "subject": message.subject, "body": message.body}
+        )
+        with open(self.path, "a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+
+
+@dataclass
 class SmtpMailer(Mailer):
     host: str
     port: int
@@ -144,6 +166,9 @@ def build_mailer(env: dict[str, str] | None = None) -> Mailer:
             or f"no-reply@{host}",
             use_tls=(env.get("TABLE_SMTP_TLS") or "on").lower() != "off",
         )
+    path = (env.get("TABLE_MAIL_FILE") or "").strip()
+    if path:
+        return FileMailer(path)
     if (env.get("TABLE_MAIL_CONSOLE") or "").lower() in ("1", "on", "true", "yes"):
         return ConsoleMailer()
     return OffMailer()

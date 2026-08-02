@@ -7,6 +7,7 @@ import SiteLayout from "./layouts/SiteLayout";
 import PlayLayout from "./layouts/PlayLayout";
 import Landing from "./table/Landing";
 import AccountArea from "./account/AccountArea";
+import LinkLanding from "./account/LinkLanding";
 import Room from "./table/Room";
 import Host from "./tournament/Host";
 import Organize from "./tournament/Organize";
@@ -39,6 +40,13 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <Route path="/account/games" element={<PlayLayout><AccountArea section="games" /></PlayLayout>} />
         <Route path="/account/notes" element={<PlayLayout><AccountArea section="notes" /></PlayLayout>} />
         <Route path="/account/settings" element={<PlayLayout><AccountArea section="settings" /></PlayLayout>} />
+        {/* Where the links in our two emails land. No sign-in gate: a
+            confirmation link is opened from an inbox, routinely on a different
+            device from the one that asked, and a reset link exists precisely
+            because nobody can sign in. The token in the fragment is the
+            authorization. */}
+        <Route path="/account/verify" element={<PlayLayout><LinkLanding purpose="verify" /></PlayLayout>} />
+        <Route path="/account/reset" element={<PlayLayout><LinkLanding purpose="reset" /></PlayLayout>} />
         {/* the dashboard lived here before it grew sections; links are out
             in the world (and in the privacy page's history) */}
         <Route path="/table/me" element={<Navigate to="/account" replace />} />

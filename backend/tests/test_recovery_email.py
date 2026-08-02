@@ -24,6 +24,7 @@ from app.db import q
 from app.mail import (
     ConsoleMailer,
     FakeMailer,
+    FileMailer,
     MailNotConfigured,
     Message,
     OffMailer,
@@ -111,8 +112,28 @@ class TestTheTransportSeam:
         assert isinstance(build_mailer({}), OffMailer)
         assert isinstance(build_mailer({"TABLE_MAIL_CONSOLE": "1"}), ConsoleMailer)
 
-    def test_smtp_wins_over_the_console_flag(self):
-        mailer = build_mailer({"TABLE_SMTP_HOST": "smtp.example.com", "TABLE_MAIL_CONSOLE": "1"})
+    def test_a_file_transport_catches_mail_for_a_browser_test(self, tmp_path):
+        """A real transport, the way a local mail catcher is, not a test hook.
+        The browser suite reads a confirmation link out of it — the alternative
+        was a test-only way to skip confirming, which would leave the flow most
+        in need of end-to-end coverage covered only by unit tests."""
+        import json
+
+        path = tmp_path / "mail.jsonl"
+        mailer = build_mailer({"TABLE_MAIL_FILE": str(path)})
+        assert isinstance(mailer, FileMailer)
+        mailer.send(Message("who@example.com", "Subject", "line one\nhttps://x/#tok"))
+        mailer.send(Message("other@example.com", "Second", "body"))
+        written = [json.loads(l) for l in path.read_text().splitlines()]
+        assert [m["to"] for m in written] == ["who@example.com", "other@example.com"]
+        assert "https://x/#tok" in written[0]["body"]
+
+    def test_smtp_wins_over_every_other_choice(self):
+        mailer = build_mailer({
+            "TABLE_SMTP_HOST": "smtp.example.com",
+            "TABLE_MAIL_CONSOLE": "1",
+            "TABLE_MAIL_FILE": "/tmp/nope.jsonl",
+        })
         assert isinstance(mailer, SmtpMailer)
 
     def test_the_tests_run_on_a_real_transport(self):

@@ -162,6 +162,25 @@ fail, the change is wrong until proven otherwise:
 | An organizer's ruling is never overwritten by an automatic result | `TestResults` |
 | The anonymous room lookups have a budget of their own, and one flooder cannot deny a room to the people at it | `TestTheBudget`, `TestStrikesInPractice` |
 | `X-Forwarded-For` is trusted only because the deployment makes it unspoofable | `TestTheTrustBoundary` |
+| `hasEmail` means *confirmed*; an unverified address never satisfies anything | `TestHosting`, `TestTheMigration` |
+| The forgotten-password endpoint reveals nothing about which accounts exist | `TestForgotIsBlind` |
+| A confirmation token cannot reset a password, and vice versa | `TestConfirming`, `TestResetting` |
+| No endpoint ever returns a recovery address | `TestRecoveryEmailIsWriteOnly` |
+
+### Two credentials that are not what they look like
+
+Two things in this codebase read like identifiers and behave like passwords.
+Both were treated as the former for a long time, and both were corrected in the
+same week; the shape of the mistake is worth recognising because it will happen
+again somewhere else.
+
+A **room's `url_id`** and an **emailed link token** are credentials. Neither may
+appear in a URL path or query string, because both would then be in an access
+log, a `Referer`, and a browser history. Both travel in POST bodies or link
+fragments, and both are 128 bits or more. When adding anything that hands out
+access without a session, ask which of those two shapes it is — and if it is a
+short human-readable string, it is not a credential and must not be made into
+one.
 
 ### The two room identifiers
 
@@ -180,6 +199,19 @@ and sessions held before this change had to keep working.
 `ANONYMOUS_DOORS` in `backend/tests/test_room_boundary.py` is the explicit list
 of routes that take a room identifier without a credential. A new one belongs
 in that list.
+
+### Sending email
+
+`backend/app/mail.py` is the only module that talks to an SMTP server, and a
+test asserts that. Nothing is configured by default: `build_mailer` returns
+`OffMailer`, which raises, and the routes turn that into a 503. That is
+deliberate — a silently swallowed send produces a recovery flow that tells the
+user to check an inbox nothing will arrive in. `docker-compose.yml` lists the
+variables and what leaving them unset costs.
+
+Tests use `FakeMailer` (recording, installed in `conftest.py`); the browser
+suite uses `FileMailer` through `TABLE_MAIL_FILE`, so it reads a real
+confirmation link out of a real message rather than skipping confirmation.
 
 ## Engineering expectations
 

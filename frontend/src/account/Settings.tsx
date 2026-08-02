@@ -11,6 +11,8 @@ import {
   deleteAccount,
   logout,
   regenerateRecoveryCodes,
+  removeEmail,
+  resendVerification,
   setDisplayName,
   setEmail,
 } from "./api";
@@ -188,10 +190,33 @@ function DisplayNameCard({ account }: { account: Account }) {
 
 function EmailCard({ account }: { account: Account }) {
   const [email, setEmailValue] = useState("");
+  const [password, setPassword] = useState("");
+  /* What the client itself just submitted. The server never returns the
+     address — a deliberate boundary older than this feature — so the only way
+     to tell someone which inbox to check is to remember what they typed. */
+  const [sentTo, setSentTo] = useState<string | null>(null);
   const { busy, run, feedback } = useCardState();
   /** Saving nothing over an address on file deletes it — a different act from
    *  saving a new one, so it gets a different button. */
-  const removing = account.hasEmail && !email.trim();
+  const onFile = account.hasEmail || account.emailPending;
+  const removing = onFile && !email.trim();
+
+  if (!account.mailConfigured) {
+    return (
+      <section className="acct-card">
+        <h2>
+          <Icon name="note" /> Recovery email
+        </h2>
+        {/* Rather than a form that would 503. A settings control that cannot
+            do what it says is worse than one that isn't there. */}
+        <p className="hint">
+          This server can't send email, so a recovery address can't be confirmed
+          here. Your recovery codes are your way back in, and hosting a
+          tournament isn't available until the server is configured to send mail.
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section className="acct-card">
@@ -200,12 +225,35 @@ function EmailCard({ account }: { account: Account }) {
       </h2>
       <p className="hint">
         Optional, and used for nothing else — never shown to anyone, never mailed
-        anything but a recovery. {account.hasEmail
-          ? "One is on file. Saving an empty field removes it."
-          : "None on file, so your recovery codes are your only way back in."}{" "}
-        <strong>Hosting a tournament requires one</strong>, because an organizer locked
-        out mid-event strands everyone at the table.
+        anything but a recovery.{" "}
+        {account.hasEmail
+          ? "One is on file and confirmed. Saving an empty field removes it."
+          : account.emailPending
+            ? "One is on file but not confirmed yet, which counts as none until the link in it is used."
+            : "None on file, so your recovery codes are your only way back in."}{" "}
+        <strong>Hosting a tournament requires a confirmed one</strong>, because an
+        organizer locked out mid-event strands everyone at the table.
       </p>
+
+      {account.emailPending && (
+        <p className="acct-pending">
+          <Icon name="clock" /> Waiting for confirmation
+          {sentTo ? ` — check ${sentTo}.` : " — check your inbox for the link."}{" "}
+          <button
+            className="link"
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                await resendVerification();
+                return "Sent again. The previous link no longer works.";
+              })
+            }
+          >
+            Send it again
+          </button>
+        </p>
+      )}
+
       <label className="acct-label" htmlFor="email">
         Email address
       </label>
@@ -214,9 +262,23 @@ function EmailCard({ account }: { account: Account }) {
         className="acct-input"
         type="email"
         autoComplete="email"
-        placeholder={account.hasEmail ? "•••••••• (on file)" : "you@example.com"}
+        placeholder={onFile ? "•••••••• (on file)" : "you@example.com"}
         value={email}
         onChange={(e) => setEmailValue(e.target.value)}
+      />
+      {/* Required for both adding and removing. The recovery address is what
+          can hand this account to whoever holds it, so a session cookie alone
+          must not be able to move it — same rule as the username. */}
+      <label className="acct-label" htmlFor="email-password">
+        Your password
+      </label>
+      <input
+        id="email-password"
+        className="acct-input"
+        type="password"
+        autoComplete="current-password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
       />
       {feedback}
       {/* An empty field means "remove", so the button has to say so. Leaving
@@ -224,19 +286,26 @@ function EmailCard({ account }: { account: Account }) {
           quietly delete the address hosting depends on. */}
       <button
         className={removing ? "ghost danger" : "primary"}
-        disabled={busy || (!email.trim() && !account.hasEmail)}
+        disabled={busy || !password || (!email.trim() && !onFile)}
         onClick={() =>
           void run(async () => {
-            const r = await setEmail(email.trim());
-            publishAccount({ ...account, hasEmail: r.hasEmail });
+            const address = email.trim();
+            const r = address ? await setEmail(address, password) : await removeEmail(password);
+            publishAccount({
+              ...account,
+              hasEmail: r.hasEmail,
+              emailPending: r.emailPending,
+            });
             setEmailValue("");
-            return r.hasEmail
-              ? "Recovery email saved."
+            setPassword("");
+            setSentTo(address || null);
+            return address
+              ? `Check ${address} for a confirmation link. Until it's used, this account still has no recovery address.`
               : "Recovery email removed. You can no longer host a tournament.";
           })
         }
       >
-        {busy ? "…" : removing ? "Remove email" : account.hasEmail ? "Update email" : "Add email"}
+        {busy ? "…" : removing ? "Remove email" : onFile ? "Change email" : "Add email"}
       </button>
     </section>
   );

@@ -280,6 +280,30 @@
   font-size: 0.9rem;
 }
 
+/* An address on file that nobody has confirmed. Amber rather than green: it
+   is not a success state — hosting is still shut and the recovery codes are
+   still the only way back in. */
+.acct-pending {
+  margin: 0.5rem 0;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  background: #3a3020;
+  border: 1px solid #6b5a2a;
+  color: #e8d59a;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+/* The way back in for someone who cannot get in. Understated on purpose: it
+   sits under the sign-in button and must not compete with it. */
+.forgot {
+  display: block;
+  margin: 0.6rem auto 0;
+}
+
 .acct-delete {
   margin-top: 0.75rem;
   padding-top: 0.75rem;
