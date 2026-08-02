@@ -17,7 +17,7 @@ from app.accounts import router as accounts_router
 from app.db import q
 from app.table import router as table_router
 from app.tournaments import router as tournaments_router
-from conftest import public_id
+from conftest import public_id, verified_email
 
 
 @pytest.fixture(scope="module")
@@ -118,7 +118,7 @@ class TestTournamentPodHandoff:
         client.cookies.clear()
         client.post("/api/account/signup",
                     json={"username": username, "password": "correct horse battery"})
-        client.post("/api/account/email", json={"email": f"{username}@example.com"})
+        verified_email(username)
 
     def seated_event(self, client, username):
         """An open round with the viewer seated in it — claim after the pods

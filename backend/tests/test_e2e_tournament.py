@@ -27,6 +27,7 @@ from app.accounts import router as accounts_router
 from app.db import q
 from app.table import router as table_router
 from app.tournaments import router as tournaments_router
+from conftest import verified_email
 
 
 @pytest.fixture(scope="module")
@@ -50,7 +51,7 @@ class Event:
         c.cookies.clear()
         c.post("/api/account/signup",
                json={"username": organizer_name, "password": "a good long password"})
-        c.post("/api/account/email", json={"email": f"{organizer_name}@example.com"})
+        verified_email(organizer_name)
         r = c.post("/api/tournament",
                    json={"name": f"{organizer_name}'s event", "settings": settings})
         assert r.status_code == 200, r.text

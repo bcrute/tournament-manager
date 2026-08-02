@@ -22,6 +22,7 @@ from app.db import q
 from app.importers import ImportProblem, TopDeckAdapter, adapter_for, known_sources
 from app.table import router as table_router
 from app.tournaments import router as tournaments_router
+from conftest import verified_email
 
 
 @pytest.fixture(scope="module")
@@ -38,7 +39,7 @@ def organizer(client, username):
     client.cookies.clear()
     client.post("/api/account/signup",
                 json={"username": username, "password": "a good long password"})
-    client.post("/api/account/email", json={"email": f"{username}@example.com"})
+    verified_email(username)
     return client
 
 

@@ -26,7 +26,10 @@ def fresh(app_client):
     return app_client
 
 
-def signup(c, username, password="correct horse battery"):
+PASSWORD = "correct horse battery"
+
+
+def signup(c, username, password=PASSWORD):
     return c.post("/api/account/signup", json={"username": username, "password": password})
 
 
@@ -163,15 +166,24 @@ class TestRecovery:
 
 
 class TestEmailOptional:
-    def test_email_can_be_added_and_removed(self, fresh):
+    def test_an_address_can_be_added_and_removed(self, fresh):
+        """`hasEmail` used to flip true here. It does not any more: adding an
+        address starts a confirmation and nothing else, and the full flow is in
+        `test_recovery_email.py`. What this still pins is that the field is
+        optional in both directions."""
         signup(fresh, "nina")
-        assert fresh.post("/api/account/email", json={"email": "nina@example.com"}).json()["hasEmail"]
-        assert fresh.get("/api/account/me").json()["account"]["hasEmail"] is True
-        assert fresh.post("/api/account/email", json={"email": None}).json()["hasEmail"] is False
+        added = fresh.post("/api/account/email",
+                           json={"email": "nina@example.com", "password": PASSWORD}).json()
+        assert added["hasEmail"] is False
+        assert added["emailPending"] is True
+        removed = fresh.post("/api/account/email",
+                             json={"email": None, "password": PASSWORD}).json()
+        assert removed["hasEmail"] is False and removed["emailPending"] is False
 
     def test_obvious_junk_rejected(self, fresh):
         signup(fresh, "omar")
-        assert fresh.post("/api/account/email", json={"email": "nope"}).status_code == 400
+        assert fresh.post("/api/account/email",
+                          json={"email": "nope", "password": PASSWORD}).status_code == 400
 
 
 class TestSeatLinking:
@@ -379,14 +391,16 @@ class TestSignupEmail:
         import json as _json
         fresh.post("/api/account/signup", json={
             "username": "privateemail", "password": "correct horse battery"})
-        fresh.post("/api/account/email", json={"email": "private@example.com"})
+        fresh.post("/api/account/email",
+                   json={"email": "private@example.com", "password": "correct horse battery"})
         assert "private@example.com" not in _json.dumps(fresh.get("/api/account/me").json())
 
     def test_a_nonsense_address_is_rejected_where_addresses_are_now_set(self, fresh):
         """Signup no longer takes one, so the shape check lives on the route
         that does. Moved rather than dropped — the coverage still matters."""
         signup(fresh, "bademailuser")
-        assert fresh.post("/api/account/email", json={"email": "nope"}).status_code == 400
+        assert fresh.post("/api/account/email",
+                          json={"email": "nope", "password": PASSWORD}).status_code == 400
 
     def test_an_email_is_allowed_as_a_username(self, fresh):
         """Discouraged in the UI, never prevented. The user's call."""

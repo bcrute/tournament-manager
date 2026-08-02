@@ -28,6 +28,7 @@ from app.db import q
 from app.games import GameProfile
 from app.table import router as table_router
 from app.tournaments import router as tournaments_router
+from conftest import verified_email
 
 
 #: Deliberately unlike MTG in every field the core could have assumed:
@@ -73,7 +74,7 @@ def organizer(client, username):
     client.post(
         "/api/account/signup", json={"username": username, "password": "a good long password"}
     )
-    client.post("/api/account/email", json={"email": f"{username}@example.com"})
+    verified_email(username)
     return client
 
 

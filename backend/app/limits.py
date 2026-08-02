@@ -251,6 +251,14 @@ SENSITIVE_SUFFIXES = (
     # one-offs — nobody legitimately does either twenty times in ten minutes.
     "/email",
     "/delete",
+    # the recovery-email and password-reset flows. `/forgot` in particular is
+    # deliberately blind about whether an account exists, which makes a tight
+    # budget the only thing stopping someone from asking about every username
+    # they can think of.
+    "/resend",
+    "/verify",
+    "/forgot",
+    "/reset",
 )
 
 

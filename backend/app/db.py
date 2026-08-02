@@ -72,6 +72,29 @@ _db.executescript(
         created_at INTEGER NOT NULL DEFAULT (unixepoch()),
         last_seen INTEGER
     );
+    -- Confirming an address, and resetting a password with it. Two tables
+    -- rather than one with a `purpose` column, deliberately: a token minted to
+    -- confirm an address must not be redeemable to change a password, and
+    -- separate storage makes that structural instead of one forgotten
+    -- `AND purpose = ?` away. Both store only a hash, both expire, and both
+    -- are single-use.
+    CREATE TABLE IF NOT EXISTS email_verifications (
+        token_hash TEXT PRIMARY KEY,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        -- the address this token was minted for. If the account's address has
+        -- changed since, the token confirms nothing.
+        email TEXT NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER
+    );
+    CREATE TABLE IF NOT EXISTS password_resets (
+        token_hash TEXT PRIMARY KEY,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER
+    );
     -- One-time codes so an account can be recovered without an email address.
     CREATE TABLE IF NOT EXISTS recovery_codes (
         account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -250,6 +273,13 @@ _ensure_column("players", "account_id", "INTEGER")  # optional link to an accoun
 # none of those things. NULL means "no preference" and the device's own last
 # name is used, which is what every account had before this column existed.
 _ensure_column("accounts", "display_name", "TEXT")
+# When the address in `accounts.email` was confirmed by clicking a link sent to
+# it. NULL means unverified, and unverified is what every existing row becomes:
+# those addresses were typed into a box and never checked, so treating them as
+# confirmed would grandfather in exactly the claim this column exists to stop
+# making. `hasEmail` means *confirmed* from here on, and hosting a tournament
+# needs a confirmed one.
+_ensure_column("accounts", "email_verified_at", "INTEGER")
 _ensure_column("pod_seats", "room_token", "TEXT")   # this entrant's token in the pod's room
 # "source:id" (e.g. "topdeck:9f3c") so a re-run of an import matches the same
 # person instead of duplicating them. Matching on display name would make names

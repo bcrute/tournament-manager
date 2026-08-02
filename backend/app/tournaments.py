@@ -1103,14 +1103,20 @@ def list_games():
 
 @router.post("")
 def create_tournament(body: CreateBody, request: Request):
-    """Hosting requires an account with a recovery email: an organizer locked out
-    mid-event strands everyone at the table, which recovery codes alone don't
-    reliably solve on a phone in a game store."""
+    """Hosting requires an account with a **confirmed** recovery email: an
+    organizer locked out mid-event strands everyone at the table, which recovery
+    codes alone don't reliably solve on a phone in a game store.
+
+    Confirmed is the operative word. An address that was typed into a box and
+    never checked does not solve that problem — the typo case is exactly the
+    case where the organizer cannot get back in — so this reads
+    `email_verified_at`, not `email`.
+    """
     acct = require_account(request)
-    if not acct["email"]:
+    if not (acct["email"] and acct["email_verified_at"]):
         raise HTTPException(
             409,
-            "add a recovery email to your account before hosting — "
+            "confirm a recovery email on your account before hosting — "
             "an organizer who loses access mid-event strands the whole room",
         )
     expire_idle_tournaments()  # cheap hygiene sweep, off the hot path

@@ -7,10 +7,44 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.mail import FakeMailer, set_mailer  # noqa: E402
 from app.table import router  # noqa: E402  (env must be set before import)
 
 app = FastAPI()
 app.include_router(router, prefix="/api/table")
+
+#: Every test runs with a recording transport installed. It is a real transport
+#: rather than a mock, so the routes under test take exactly the production code
+#: path up to the last inch — and no test can accidentally depend on the `off`
+#: default, which raises, or reach a real SMTP host, which would be worse.
+mailbox = FakeMailer()
+set_mailer(mailbox)
+
+
+@pytest.fixture(autouse=True)
+def _empty_mailbox():
+    """A test reads "the message that was just sent", not "a message"."""
+    mailbox.clear()
+    yield
+
+
+def verified_email(username: str, email: str | None = None) -> str:
+    """Give an account a confirmed recovery address, in the database.
+
+    Hosting a tournament needs one, so most tournament tests need one, and none
+    of them are about email — routing every one of them through send, read the
+    link, click the link would be slow and would couple them to a flow they do
+    not exercise. The flow itself is tested end-to-end through the API in
+    `test_recovery_email.py`; this is the shortcut for everyone else.
+    """
+    from app.db import q as dbq
+
+    address = email or f"{username}@example.com"
+    dbq(
+        "UPDATE accounts SET email = ?, email_verified_at = unixepoch() WHERE username = ?",
+        (address, username),
+    )
+    return address
 
 
 @pytest.fixture(scope="session")
