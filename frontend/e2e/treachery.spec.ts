@@ -175,6 +175,39 @@ test.describe("looking at your own hidden role", () => {
     for (const c of contexts) await c.close();
   });
 
+  test("someone else's card is laid out like your own", async ({ page, browser }) => {
+    // The clearance for the strip and the banner used to live on the win-tip's
+    // rule, and the tip only shows on your own card. So another player's card
+    // — no tip — grew a hundred pixels into the footer and had the thumbnails
+    // drawn on top of it. The footer is the same size either way.
+    const { contexts, pages } = await dealtGame(page, browser);
+    const me = await hiddenPlayer(pages);
+
+    // swipe sideways to the public Leader's card
+    const box = (await me.locator(".role-screen").boundingBox())!;
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    await me.mouse.move(cx, cy);
+    await me.mouse.down();
+    await me.mouse.move(cx - 120, cy, { steps: 10 });
+    await me.mouse.up();
+
+    await expect(me.locator(".carousel-label")).not.toContainText(/your card/i, {
+      timeout: 5_000,
+    });
+    await expect(me.locator("img.role-card")).toHaveCount(1);
+
+    const card = (await me.locator("img.role-card").boundingBox())!;
+    const footer = (await me.locator(".role-footer").boundingBox())!;
+    expect(card.y + card.height, "the card runs under the strip and banner").toBeLessThanOrEqual(
+      footer.y + 1,
+    );
+    const label = (await me.locator(".carousel-label").boundingBox())!;
+    expect(label.y + label.height, "the label sits on the card").toBeLessThanOrEqual(card.y + 1);
+
+    for (const c of contexts) await c.close();
+  });
+
   test("the Leader is face up from the deal, with nothing to hold for", async ({
     page,
     browser,

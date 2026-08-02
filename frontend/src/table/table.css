@@ -1291,9 +1291,19 @@ button.ghost {
   pointer-events: none;
 }
 
-/* leave room for the thumbnail strip once there is more than one card */
+/* Leave room for what is actually below the card. The strip and the unveil
+   banner are absolutely positioned over the bottom of this screen and are the
+   same size whether or not the win tip is showing — but the clearance was only
+   ever set on the tip's rule, so someone else's card (no tip) grew a hundred
+   pixels into the footer and had the thumbnails drawn on top of it. The
+   reservation belongs to the footer, so it lives here. */
+.role-screen.has-strip {
+  box-sizing: border-box;
+  padding-bottom: 14rem;
+}
+
 .role-screen.has-strip .role-card {
-  max-height: calc(100dvh - 17rem);
+  max-height: calc(100dvh - 24rem);
 }
 
 .role-screen.has-strip .card-back {
