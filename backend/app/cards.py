@@ -23,10 +23,13 @@ a working Scryfall link the player can follow. The feature is "make it easy to
 find rulings", and a link that works beats an inline panel that sometimes
 doesn't.
 
-This is the MTG-only surface for now, which is why it lives apart from
-`games.py`'s profile registry: rulings are a Wizards-and-Scryfall shaped
-problem, and pretending otherwise before a second game needs it would be
-inventing an abstraction from one example.
+MTG only, and apart from `games.py`'s profile registry deliberately. This app
+is card games and nothing else, so a second game here is a realistic prospect —
+but rulings are not a solved shape across card games. Magic has an official
+corpus, freely published, behind a good API; Lorcana, the other game in the
+registry, has no equivalent. One worked example and one absence is not enough
+to design against, so the trigger for generalising is a second card game with a
+real rulings source, not a second card game.
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ from __future__ import annotations
 import json
 import re
 import time
+import urllib.parse
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -189,6 +193,28 @@ def _like_contains(folded: str) -> str:
 # ------------------------------------------------------------------- rulings
 
 
+def _clean_link(uri: str | None, fallback_name: str) -> str:
+    """The Scryfall page, without their analytics parameter.
+
+    Their API appends `?utm_source=api` to every `scryfall_uri`. Passing that
+    through would mean this app handing a third party a tracking parameter on
+    a link a player clicked — in an app whose Referrer-Policy is `no-referrer`
+    specifically so that does not happen. Their page, their analytics, their
+    call once the player is there; ours is not to tag them on the way out.
+    """
+    if not uri:
+        return f"https://scryfall.com/search?q={urllib.parse.quote(fallback_name)}"
+    split = urllib.parse.urlsplit(uri)
+    kept = [
+        (k, v)
+        for k, v in urllib.parse.parse_qsl(split.query)
+        if not k.lower().startswith("utm_")
+    ]
+    return urllib.parse.urlunsplit(
+        (split.scheme, split.netloc, split.path, urllib.parse.urlencode(kept), split.fragment)
+    )
+
+
 def _card_payload(name: str) -> dict:
     """The card and its rulings, from cache when possible."""
     row = q("SELECT payload, fetched_at FROM card_rulings WHERE name = ?", (name,)).fetchone()
@@ -224,8 +250,7 @@ def _card_payload(name: str) -> dict:
         # Where to go for anything this page does not show. Always present,
         # even when the rulings list is empty, because "no rulings" is a real
         # answer that people want to double-check.
-        "scryfallUrl": card.get("scryfall_uri")
-        or f"https://scryfall.com/search?q={name}",
+        "scryfallUrl": _clean_link(card.get("scryfall_uri"), name),
         "rulings": [
             {
                 "at": r.get("published_at"),

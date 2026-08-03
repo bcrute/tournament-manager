@@ -16,10 +16,18 @@ that is a separate, larger project and nothing here is a slice of it. Where
 this repo's docs refer to `events-platform.md` — a file that does not exist
 here and never will — the reference is wrong and should be cut (see W0).
 
-The goal of this document: **adding Lorcana, Pokémon, or anything else should
-mean writing one profile and its tests, and touching nothing else.** That is
-already the stated architecture. It isn't yet true. This is the list of what's
-in the way.
+**Card games, and only card games.** Confirmed 2026-08-03. The registry today
+holds MTG and Lorcana; Pokémon, Flesh and Blood or Star Wars: Unlimited would
+be at home here. Anything that is not played with a deck of cards — RC racing,
+motorsport, the other verticals in the events-platform plan — belongs to that
+separate project and not to this one. This matters when scoping: a feature here
+should be built for card games well, not generalised in advance for a vertical
+this repo will never host.
+
+The goal of this document: **adding Pokémon, Flesh and Blood, or another card
+game should mean writing one profile and its tests, and touching nothing
+else.** That is already the stated architecture. It isn't yet true. This is the
+list of what's in the way.
 
 ---
 

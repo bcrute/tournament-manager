@@ -433,9 +433,13 @@ it lives.
 what the Table surface assumes — anyone, no account, mobile-first — but it is
 not room-scoped, so it lives in `backend/app/cards.py` and
 `frontend/src/cards/` rather than inside the table. It deliberately does not go
-through `games.py`'s profile registry: rulings are a Wizards-and-Scryfall
-shaped problem, and building an abstraction from one example is how you get the
-wrong one.
+through `games.py`'s profile registry. Both games in that registry are card
+games — as everything in this app always will be, see `docs/multi-game.md` —
+but rulings are not a solved shape across them: MTG has an official, freely
+published corpus behind a good API, and Lorcana has nothing equivalent.
+Generalising across one worked example and one absence is how you get the wrong
+abstraction, so the second card game with a real rulings source is what should
+trigger it.
 
 It is also the app's **only outbound dependency**. `scryfall.py` is the seam and
 a test asserts it is the only module in `app/` that reaches the network. The

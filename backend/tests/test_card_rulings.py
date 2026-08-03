@@ -24,6 +24,31 @@ from app.cards import _fold, refresh_names, router as cards_router, suggest
 from app.db import q
 from app.scryfall import FakeUpstream, UpstreamUnavailable, set_upstream
 
+# Real cards, real ruling counts, checked against the live API on 2026-08-03.
+# Lightning Bolt genuinely has **no** rulings — it does exactly what it says —
+# and Doubling Season has five. An earlier version of this file invented
+# rulings for Bolt, which was a small lie that taught the wrong intuition about
+# which cards accumulate them.
+SEASON = {
+    "id": "season-id",
+    "name": "Doubling Season",
+    "type_line": "Enchantment",
+    "mana_cost": "{4}{G}",
+    "oracle_text": (
+        "If an effect would create one or more tokens under your control, it "
+        "creates twice that many of those tokens instead."
+    ),
+    "set_name": "Foundations",
+    # as returned by the API, tracking parameter and all
+    "scryfall_uri": "https://scryfall.com/card/fdn/216/doubling-season?utm_source=api",
+}
+SEASON_RULINGS = [
+    {
+        "published_at": "2024-11-08",
+        "comment": "Planeswalkers will enter with double the normal number of loyalty counters.",
+        "source": "wotc",
+    }
+]
 BOLT = {
     "id": "bolt-id",
     "name": "Lightning Bolt",
@@ -33,15 +58,9 @@ BOLT = {
     "set_name": "Limited Edition Alpha",
     "scryfall_uri": "https://scryfall.com/card/lea/161/lightning-bolt",
 }
-BOLT_RULINGS = [
-    {
-        "published_at": "2021-03-19",
-        "comment": "Any target means any creature, player, or planeswalker.",
-        "source": "wotc",
-    }
-]
 
 CATALOGUE = [
+    "Doubling Season",
     "Lightning Bolt",
     "Lightning Helix",
     "Jace, the Mind Sculptor",
@@ -56,8 +75,8 @@ CATALOGUE = [
 def fresh_upstream(**kwargs) -> FakeUpstream:
     up = FakeUpstream(
         names=list(CATALOGUE),
-        cards={"lightning bolt": BOLT},
-        card_rulings={"bolt-id": list(BOLT_RULINGS)},
+        cards={"lightning bolt": BOLT, "doubling season": SEASON},
+        card_rulings={"season-id": list(SEASON_RULINGS), "bolt-id": []},
         **kwargs,
     )
     set_upstream(up)
@@ -247,24 +266,33 @@ class TestTheIndex:
 
 class TestRulings:
     def test_it_returns_the_card_and_its_rulings(self, upstream, client):
-        r = client.get("/api/cards/rulings", params={"name": "Lightning Bolt"})
+        r = client.get("/api/cards/rulings", params={"name": "Doubling Season"})
         assert r.status_code == 200
         body = r.json()
-        assert body["name"] == "Lightning Bolt"
-        assert body["typeLine"] == "Instant"
-        assert body["rulings"][0]["text"].startswith("Any target")
+        assert body["name"] == "Doubling Season"
+        assert body["typeLine"] == "Enchantment"
+        assert body["rulings"][0]["text"].startswith("Planeswalkers will enter")
         assert body["rulings"][0]["source"] == "wotc"
+
+    def test_scryfalls_tracking_parameter_is_stripped(self, upstream, client):
+        """Their API appends `utm_source=api` to every card URI. Handing a
+        player a tagged link, from an app whose Referrer-Policy is
+        `no-referrer` precisely so that does not happen, would be odd."""
+        body = client.get("/api/cards/rulings", params={"name": "Doubling Season"}).json()
+        assert "utm_source" not in body["scryfallUrl"]
+        assert body["scryfallUrl"] == "https://scryfall.com/card/fdn/216/doubling-season"
 
     def test_the_scryfall_link_is_always_there(self, upstream, client):
         """The feature is 'make it easy to find rulings'. Everything else on
         the page is a convenience over this link."""
-        body = client.get("/api/cards/rulings", params={"name": "Lightning Bolt"}).json()
-        assert body["scryfallUrl"].startswith("https://scryfall.com/")
+        for name in ("Doubling Season", "Lightning Bolt"):
+            body = client.get("/api/cards/rulings", params={"name": name}).json()
+            assert body["scryfallUrl"].startswith("https://scryfall.com/"), name
 
     def test_a_second_lookup_is_free(self, upstream, client):
-        client.get("/api/cards/rulings", params={"name": "Lightning Bolt"})
+        client.get("/api/cards/rulings", params={"name": "Doubling Season"})
         upstream.calls.clear()
-        client.get("/api/cards/rulings", params={"name": "Lightning Bolt"})
+        client.get("/api/cards/rulings", params={"name": "Doubling Season"})
         assert upstream.calls == []
 
     def test_an_unknown_card_is_a_404_not_an_error(self, upstream, client):
@@ -272,18 +300,15 @@ class TestRulings:
         assert r.status_code == 404
 
     def test_a_card_with_no_rulings_is_a_normal_answer(self, upstream, client):
-        upstream.cards["vanilla bear"] = {
-            "id": "bear-id",
-            "name": "Vanilla Bear",
-            "scryfall_uri": "https://scryfall.com/card/x/1/vanilla-bear",
-        }
-        body = client.get("/api/cards/rulings", params={"name": "Vanilla Bear"}).json()
+        """Lightning Bolt, genuinely — it does what it says and has accumulated
+        no rulings in thirty years. This is a common case, not an edge one."""
+        body = client.get("/api/cards/rulings", params={"name": "Lightning Bolt"}).json()
         assert body["rulings"] == []
         assert body["scryfallUrl"], "still somewhere to go and check"
 
     def test_a_ruling_with_no_text_is_dropped(self, upstream, client):
-        upstream.card_rulings["bolt-id"] = [{"published_at": "2021-01-01", "comment": ""}]
-        body = client.get("/api/cards/rulings", params={"name": "Lightning Bolt"}).json()
+        upstream.card_rulings["season-id"] = [{"published_at": "2021-01-01", "comment": ""}]
+        body = client.get("/api/cards/rulings", params={"name": "Doubling Season"}).json()
         assert body["rulings"] == []
 
 
@@ -291,14 +316,14 @@ class TestWhenScryfallIsDown:
     def test_a_cached_card_is_still_served(self, upstream, client):
         """Stale rulings beat none: a ruling from last month is still the
         ruling."""
-        client.get("/api/cards/rulings", params={"name": "Lightning Bolt"})
+        client.get("/api/cards/rulings", params={"name": "Doubling Season"})
         upstream.fail_with = UpstreamUnavailable("down")
-        q("UPDATE card_rulings SET fetched_at = ? WHERE name = 'Lightning Bolt'",
+        q("UPDATE card_rulings SET fetched_at = ? WHERE name = 'Doubling Season'",
           (int(time.time()) - cards_mod.RULINGS_TTL - 1,))
 
-        r = client.get("/api/cards/rulings", params={"name": "Lightning Bolt"})
+        r = client.get("/api/cards/rulings", params={"name": "Doubling Season"})
         assert r.status_code == 200
-        assert r.json()["rulings"][0]["text"].startswith("Any target")
+        assert r.json()["rulings"][0]["text"].startswith("Planeswalkers will enter")
 
     def test_an_uncached_card_says_so_and_does_not_pretend(self, upstream, client):
         upstream.fail_with = UpstreamUnavailable("down")
@@ -362,9 +387,9 @@ class TestTheBrowserNeverTalksToScryfall:
     def test_the_payload_carries_no_scryfall_asset_urls(self, upstream, client):
         """A link the player chooses to follow is fine. An image the page loads
         without asking is a third-party request, and would fail the CSP."""
-        upstream.cards["lightning bolt"] = {
-            **BOLT,
-            "image_uris": {"normal": "https://cards.scryfall.io/normal/bolt.jpg"},
+        upstream.cards["doubling season"] = {
+            **SEASON,
+            "image_uris": {"normal": "https://cards.scryfall.io/normal/season.jpg"},
         }
-        body = client.get("/api/cards/rulings", params={"name": "Lightning Bolt"}).json()
+        body = client.get("/api/cards/rulings", params={"name": "Doubling Season"}).json()
         assert "cards.scryfall.io" not in json.dumps(body)

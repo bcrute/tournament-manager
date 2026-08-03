@@ -20,13 +20,14 @@ test.describe("card rulings", () => {
     await expect(page.getByRole("heading", { name: /card rulings/i })).toBeVisible();
 
     const box = page.getByPlaceholder(/start typing a card name/i);
-    await box.fill("lightn");
-    await page.getByRole("option", { name: "Lightning Bolt" }).click();
+    await box.fill("doubling");
+    await page.getByRole("option", { name: "Doubling Season" }).click();
 
-    await expect(page.getByRole("heading", { name: "Lightning Bolt" })).toBeVisible({
+    await expect(page.getByRole("heading", { name: "Doubling Season" })).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page.getByText(/any target means any creature/i)).toBeVisible();
+    // a real WotC ruling, copied from the live API into the fixture
+    await expect(page.getByText(/planeswalkers will enter/i)).toBeVisible();
   });
 
   test("the search box has focus on arrival", async ({ page }) => {
@@ -53,20 +54,22 @@ test.describe("card rulings", () => {
   test("the keyboard works end to end", async ({ page }) => {
     await page.goto("/rulings");
     const box = page.getByPlaceholder(/start typing a card name/i);
-    await box.fill("lightn");
-    await expect(page.getByRole("option").first()).toBeVisible();
+    await box.fill("s");
+    await box.fill("rhystic");
+    await expect(page.getByRole("option", { name: "Rhystic Study" })).toBeVisible();
 
-    await box.press("ArrowDown"); // to the second suggestion
-    await box.press("Enter");
-    await expect(page.getByRole("heading", { name: "Lightning Helix" })).toBeVisible({
+    await box.press("Enter"); // the first suggestion is highlighted by default
+    await expect(page.getByRole("heading", { name: "Rhystic Study" })).toBeVisible({
       timeout: 15_000,
     });
   });
 
   test("a card with no rulings says so rather than showing an empty box", async ({ page }) => {
+    // Lightning Bolt genuinely has none — checked against the live API. This
+    // is the common case, not an edge one.
     await page.goto("/rulings");
-    await page.getByPlaceholder(/start typing a card name/i).fill("counters");
-    await page.getByRole("option", { name: "Counterspell" }).click();
+    await page.getByPlaceholder(/start typing a card name/i).fill("lightning bolt");
+    await page.getByRole("option", { name: "Lightning Bolt" }).click();
     await expect(page.getByText(/no official rulings/i)).toBeVisible({ timeout: 15_000 });
     // and still somewhere to go and check for themselves
     await expect(page.getByRole("link", { name: /full card on scryfall/i })).toBeVisible();
@@ -74,12 +77,14 @@ test.describe("card rulings", () => {
 
   test("the way out to Scryfall is always there", async ({ page }) => {
     await page.goto("/rulings");
-    await page.getByPlaceholder(/start typing a card name/i).fill("lightn");
-    await page.getByRole("option", { name: "Lightning Bolt" }).click();
+    await page.getByPlaceholder(/start typing a card name/i).fill("doubling");
+    await page.getByRole("option", { name: "Doubling Season" }).click();
 
     const out = page.getByRole("link", { name: /full card on scryfall/i });
     await expect(out).toBeVisible({ timeout: 15_000 });
     await expect(out).toHaveAttribute("href", /^https:\/\/scryfall\.com\//);
+    // Scryfall tags their own URIs with utm_source=api; we do not pass that on
+    await expect(out).not.toHaveAttribute("href", /utm_/);
     // opening a third-party site must not carry our page along with it
     await expect(out).toHaveAttribute("rel", /noreferrer/);
     await expect(out).toHaveAttribute("target", "_blank");
@@ -98,9 +103,9 @@ test.describe("card rulings", () => {
     });
 
     await page.goto("/rulings");
-    await page.getByPlaceholder(/start typing a card name/i).fill("lightn");
-    await page.getByRole("option", { name: "Lightning Bolt" }).click();
-    await expect(page.getByRole("heading", { name: "Lightning Bolt" })).toBeVisible({
+    await page.getByPlaceholder(/start typing a card name/i).fill("doubling");
+    await page.getByRole("option", { name: "Doubling Season" }).click();
+    await expect(page.getByRole("heading", { name: "Doubling Season" })).toBeVisible({
       timeout: 15_000,
     });
 
