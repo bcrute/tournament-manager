@@ -441,6 +441,18 @@ Generalising across one worked example and one absence is how you get the wrong
 abstraction, so the second card game with a real rulings source is what should
 trigger it.
 
+**Why this app may show Magic content at all:** it is noncommercial,
+permanently — decided August 2026, and that is the whole licence position. The
+Wizards Fan Content Policy is noncommercial, Scryfall serves under it, and the
+commercial vehicle is the separate events/social project which ships no Magic
+content. A Scryfall integration was removed from here in July 2026 to drop
+exactly this chain, back when a paid tier was still possible; the regression
+test that pinned the removal was later deleted in a refactor, so when rulings
+arrived nothing objected. `backend/tests/test_licence_position.py` and
+`frontend/src/fanContent.test.ts` are the replacement — they fail if a payment
+dependency appears, if the attribution goes, or if the reasoning stops being
+written down. Read `docs/commercial-position.md` before touching any of it.
+
 It is also the app's **only outbound dependency**. `scryfall.py` is the seam and
 a test asserts it is the only module in `app/` that reaches the network. The
 browser never talks to Scryfall — it cannot, the CSP is `default-src 'self'` —

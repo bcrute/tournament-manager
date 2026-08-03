@@ -50,6 +50,25 @@ def deployment_file(relative: str):
     )
 
 
+def repo_file(*candidates: str):
+    """The first of several relative paths that exists.
+
+    Same two-layout problem `deployment_file` solves, one level deeper. The
+    backend's own files sit at `backend/requirements.txt` in a checkout and at
+    `requirements.txt` in the image, because the Dockerfile copies them to the
+    working directory. A test that hardcodes either is right in one place and
+    silently wrong in the other — which is how the deployment guards came to
+    pass locally and skip in CI.
+    """
+    for candidate in candidates:
+        path = deployment_file(candidate)
+        if path.exists():
+            return path
+    raise AssertionError(
+        "none of these exist, relative to the repo root: " + ", ".join(candidates)
+    )
+
+
 def verified_email(username: str, email: str | None = None) -> str:
     """Give an account a confirmed recovery address, in the database.
 

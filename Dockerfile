@@ -68,6 +68,10 @@ COPY data ./data
 # here they skip, and a guard that skips in CI is a guard that isn't one.
 COPY docker-compose.yml ./docker-compose.yml
 COPY deploy ./deploy
+# The licence position that permits this app to show Magic card content is
+# recorded in docs/, and `test_licence_position.py` asserts it is still there.
+# A test whose stated rationale has been deleted is a rule nobody can evaluate.
+COPY docs ./docs
 RUN python -m pytest tests -q --cov=app --cov-report=term --cov-fail-under=90 && touch /tests-passed
 
 # The join point, so one `--target test` runs both suites. Nothing ships from
