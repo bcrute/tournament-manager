@@ -46,9 +46,6 @@ const EXEMPT: Record<string, string> = {
   "apps.ts":
     "Unreferenced — nothing imports APPS, and Home.tsx hardcodes its own list. " +
     "Delete it or wire it up; either way there is no behaviour here to cover.",
-  "table/useRoom.ts":
-    "No tests yet, and the largest such gap in the client: polling, socket and " +
-    "reconnect for the live room. Covered on happy paths by the browser suite only.",
   "tournament/useTournament.ts":
     "No tests yet. Polling with hidden-tab backoff; same shape as useRoom and " +
     "should follow it in.",

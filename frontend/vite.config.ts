@@ -37,6 +37,9 @@ export default defineConfig({
         "src/goBack.ts",
         "src/nav.ts",
         "src/table/qrPayload.ts",
+        // the live room's fetch + socket + reconnect logic; the busiest module
+        // in the client and the one a deploy mid-game runs straight through
+        "src/table/useRoom.ts",
         "src/storage.ts",
         // shared by all four API layers: a bad Retry-After parse shows every
         // rate-limited user "in NaN seconds"
