@@ -72,6 +72,29 @@ _db.executescript(
         created_at INTEGER NOT NULL DEFAULT (unixepoch()),
         last_seen INTEGER
     );
+    -- Confirming an address, and resetting a password with it. Two tables
+    -- rather than one with a `purpose` column, deliberately: a token minted to
+    -- confirm an address must not be redeemable to change a password, and
+    -- separate storage makes that structural instead of one forgotten
+    -- `AND purpose = ?` away. Both store only a hash, both expire, and both
+    -- are single-use.
+    CREATE TABLE IF NOT EXISTS email_verifications (
+        token_hash TEXT PRIMARY KEY,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        -- the address this token was minted for. If the account's address has
+        -- changed since, the token confirms nothing.
+        email TEXT NOT NULL,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER
+    );
+    CREATE TABLE IF NOT EXISTS password_resets (
+        token_hash TEXT PRIMARY KEY,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER
+    );
     -- One-time codes so an account can be recovered without an email address.
     CREATE TABLE IF NOT EXISTS recovery_codes (
         account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -85,6 +108,32 @@ _db.executescript(
         created_at INTEGER NOT NULL DEFAULT (unixepoch()),
         last_seen INTEGER,
         expires_at INTEGER NOT NULL
+    );
+    -- The card-name index behind ruling search autocomplete. One row per card
+    -- name, refreshed from Scryfall about weekly. It lives in SQLite rather
+    -- than in memory so a restart does not mean a cold fetch before the first
+    -- player can type, and `fold` is the lowercased, punctuation-stripped form
+    -- the prefix match actually runs against — precomputed because doing it
+    -- per row per keystroke over 35,000 rows is the difference between
+    -- instant and noticeable.
+    CREATE TABLE IF NOT EXISTS card_names (
+        name TEXT PRIMARY KEY,
+        fold TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS card_names_fold ON card_names (fold);
+    -- When that index was last rebuilt. One row, and its own table rather than
+    -- a sentinel row in card_rulings pretending to be a card.
+    CREATE TABLE IF NOT EXISTS card_index (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        fetched_at INTEGER NOT NULL
+    );
+    -- Rulings as fetched, per card. Cached because they change rarely (a card
+    -- gets a ruling when it is printed and then almost never again) and
+    -- because an uncached lookup is a request to somebody else's server.
+    CREATE TABLE IF NOT EXISTS card_rulings (
+        name TEXT PRIMARY KEY,      -- the exact Scryfall name, as stored in card_names
+        payload TEXT NOT NULL,      -- JSON: the card summary plus its rulings
+        fetched_at INTEGER NOT NULL
     );
     -- Private per-game notes, written during or after a game.
     CREATE TABLE IF NOT EXISTS notes (
@@ -250,6 +299,13 @@ _ensure_column("players", "account_id", "INTEGER")  # optional link to an accoun
 # none of those things. NULL means "no preference" and the device's own last
 # name is used, which is what every account had before this column existed.
 _ensure_column("accounts", "display_name", "TEXT")
+# When the address in `accounts.email` was confirmed by clicking a link sent to
+# it. NULL means unverified, and unverified is what every existing row becomes:
+# those addresses were typed into a box and never checked, so treating them as
+# confirmed would grandfather in exactly the claim this column exists to stop
+# making. `hasEmail` means *confirmed* from here on, and hosting a tournament
+# needs a confirmed one.
+_ensure_column("accounts", "email_verified_at", "INTEGER")
 _ensure_column("pod_seats", "room_token", "TEXT")   # this entrant's token in the pod's room
 # "source:id" (e.g. "topdeck:9f3c") so a re-run of an import matches the same
 # person instead of duplicating them. Matching on display name would make names
@@ -305,10 +361,12 @@ _ensure_column("players", "is_tracker", "INTEGER NOT NULL DEFAULT 0")
 # friends. Zero life and 21 commander damage stop meaning anything for this
 # player, so the app stops flagging them — only an explicit "I'm dead" ends it.
 _ensure_column("players", "cant_lose", "INTEGER NOT NULL DEFAULT 0")
-# The id that appears in the address bar. The five-character code has to be
-# readable aloud across a table, which means it is short enough to guess; this
-# is 128 random bits, so a room URL can be shared, screenshotted or left in
-# history without handing over something joinable.
+# The credential that opens a room, and the id that appears in the address bar.
+# The five-character code has to be readable aloud across a table, which means
+# it is short enough to walk; this is 128 random bits. Since 2026-07-31 it is
+# the *only* thing an unauthenticated caller can join with — the code names a
+# room, this one opens it — so treat it like a password: it travels in POST
+# bodies and link fragments, never in a path or a log.
 _ensure_column("rooms", "url_id", "TEXT")
 for _r in _db.execute("SELECT code FROM rooms WHERE url_id IS NULL").fetchall():
     _db.execute("UPDATE rooms SET url_id = ? WHERE code = ?", (secrets.token_urlsafe(16), _r[0]))
@@ -370,6 +428,23 @@ class Result:
 
     def __iter__(self):
         return iter(self.fetchall())
+
+
+def qmany(sql, seq):
+    """One statement, many rows, **one commit**.
+
+    `q()` commits every write, which is right for the one-row writes the rest
+    of the app does and catastrophic for a bulk load: rebuilding the 35,000-row
+    card-name index through `q()` would be 35,000 commits. This is the only
+    caller so far, and it exists rather than the alternative — letting a caller
+    reach for `_db` directly — because reaching past the lock is exactly the
+    mistake that produced the shared-cursor bug.
+    """
+    rows = list(seq)
+    with _db_lock:
+        _db.executemany(sql, rows)
+        _db.commit()
+    return len(rows)
 
 
 def q(sql, params=()):

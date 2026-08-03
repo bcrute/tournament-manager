@@ -2,7 +2,13 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Icon from "../Icon";
 import { goBack } from "../goBack";
-import { Account, account, AccountError, getAccount } from "../account/api";
+import {
+  Account,
+  AccountError,
+  getAccount,
+  resendVerification,
+  setEmail,
+} from "../account/api";
 import SignIn from "../account/SignIn";
 import { ago } from "../admin/api";
 import { suggestEventName } from "../username";
@@ -26,7 +32,8 @@ import {
 export default function Host() {
   const navigate = useNavigate();
   const [acct, setAcct] = useState<Account | null | undefined>(undefined);
-  const [email, setEmail] = useState("");
+  const [email, setEmailValue] = useState("");
+  const [password, setPassword] = useState("");
   // pre-filled rather than blank: naming the event is the only thing standing
   // between an organizer and their tournament, and most of them don't care
   const [name, setName] = useState(suggestEventName);
@@ -73,7 +80,11 @@ export default function Host() {
     setBusy(true);
     setError(null);
     try {
-      await account("/email", { method: "POST", body: { email: email.trim() } });
+      // The same API the account settings screen uses — one flow, one set of
+      // rules. It costs the password and it confirms nothing on its own: what
+      // comes back is `emailPending`, and hosting stays shut until the link in
+      // the message is used.
+      await setEmail(email.trim(), password);
       const r = await getAccount();
       setAcct(r.account);
     } catch (e) {
@@ -149,24 +160,80 @@ export default function Host() {
           <button className="sheet-back" onClick={() => goBack(navigate, "/table")} aria-label="Back">
             <Icon name="back" /> Back
           </button>
-          <p className="notice">
-            Hosting is the only part of the app that needs an email address. If you lose
-            access to your account partway through an event, everyone at the tables is
-            stuck — recovery codes don&rsquo;t help much when they&rsquo;re at home in a
-            drawer. It stays private, is never shown to players, and is used for nothing
-            but getting you back in.
-          </p>
-          <input
-            type="email"
-            placeholder="you@example.com"
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          {error && <p className="error">{error}</p>}
-          <button className="primary" disabled={busy || !email.includes("@")} onClick={() => void addEmail()}>
-            {busy ? "…" : "Save and continue"}
-          </button>
+          {!acct.mailConfigured ? (
+            /* Nothing here can be made to work by typing harder, so it says so
+               rather than offering a form whose only outcome is a 503. */
+            <p className="notice">
+              This server can&rsquo;t send email yet, and hosting needs a confirmed
+              address — so an organizer who loses access mid-event can get back in.
+              Ask whoever runs this server to configure mail.
+            </p>
+          ) : acct.emailPending ? (
+            <>
+              <p className="notice">
+                Almost — check your inbox and click the link we sent. Hosting opens
+                as soon as the address is confirmed. An address nobody has proved
+                they can read is exactly the one that fails when it matters.
+              </p>
+              {error && <p className="error">{error}</p>}
+              <button
+                className="ghost"
+                disabled={busy}
+                onClick={() =>
+                  void (async () => {
+                    setBusy(true);
+                    setError(null);
+                    try {
+                      await resendVerification();
+                    } catch (e) {
+                      setError(e instanceof AccountError ? e.message : "Could not send it");
+                    } finally {
+                      setBusy(false);
+                    }
+                  })()
+                }
+              >
+                {busy ? "…" : "Send the link again"}
+              </button>
+              <button className="primary" onClick={() => void getAccount().then((r) => setAcct(r.account))}>
+                I&rsquo;ve confirmed it
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="notice">
+                Hosting is the only part of the app that needs an email address. If you
+                lose access to your account partway through an event, everyone at the
+                tables is stuck — recovery codes don&rsquo;t help much when
+                they&rsquo;re at home in a drawer. It stays private, is never shown to
+                players, and is used for nothing but getting you back in.
+              </p>
+              <input
+                type="email"
+                placeholder="you@example.com"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmailValue(e.target.value)}
+              />
+              {/* Required by the API: this is the setting that can hand the
+                  account to whoever holds the address. */}
+              <input
+                type="password"
+                placeholder="Your password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              {error && <p className="error">{error}</p>}
+              <button
+                className="primary"
+                disabled={busy || !email.includes("@") || !password}
+                onClick={() => void addEmail()}
+              >
+                {busy ? "…" : "Send me a confirmation link"}
+              </button>
+            </>
+          )}
         </div>
       </div>
     );

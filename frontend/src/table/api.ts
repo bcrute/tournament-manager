@@ -1,3 +1,5 @@
+import { apiMessage } from "../retryAfter";
+
 export interface CardInfo {
   id: number;
   name: string;
@@ -132,7 +134,10 @@ export async function api<T>(
       .json()
       .then((d: { detail?: string }) => d.detail)
       .catch(() => undefined);
-    throw new ApiError(r.status, detail ?? r.statusText);
+    throw new ApiError(
+      r.status,
+      apiMessage(r.status, detail ?? r.statusText, r.headers.get("Retry-After")),
+    );
   }
   return r.json() as Promise<T>;
 }

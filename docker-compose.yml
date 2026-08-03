@@ -5,11 +5,63 @@ services:
     restart: unless-stopped
     environment:
       - TREACHERY_DB=/appdata/treachery.db
-    # Server secrets (TABLE_IP_SALT, and TABLE_ADMINS/TABLE_DEV_DOCS if ever
-    # wanted) live in mtg.env on the deployment, never in the repo. The deploy
-    # copies this compose file over the VPS copy but not mtg.env, so the salt
-    # stays stable across redeploys — which is what keeps bans from resetting.
-    # Optional so a local `docker compose up` without the file still works.
+    # Server secrets live in mtg.env on the deployment, never in the repo. The
+    # deploy copies this compose file over the VPS copy but not mtg.env, so the
+    # salt stays stable across redeploys — which is what keeps bans from
+    # resetting. Optional so a local `docker compose up` without the file still
+    # works.
+    #
+    #   TABLE_IP_SALT       required; changing it resets every ban
+    #   TABLE_ADMINS        optional; no admin surface exists without it
+    #   TABLE_DEV_DOCS      optional
+    #
+    # Sending mail. With none of these set the app sends nothing, says so with
+    # a 503, and hosting a tournament is unavailable — because hosting needs a
+    # *confirmed* recovery address and nothing can be confirmed without a way
+    # to send the link. Recovery codes still work, so accounts and play are
+    # unaffected. See backend/app/mail.py and docs/security.md.
+    #
+    # The short way — a named provider fills in host, port and TLS from
+    # backend/app/mail_providers.py. `scripts/mailcheck` prints what each one
+    # wants and will send a test message.
+    #
+    # Send it yourself, through a mailbox that already exists:
+    #   TABLE_MAIL_PROVIDER fastmail | google | migadu
+    # Or a service built for application mail, if that is ever outgrown:
+    #   TABLE_MAIL_PROVIDER brevo | mailjet | resend | postmark | sendgrid | smtp2go
+    #
+    # `fastmail` is the one to use here: skadoosh.dev's MX, SPF and DKIM
+    # already point at Fastmail, so mail from an @skadoosh.dev address passes
+    # authentication with no new account, no new DNS, and nobody new learning
+    # who is recovering an account. It needs an app password, not the login
+    # password.
+    #   TABLE_SMTP_USER     NOT always your login — Resend wants the literal
+    #                       string "resend", SendGrid wants "apikey". Run
+    #                       `scripts/mailcheck <provider>` rather than guessing.
+    #   TABLE_SMTP_PASSWORD the API key
+    #   TABLE_MAIL_FROM     required. For a mailbox provider, an address that
+    #                       mailbox is allowed to send as; for a transactional
+    #                       one, an address verified with them. Never guessed
+    #                       for a named provider — a guess is a bounce dressed
+    #                       as a working config.
+    #
+    # The long way, for a self-hosted relay or a provider not in that list.
+    # An explicit host wins over a named provider.
+    #
+    #   TABLE_SMTP_HOST     setting this selects the SMTP transport
+    #   TABLE_SMTP_PORT     587 (STARTTLS, the default) or 465 (implicit TLS)
+    #   TABLE_SMTP_USER     omit for an unauthenticated relay
+    #   TABLE_SMTP_PASSWORD
+    #   TABLE_SMTP_TLS      "off" to skip STARTTLS on a local relay
+    #   TABLE_MAIL_FROM     defaults to no-reply@<smtp host> on this path only
+    #
+    #   TABLE_PUBLIC_URL    where the links point. NOT derived from the request:
+    #                       a Host header is attacker-controlled, and a reset
+    #                       link built from one points at their server.
+    #
+    # TABLE_MAIL_CONSOLE=1 prints messages to stdout instead, and
+    # TABLE_MAIL_FILE writes them to a JSONL file. Both are for development —
+    # either one puts password-reset links somewhere unencrypted.
     env_file:
       - path: mtg.env
         required: false

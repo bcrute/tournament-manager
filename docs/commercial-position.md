@@ -1,9 +1,26 @@
 # Commercial position
 
 Where this app sits against the tools that already exist, where the real gap
-is, and the rules a paid tier would have to live by. Researched July 2026,
-before planning a paid tier; **nothing here is committed to**, and the app is
-free and noncommercial today.
+is, and the rules a commercial product would have to live by. Researched July
+2026, while a paid tier here was still an open question.
+
+**It is no longer open. Decided August 2026: this app is noncommercial,
+permanently.** The commercial vehicle is the separate events/social project,
+not a tier of this one. That resolves the licensing question rather than
+deferring it — the Wizards Fan Content Policy is noncommercial, and this app
+now sits squarely inside it by construction rather than by "for now".
+
+Two consequences worth reading §3 with in mind:
+
+- **This app may use Scryfall and display Magic content.** The `/rulings`
+  feature does. A Scryfall integration was removed in July 2026 specifically to
+  drop that licence chain, at a point when a paid tier was still possible;
+  going noncommercial is what makes it safe to have back. Attribution is
+  mandatory and is pinned by tests.
+- **§3's rules below now describe the *other* project**, not a future tier of
+  this one. They are kept here because that is where the research lives, and
+  because the boundary they draw — commercial core ships no Magic content —
+  is the reason the split exists at all.
 
 Kept apart from [`tournament-research.md`](./tournament-research.md) because it
 answers a different question: that document asks what we can build, this one
@@ -68,10 +85,14 @@ through an adapter and lands it as entrants, rounds and results
 cannot accept results — so this feeds *from* them, and what is played here
 stays here. No UI offers it yet.
 
-Monetization shape, if it ever goes there: **players free** (needed for the
-network effect), **organizers or stores pay**. Same shape TopDeck uses.
+Monetization shape, wherever it happens: **players free** (needed for the
+network effect), **organizers or stores pay**. Same shape TopDeck uses. Not
+here, though — see the top.
 
-## 3. Rules for a commercial tier
+## 3. Rules for a commercial product
+
+*These apply to the events/social project. This app is noncommercial and is not
+bound by them — see the note at the top.*
 
 The binding constraint is subtle and it is worth writing down:
 
@@ -84,7 +105,7 @@ card imagery or text at all without a licence Wizards does not hand out.
 Fortunately nothing valuable needs it — life totals, damage-by-source, pods,
 rounds, standings, seating and results require zero card content.
 
-**The line to hold:**
+**The line to hold** — in the commercial product:
 
 1. **Commercial core ships no Magic content whatsoever.** No Scryfall calls, no
    card images, no card text, no Magic branding in the product identity.

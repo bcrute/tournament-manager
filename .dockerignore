@@ -4,5 +4,14 @@ frontend/node_modules/
 frontend/dist/
 backend/__pycache__/
 backend/.venv/
-docker-compose.yml
 README.md
+# docker-compose.yml and deploy/ are deliberately NOT ignored, despite being
+# deployment config rather than application content. The backend-test stage
+# asserts things about them — that no host port is published, that Caddy is not
+# configured to trust the whole internet — and those assertions are what make
+# `client_ip()` safe to believe. Excluded from the context, they skipped
+# silently in CI and ran only on a developer's machine, which is the "control
+# that fails open" case in AGENTS.md.
+#
+# Nothing is baked into the shipped image: the stage that reads them is
+# discarded, and the final stage copies only /tests-passed out of it.

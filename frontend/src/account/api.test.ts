@@ -19,11 +19,12 @@ import {
   signup,
 } from "./api";
 
-function mockFetch(body: unknown = { ok: true }, status = 200) {
+function mockFetch(body: unknown = { ok: true }, status = 200, headers: Record<string, string> = {}) {
   const fn = vi.fn().mockResolvedValue({
     ok: status < 400,
     status,
     statusText: "Mocked",
+    headers: new Headers(headers),
     json: () => Promise.resolve(body),
   });
   vi.stubGlobal("fetch", fn);
@@ -66,6 +67,7 @@ describe("account transport", () => {
         ok: false,
         status: 500,
         statusText: "Internal Server Error",
+        headers: new Headers(),
         json: () => Promise.reject(new Error("not json")),
       }),
     );
@@ -75,16 +77,18 @@ describe("account transport", () => {
 });
 
 describe("sessions", () => {
-  it("signs up with an explicit null email rather than omitting it", async () => {
+  it("sends only a username and a password", async () => {
+    // A recovery email used to ride along here. It is enrolled and confirmed
+    // separately now, so nothing about it belongs in account creation.
     const fn = mockFetch();
     await signup("ada", "a good long one");
-    expect(last(fn).body).toEqual({ username: "ada", password: "a good long one", email: null });
+    expect(last(fn).body).toEqual({ username: "ada", password: "a good long one" });
   });
 
-  it("passes an email through when one was given", async () => {
+  it("carries no email key at all, not even a null one", async () => {
     const fn = mockFetch();
-    await signup("ada", "a good long one", "ada@example.com");
-    expect(last(fn).body.email).toBe("ada@example.com");
+    await signup("ada", "a good long one");
+    expect("email" in last(fn).body).toBe(false);
   });
 
   it("logs in and out by POST", async () => {
@@ -134,10 +138,13 @@ describe("credentials", () => {
     expect(last(fn).opts.method).toBe("POST");
   });
 
-  it("sends the email as given", async () => {
+  it("sends the email as given, with the password it now costs", async () => {
     const fn = mockFetch();
-    await setEmail("ada@example.com");
-    expect(last(fn).body).toEqual({ email: "ada@example.com" });
+    await setEmail("ada@example.com", "correct horse battery");
+    expect(last(fn).body).toEqual({
+      email: "ada@example.com",
+      password: "correct horse battery",
+    });
   });
 
   it("requires the typed username to delete", async () => {

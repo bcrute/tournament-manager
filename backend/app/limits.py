@@ -22,6 +22,18 @@ DEFAULT_RULES = {
     # ordinary gameplay: life taps, state reads, everything else
     "normal": (900, 60),  # 900 per minute
     "socket": (60, 60),  # websocket connections per minute
+    # Resolving a room invitation without any credential: joining, finding your
+    # seat again, taking it back. Its own class because the shape of legitimate
+    # use is unlike anything else here — a whole venue arrives at once, from one
+    # address, in a couple of minutes.
+    #
+    # 120 in five minutes. A forty-person store event where everybody joins and
+    # half of them fumble it once still fits inside that, which is the number
+    # that matters: these people share one NAT and must not lock each other out.
+    # It can afford to be generous because it is no longer the thing standing
+    # between an attacker and a room — that is 128 bits of identifier. This
+    # budget is against flooding, not against guessing.
+    "room_lookup": (120, 300),
 }
 
 # Consecutive-ban durations. Repeat offenders climb this ladder.
@@ -52,8 +64,31 @@ def client_id(ip: str) -> str:
 
 
 def client_ip(request) -> str:
-    """Real client IP. Caddy sits in front and sets X-Forwarded-For; only the
-    proxy can reach this app (docker network), so the header is trustworthy."""
+    """The real client IP, from the header Caddy sets.
+
+    Trusting `X-Forwarded-For` is only sound because of what sits in front of
+    it, so the reasoning is written down rather than assumed:
+
+    - **Caddy discards a client's own X-Forwarded-For.** Its documented default
+      is to ignore incoming `X-Forwarded-*` "to prevent spoofing", and the root
+      Caddyfile's `trusted_proxies static private_ranges` only extends trust to
+      requests *arriving from* private addresses. An internet client's source
+      address is public, so whatever it puts in the header is dropped and Caddy
+      writes the address it actually saw.
+    - **Nothing else can reach this app from outside.** `docker-compose.yml`
+      publishes no ports; the container is only on the `web` network, so the
+      only route in is the proxy.
+
+    The residual exposure is a container *already on that network* — the VPS
+    shares it with another app — which could reach `mtg:8000` directly and put
+    anything here. That is a co-tenant compromise, which has worse options than
+    forging a rate-limit identity, and it is the boundary this deployment has
+    deliberately chosen. `test_limits.py::TestTheTrustBoundary` pins the two
+    facts above so a published port or a widened proxy can't slip in unnoticed.
+
+    Leftmost is correct *because* there is exactly one proxy and it replaces
+    rather than appends: with a chain, the trustworthy end would be the right.
+    """
     fwd = request.headers.get("x-forwarded-for")
     if fwd:
         return fwd.split(",")[0].strip()
@@ -216,10 +251,33 @@ SENSITIVE_SUFFIXES = (
     # one-offs — nobody legitimately does either twenty times in ten minutes.
     "/email",
     "/delete",
+    # the recovery-email and password-reset flows. `/forgot` in particular is
+    # deliberately blind about whether an account exists, which makes a tight
+    # budget the only thing stopping someone from asking about every username
+    # they can think of.
+    "/resend",
+    "/verify",
+    "/forgot",
+    "/reset",
+)
+
+
+#: Every unauthenticated route that resolves a room invitation. Checked before
+#: the GET short-circuit below, because two of these are POSTs that used to be
+#: GETs and the third would otherwise fall in with ordinary gameplay.
+ROOM_LOOKUP_PATHS = (
+    "/rooms/join",
+    "/rooms/seats",
+    "/rooms/reclaim",
 )
 
 
 def classify(path: str, method: str) -> str:
+    # first, and regardless of method: seat discovery was a GET, which meant it
+    # fell through to `normal` — nine hundred a minute, on a route that names
+    # every player at a table and did not strike when the room was not there
+    if any(path.endswith(s) for s in ROOM_LOOKUP_PATHS):
+        return "room_lookup"
     if method == "GET":
         return "normal"
     if any(path.endswith(s) for s in SENSITIVE_SUFFIXES):

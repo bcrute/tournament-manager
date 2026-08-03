@@ -16,7 +16,13 @@ Owner for everything below: Ben. Last reviewed 2026-07-19 (post-audit);
 re-checked against the code 2026-07-20, which closed the schema-endpoint and
 application-logging gaps and narrowed T10. Updated 2026-07-22: the tournament
 layer's organizer-authority denials now log (`AUTHZ_DENY`), closing the last
-unlogged authorization chokepoint and lifting T10 to mitigated.
+unlogged authorization chokepoint and lifting T10 to mitigated. Updated
+2026-07-31: the five-character room code stopped being a join credential — the
+128-bit `url_id` is — which reframes T3, T18 and T19 and adds T18a, T20 and
+T21; and account creation stopped collecting a recovery address. Updated
+2026-08-02: a recovery address must now be confirmed before it counts, the app
+sends mail for the first time, and there is a password-reset flow — adding T22
+through T27 and closing the second known gap.
 
 ---
 
@@ -27,8 +33,9 @@ decision — which most of the rest follows from — is that **playing requires 
 account and no personal data**. A player supplies a display name they choose,
 and nothing else. **Playing** never requires an account — accounts exist only
 for history and notes. **Hosting** a tournament does require one, plus a
-recovery email, because an organizer losing access mid-event strands every
-table. Stating it as "accounts are optional" without that distinction is
+*confirmed* recovery email, because an organizer losing access mid-event
+strands every table — and an address nobody has proved they can read is exactly
+the one that fails at that moment. Stating it as "accounts are optional" without that distinction is
 inaccurate and sets up an organizer for a surprise.
 
 The practical consequence is that **most data-protection questions are answered
@@ -49,14 +56,14 @@ an open threat.
 | Actor | Starts with | Wants |
 | --- | --- | --- |
 | Passer-by | Nothing but the public URL | Any access at all |
-| Code holder | A tournament or room code, shared openly at the venue | To act as someone at a table they aren't at |
+| Code holder | A tournament code, or a room's five-character code overheard at the venue | To act as someone at a table they aren't at. A room code alone no longer gets them in |
 | Player | A room token, or an entrant token for one event | To alter a result, take another seat, or read another table |
 | Organizer | An account session owning one tournament | To act on events they don't own |
 | Account holder | Optional account, history, notes | Another account's history |
 
 ### Trust boundaries
 
-1. **Anonymous → room** — crossed by holding a room code or room token.
+1. **Anonymous → room** — crossed by holding the room's 128-bit `url_id` or a room token. The five-character code does not cross it.
 2. **Anonymous → tournament** — crossed by holding a tournament code.
 3. **Player → their own pod** — a token grants one seat, not the table.
 4. **Organizer → their own tournament** — a session owns one event, not all.
@@ -69,7 +76,7 @@ an open threat.
 | --- | --- | --- | --- | --- |
 | T1 | 2→3 | Force a match result by counting a pod's turns | `advance_turn` requires an entrant token seated in that pod, or the organizer session; pod resolved via `pod_in()` | Mitigated — `TestPodAuthorization` |
 | T2 | 4 | Organizer of A writes results or extends clocks in B | `report_result`, `timer extend`, `call_official` all resolve through `pod_in()`, scoped by tournament | Mitigated — `TestPodAuthorization` |
-| T3 | 1 | Seize an occupied seat using a published room code | Room codes are no longer published; only the organizer and that table's own players receive one | Mitigated — `TestRoomCodesAreNotPublished` |
+| T3 | 1 | Seize an occupied seat using a published room code | The code opens nothing anonymously; joining, seat discovery and reclaim all require the 128-bit `url_id`. Codes are still unpublished — only the organizer and that table's own players see one — so this now needs two failures, not one | Mitigated — `TestRoomCodesAreNotPublished`, `TestTheCodeOpensNothing` |
 | T4 | 3 | Read another player's seat credential | Room token personalised onto the caller's own seat only, never in the shared pod list | Mitigated — `TestPlayerView` |
 | T5 | 2 | Claim every seat in an event before real players arrive | `/claim` rate-limited as *sensitive* (20 per 10 min); claims are first-come and the organizer can release | Partially mitigated — a determined attacker with the code can still race real players |
 | T6 | 2 | Enumerate platform size from a public roster | Entrant ids on the wire are random and tournament-scoped; the integer PK never leaves the server | Mitigated — `TestEntrantIdsAreOpaque` |
@@ -80,7 +87,16 @@ an open threat.
 | T11 | 2 | Entrant token captured from a URL | Token travels as `?token=`; the reverse proxy must strip query strings from access logs | **Partially mitigated** — depends on proxy config not in this repo |
 | T12 | 1 | Denial of service by room or event creation | Per-client rate limits; rooms idle out at 3h, tournaments at 12h | Mitigated |
 | T18 | 1 | Enumerate room URLs to find live games | The address bar carries `rooms.url_id` — 128 random bits — not the five-character code. Pinned by `TestRoomUrlId` and a browser test | Mitigated |
-| T19 | 1 | Guess room codes at the join endpoint | A code is short by necessity (it is read aloud at a table), so the defence is behavioural: a join naming a room that doesn't exist is a strike, escalating into the existing ban ladder | Mitigated — `TestJoinEnumeration` |
+| T18a | 1 | Read a room identifier out of a log, a `Referer` or a screenshot of a link | The identifier is now a credential, so it travels in POST bodies rather than paths, and invitation links carry it in a fragment the browser never transmits | Mitigated — `TestTheCodeOpensNothing`, `qrcode.test.ts` |
+| T19 | 1 | Guess a room identifier at the join endpoint | 128 bits, so guessing is not a strategy — this stopped being a rate-limiting problem and became an entropy one. The behavioural layer remains underneath: a lookup naming no room is a strike into the existing ban ladder, and the three anonymous lookups share a `room_lookup` budget of 120 per 300s per client, sized so a whole venue behind one NAT is never the thing it stops | Mitigated — `TestJoinEnumeration`, `TestIdentifierQuality`, `TestTheBudget` |
+| T20 | 1 | Lock a venue out of its own room by flooding the lookups | The budget is per client, never per room, and never shared: an attacker spends only their own. A sustained flood escalates to a ban on that client alone | Mitigated — `test_one_client_flooding_does_not_spend_anybody_else_s_budget` |
+| T22 | 5 | Take an account over by pointing its recovery address at yourself | Adding, replacing or removing an address costs the account password, and the new address counts for nothing until a link sent to *it* is clicked | Mitigated — `TestEnrollingAnAddress`, `TestRemoving` |
+| T23 | 5 | Reset somebody else's password with a guessed or stolen link | 256-bit token, stored only as a SHA-256 hash, single-use, one-hour expiry, retired when a new one is minted, and killed outright if the address is removed | Mitigated — `TestResetting` |
+| T24 | 5 | Redeem a confirmation link as a password reset | Separate tables, so the two token stores cannot be confused for one another | Mitigated — `test_a_confirmation_cannot_reset_a_password`, `test_a_reset_token_cannot_confirm_an_address` |
+| T25 | 5 | Enumerate accounts through the forgotten-password form | Identical status and body on every branch; the send is queued rather than awaited so an SMTP round trip cannot leak the answer by timing | Mitigated — `TestForgotIsBlind` |
+| T26 | 5 | Read a reset link out of a log or a link-rewriter | The token is in the URL fragment, which browsers never transmit; the landing page wipes it from the address bar on arrival | Mitigated — `LinkLanding.test.tsx`, `test_the_link_carries_the_token_in_a_fragment` |
+| T27 | 5 | Host an event with an address nobody can actually read | Hosting reads `email_verified_at`, not `email`; every pre-existing address migrated to unverified | Mitigated — `TestHosting`, `TestTheMigration` |
+| T21 | any | Forge `X-Forwarded-For` to evade the limiter or poison another client's budget | Caddy discards an incoming `X-Forwarded-For` by default and is configured `trusted_proxies static private_ranges`; the app publishes no host ports and sits only on the proxy network, so nothing but Caddy can reach uvicorn | Mitigated — `TestTheTrustBoundary`, which reads the deployment files rather than assuming them |
 | T13 | 3 | Alter another player's life total | Every room mutation resolves the actor from `X-Player-Token` scoped to that room | Mitigated |
 | T14 | 4 | Player disputes an organizer's ruling | Results are versioned and never mutated; `source` records `auto` vs `organizer` | Mitigated by design |
 | T15 | 6 | Find and use the unlisted admin surface | Not the URL — `require_admin` on every endpoint, admin list in the environment rather than the database, 404 for everyone else so probing yields nothing | Mitigated — `test_admin.py::TestAccess` |
@@ -93,8 +109,19 @@ These are part of the model, not omissions from it:
 
 - TLS terminates at Caddy and the app is not directly reachable. Verified by
   `docker-compose.yml` publishing no ports.
-- Whoever holds a tournament or room code is entitled to be at that venue.
-  Codes are shouted across a game store; they are a convenience, not a secret.
+- Whoever holds a tournament code is entitled to be at that venue. Codes are
+  shouted across a game store; they are a convenience, not a secret. The same
+  was once assumed of the room code, and that assumption is what the 2026-07-31
+  change withdrew: a room's credential is now the `url_id`, which is passed
+  device-to-device by QR or link rather than read aloud.
+- `X-Forwarded-For` is trustworthy **because of the deployment, not by
+  convention**. Caddy discards the client's own copy of the header by default,
+  and only appends the peer address it actually observed; the root Caddyfile
+  narrows trust further with `trusted_proxies static private_ranges`. The app
+  publishes no host ports and joins only the `web` network, so nothing else can
+  reach uvicorn to set one. `TestTheTrustBoundary` reads those two files, so
+  publishing a port or widening the proxy fails a test rather than silently
+  turning the limiter's client identity into attacker-controlled input.
 - The host is trusted. A database file readable on the host reveals everything
   the app knows, which is deliberately very little.
 
@@ -105,19 +132,72 @@ These are part of the model, not omissions from it:
 | Question | Decision | Rationale |
 | --- | --- | --- |
 | Session timeout | Account sessions expire server-side; the cookie is httpOnly, Secure, SameSite. | Sessions are a convenience over an optional account, not access to sensitive data. |
-| Second-factor recovery | No second factor. Recovery is 8 single-use codes, shown once at signup. An email may be stored but **email recovery is not implemented**, so the codes are the only working path and the UI says exactly that. | Requiring MFA on an optional account for a game-night app would cost more accounts than it protects. Recovery codes work without collecting an address. |
+| Second-factor recovery | No second factor. Two recovery paths: 8 single-use codes shown once at signup, and — since 2026-08-02 — a **confirmed** email address. Account creation still takes only a username and a password; an address is enrolled afterwards from settings, costs the password, and counts for nothing until a link sent to it is clicked. On a deployment with no mail transport configured the codes are the only path and the UI says so rather than offering a form that cannot work. | Requiring MFA on an optional account for a game-night app would cost more accounts than it protects. Recovery codes work without collecting an address at all, which is why they remain the floor rather than a fallback. |
 | Identity provider dependency | None — no external IdP. | No third-party dependency to be unavailable. |
 | Break-glass access | The admin surface *is* the break-glass path. It is off unless `TABLE_ADMINS` names an account, and every action it takes is logged. | A deployment that never sets the variable has no admin surface at all, which is the default. |
 | Strong authenticators | Not supported. | See second-factor recovery. |
 | Bootstrap/first admin | Admins are named in `TABLE_ADMINS` (an environment variable), matched case-insensitively against an ordinary account. There is no in-app promotion. | Privilege from the environment, not the database: a flag in `accounts` is one bad `UPDATE` or one signup bug away from escalation. Changing it requires restarting the process, which needs host access already. |
 
-**A room has two identifiers, deliberately.** The five-character code is a
-credential people read across a table, so it must stay short and therefore
-guessable. The URL id is 128 random bits and identifies the room in links,
-history and screenshots without being joinable. Conflating them forced one
-value to be both typeable and unguessable, which is not possible. The URL id is
-explicitly *not* accepted as a join credential — a test pins that, because
-making it work "for convenience" would undo the whole point.
+**A room has two identifiers, and only one of them opens it.** This was
+inverted on 2026-07-31.
+
+`rooms.url_id` — `secrets.token_urlsafe(16)`, 128 random bits, base64url and
+case-sensitive — is the join credential. `rooms.code` is five characters from a
+31-letter alphabet, chosen so it can be read aloud across a table, which makes
+it roughly 28 bits and walkable in about a day by anyone willing to spend the
+requests. It is now a label: it names a room in the organizer console and keys
+routes that already carry a player token, and it opens nothing on its own.
+
+The old arrangement asked one value to be both typeable and unguessable, which
+is not possible, and resolved it by making the guessable one the credential and
+defending it behaviourally. Rate limiting is a good second layer and a bad first
+one: it fails open under a distributed attacker and fails *closed* on a shop
+full of players behind one NAT, which is the same trade-off in both directions.
+
+Three consequences, each pinned:
+
+- The identifier travels in the **request body**, not the path. `POST
+  /rooms/join`, `POST /rooms/seats` and `POST /rooms/reclaim` take `roomId`.
+  A credential in a path is a credential in an access log, a `Referer`, and a
+  shared-screen recording.
+- Invitation links carry it in a **fragment** — `/table#r/<id>`. Browsers never
+  transmit a fragment, so an invitation cannot reach a server log even at the
+  origin that serves it. The client strips it from the address bar with
+  `history.replaceState` as soon as it is read.
+- **No route accepts the code anonymously.** `ANONYMOUS_DOORS` in
+  `backend/tests/test_room_boundary.py` enumerates every unauthenticated route
+  that takes a room identifier, and each is asserted to return 404 for the code
+  — indistinguishably from a string that was never a room, so there is no
+  existence oracle either.
+
+Sessions that predate the change keep working: they hold a room token, and
+authenticated routes still key on the code.
+
+**A recovery address means nothing until it is confirmed.** This is the same
+mistake as the room code, in a different place: `hasEmail` was true the moment a
+string was stored, and hosting a tournament — which exists precisely so an
+organizer cannot be locked out mid-event — rested on it. An address with a typo
+in it is exactly the case that produces the locked-out organizer. `hasEmail` now
+means somebody clicked a link sent to that mailbox, `email_verified_at` is where
+that lives, and every address already on file was migrated to unverified rather
+than grandfathered: they were never checked.
+
+**The two link tokens** are `secrets.token_urlsafe(32)`, stored only as a
+SHA-256 hash, single-use, and expiring — 24 hours for a confirmation, one hour
+for a password reset, because a reset link *is* a password. They live in two
+separate tables (`email_verifications`, `password_resets`) rather than one with
+a `purpose` column, so a token minted to confirm an address cannot be redeemed
+to change a password by construction rather than by a `WHERE` clause somebody
+might forget. Minting a new one retires the previous. Both travel in link
+**fragments**, which a browser never transmits, so a credential in an emailed
+link cannot reach an access log — ours, or a mail gateway's link-rewriter.
+
+**`/forgot` is blind.** Whether the username exists, whether it has an address,
+and whether that address is confirmed are answered identically. Sends are queued
+rather than awaited so an SMTP round trip on one branch cannot enumerate
+accounts by stopwatch — the same care `/login` takes with its throwaway scrypt
+verification. The unknown-name case is written to the security log, which is
+where the difference is allowed to live.
 
 **Player and entrant credentials** are bearer tokens, not accounts:
 
@@ -148,6 +228,45 @@ the authorization, and they grant nothing outside their room or tournament.
   key never leaves the server. Pinned by `TestEntrantIdsAreOpaque`.
 - Claiming a spot never links an account, even when the caller is signed in.
   Pinned by `TestIdentityStaysSeparate`.
+- No anonymous route resolves a room from its five-character code. The list of
+  routes that resolve a room without a credential is written out in
+  `ANONYMOUS_DOORS` (`backend/tests/test_room_boundary.py`); a new one is
+  expected to be added there.
+
+---
+
+## Rate limiting
+
+`limits.py` classifies every request into one of four buckets, each a rolling
+window per client. The client is a salted HMAC of the address — see the
+`X-Forwarded-For` assumption above for why that address can be believed.
+
+| Class | Budget | Covers | Why that number |
+| --- | --- | --- | --- |
+| `sensitive` | 20 / 600s | signup, login, password change, room and tournament creation, `/claim` | Guessing a secret. Deliberately small; legitimate use of these is rare. |
+| `room_lookup` | 120 / 300s | `POST /rooms/join`, `/rooms/seats`, `/rooms/reclaim` | The one unauthenticated door. Sized for the real shape of legitimate use: forty people arriving at a store within a couple of minutes, from one NAT, some of them fumbling it once. |
+| `normal` | 900 / 60s | everything else, including all in-game mutation | Polling and life totals. Generous because the caller already holds a token. |
+| `socket` | 60 / 60s | websocket opens | Reconnect storms. |
+
+Going over a budget is a 429 carrying `Retry-After`, and a strike. Five strikes
+inside 900s is a ban — 1h, then 6h, 24h, 7d on repeat — and a ban applies to
+**every** class, because a client that has earned one is not a client whose
+gameplay traffic is worth serving.
+
+Two properties are worth stating because they are easy to lose:
+
+- **The lookup budget is per client, never per room.** A per-room counter would
+  let one attacker lock a room's own players out of it, turning a
+  guessing defence into a denial-of-service tool. Pinned by
+  `test_one_client_flooding_does_not_spend_anybody_else_s_budget`.
+- **Seat discovery is not ordinary traffic.** It used to be a GET and so fell
+  through to `normal` — nine hundred a minute on a route that names every player
+  at a table. It is now a POST in the lookup class.
+
+Rate limiting is the second layer here, not the first. Since 2026-07-31 what
+stands between an attacker and a room is 128 bits of identifier; the budget
+exists against flooding, and its more likely failure mode is a false positive on
+a busy venue rather than a false negative on an attacker.
 
 ---
 
@@ -203,7 +322,11 @@ on a single container is neither.
 | Audit retention | Tied to the room's lifetime; account history persists until the account is deleted. | |
 | Denial logging | Admin denials (`ADMIN_DENY`), authentication failures, and tournament organizer-authority denials (`AUTHZ_DENY`, at `require_organizer` — the single chokepoint all 13 organizer actions route through) are recorded. Residual: the two player-seat checks (`advance_turn`, `call_official`) still don't log, deliberately — they reject anonymous wrong-table callers, the same ordinary-friction class the table surface chooses not to log, and have no account username to key on. | The layer that produced five authorization defects — all in the organizer/pod authorization class — now shows a sixth being probed. Player-seat friction is noise, kept out for the same reason `join.unknown_room` is the table layer's only entry. |
 
-**Never logged:** tokens, passwords, recovery codes, or raw IP addresses.
+**Never logged:** tokens, passwords, recovery codes, room `url_id`s, or raw IP
+addresses. A failed lookup records that a client tried an unknown room
+(`join.unknown_room`) and never what they tried — the attempted value is
+credential-shaped, and a security log full of near-miss credentials is a
+liability rather than evidence.
 Rate limiting identifies clients by a salted HMAC of the IP (`limits.client_id`).
 That is pseudonymisation, not anonymisation — IPv4 is brute-forceable given the
 salt — and it is documented as such rather than claimed as anonymous.
@@ -236,7 +359,10 @@ preference nobody asked for, a metric, a hosted font — the position changes an
 the banner question returns.
 
 **Personal data actually collected:** a display name (user-chosen, may be a
-random default), an optional password, an optional recovery email. No IP-to-user
+random default), an optional password, and a recovery email only if one is
+added from account settings — never at account creation. Where an address is
+stored, it is also *used*: two messages, both requested by the person receiving
+them, and nothing else (see Outbound email). No IP-to-user
 association, no location, no device identifiers, no third-party analytics.
 
 An account may also store a **default table name** (`accounts.display_name`) —
@@ -261,6 +387,19 @@ game open on a phone and a table display.
 
 ---
 
+## Outbound dependencies
+
+| Question | Decision | Rationale |
+| --- | --- | --- |
+| What we call | Scryfall, for card names and rulings (`/rulings`). Nothing else. | It is the only external service in the request path, and it is read-only, unauthenticated and public data. |
+| Who is exposed | **The server, never the player.** The browser cannot reach Scryfall — CSP is `default-src 'self'`, and `privacy.spec.ts` asserts no page makes a third-party request — so every lookup is proxied. | Fetching from the browser would have handed a third party the player's IP, their timing, and the fact that they are mid-game, on every keystroke. Proxying costs a hop and buys all of that back. |
+| What is sent | A card name. No identifier, no session, no address. | There is nothing else the request needs. |
+| Autocomplete | The full card-name catalogue (~35,000 strings) is fetched once and held in SQLite; keystrokes never leave this server. | One request a week instead of one per character. It is also what makes the feature usable on modest hardware and survivable when Scryfall is down. |
+| Failure | Cached data first, then a stale cache, then a 503 that still carries a working Scryfall link. Failures back off for 5 minutes rather than retrying per keystroke. | A rulings page that sometimes shows nothing is worse than a link — the player has already spent the taps. |
+| Isolation | One module, `scryfall.py`, behind an interface with fake and file-backed implementations. `test_only_one_module_reaches_the_network` pins that nothing else in `app/` opens a socket. | An outbound call added somewhere else would quietly widen this section without anyone editing it. |
+
+---
+
 ## Integrations and external providers
 
 Not applicable today. The app has no inbound webhooks, no outbound API calls,
@@ -279,11 +418,27 @@ Planned integrations (`docs/ideas.md`) must answer this section before shipping:
 
 ## Outbound email
 
-Not applicable — the app sends no email. An optional recovery address is stored
-but nothing is currently sent to it, which means **account recovery by email is
-not yet implemented**. Recovery codes are the working path. Recorded here
-because storing an address that implies a capability the app lacks is exactly
-the kind of half-built promise worth naming.
+Two messages, both plain text, both a sentence and a link: confirm a recovery
+address, and reset a password. Nothing else is ever sent — no marketing, no
+notifications, no receipts — and there is nothing to unsubscribe from because
+every message is one the recipient just asked for.
+
+| Question | Decision | Rationale |
+| --- | --- | --- |
+| Transport | `backend/app/mail.py`, one `send()` method. Four implementations: `smtp`, `console` and `file` for development, `fake` for tests. | Everything sent is a short message with a link; a richer transport is a richer thing to get wrong. |
+| Default when unconfigured | `off`, which raises. The routes turn that into a **503** naming the limitation, and hosting is unavailable because a confirmed address is unobtainable. | The alternative — silently swallowing sends — is a recovery flow that tells the user to check an inbox nothing will arrive in. A 503 is worse to look at and better to be. |
+| Selection | `TABLE_MAIL_PROVIDER` names one of the providers in `mail_providers.py`, or `TABLE_SMTP_HOST` points at a host directly; an explicit host wins. `TABLE_MAIL_FILE` and `TABLE_MAIL_CONSOLE=1` are development transports that must be asked for explicitly. | A reset link in a container log, or in a file on disk, is a credential somewhere unencrypted. That is fine on a laptop and not on a deployment, so it never happens by default. |
+| Provider choice | Two kinds. **Mailbox** (`fastmail`, `google`, `migadu`) sends through an account that already exists; **transactional** (`brevo`, `mailjet`, `resend`, `postmark`, `sendgrid`, `smtp2go`) is a service built for application mail. The default is `fastmail`. | Every message this app sends is an account-recovery message, so whoever carries it learns an address and the fact that someone is recovering an account. Sending through the mailbox provider that already handles the domain's mail adds nobody to that list. `skadoosh.dev` already publishes Fastmail MX, SPF and DKIM records, so this is also the option with no DNS work. Brevo is the transactional fallback: EU-hosted, GDPR-native, 300/day free permanently. |
+| Sending direct to recipients | **Not done, and not an option worth reopening.** Delivering straight to recipients' MX servers from the app host needs outbound port 25 (blocked by most VPS providers), a PTR record on the sending IP (74.208.222.65 has none), and a warmed reputation. | The failure mode is silent spam-foldering of exactly the message someone locked out of their account is waiting for. Deliverability *is* the feature here; there is nothing to gain by owning the last hop. |
+| Misconfiguration | Raises `MailMisconfigured` at **startup**, naming the missing variable and where to get the credential. | Half a configuration that fails at send time is a deployment that looks healthy until the first person forgets their password. |
+| Link origin | `TABLE_PUBLIC_URL`, configured — never derived from the request. | A `Host` header is attacker-controlled. A reset link built from one is a reset link pointed at the attacker's server. |
+| Transport security | STARTTLS on 587 (default) or implicit TLS on 465, certificate verification on via `ssl.create_default_context()`. `TABLE_SMTP_TLS=off` exists for a relay on localhost. | |
+| Content | The username, one link, and what happens if it wasn't you. No tokens beyond the link, no account data. | A mailbox is not a place to put anything that isn't needed to act on the message. |
+| Bounce and delivery handling | None. A message that does not arrive is retried by the user pressing "send it again". | No feedback loop to process, and the recovery codes are the floor underneath all of it. |
+
+The deployment variables are listed in `docker-compose.yml`, next to the
+existing secrets, with the consequence of leaving them unset written down
+there.
 
 ---
 
@@ -323,11 +478,14 @@ internal detail. It was reaching the client and coming back trusted.
 ## Known gaps, carried deliberately
 
 1. **No off-host backup.** The largest real risk. Deferred with a trigger above.
-2. **Email recovery is stored but not implemented.** Signup now collects an
-   optional address, which raises the stakes on this: the copy is careful to
-   say the codes are the only way back in, but the longer an address is stored
-   without the feature existing, the more it reads as a promise. Owner: Ben.
-   Trigger: implement it or stop collecting it before the first outside user.
+2. **Closed 2026-08-02: email recovery is implemented.** The gap that stood
+   here — an address stored, nothing sent to it, `hasEmail` claiming a
+   capability the app lacked — is gone. Confirmation and password reset both
+   work, and hosting requires a confirmed address rather than a stored string.
+   What remains is a *deployment* condition rather than a code gap: a
+   deployment with no SMTP configured sends nothing, says so with a 503, and
+   cannot host tournaments. Owner: Ben. Trigger: configure `TABLE_SMTP_HOST`
+   before the first outside organizer.
 3. **Tournament player-seat denials are unlogged.** The audit's "no application
    logging at all" finding is closed. `tournaments.py` now records the class
    that mattered: organizer-authority denials write `AUTHZ_DENY` at

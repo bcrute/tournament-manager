@@ -1,5 +1,6 @@
 """The account's own profile: renaming, the default table name, and totals.
 
+
 Two names live on an account and they are not interchangeable. `username` is
 typed to sign in — unique, case-insensitively, and changing it is the one edit
 the owner cannot undo unaided, so it costs a password. `display_name` is read
@@ -14,6 +15,7 @@ from fastapi.testclient import TestClient
 from app.accounts import router as accounts_router
 from app.db import q
 from app.table import router as table_router
+from conftest import public_id
 
 
 @pytest.fixture(scope="module")
@@ -243,7 +245,7 @@ class TestStats:
         signup(fresh, "stats.player")
         first = fresh.post("/api/table/rooms", json={"name": "Ada", "mode": "life"}).json()
         second = fresh.post("/api/table/rooms", json={"name": "Ada", "mode": "treachery"}).json()
-        fresh.post(f"/api/table/rooms/{second['code']}/join", json={"name": "Ada again"})
+        fresh.post("/api/table/rooms/join", json={"roomId": public_id(second['code']), "name": "Ada again"})
 
         s = fresh.get("/api/account/stats").json()
         assert s["tables"] == 2

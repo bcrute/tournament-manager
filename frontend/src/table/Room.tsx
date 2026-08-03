@@ -6,6 +6,7 @@ import { t } from "../i18n";
 import Icon from "../Icon";
 import { createBackGuard } from "./backGuard";
 import { CarouselEntry, carouselEntries, clampIndex, indexOfPid, step } from "./carousel";
+import { invitationLink } from "./qrPayload";
 import { clearSession, loadSession } from "./session";
 import DisplayView from "./DisplayView";
 import LifePanel from "./LifePanel";
@@ -304,7 +305,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
         {rulesOpen && (
         <RulesSheet treachery={state.room.mode === "treachery"} onClose={() => setRulesOpen(false)} />
       )}
-      {qrOpen && <QrSheet code={code} onClose={() => setQrOpen(false)} />}
+      {qrOpen && <QrSheet roomId={state.room.urlId} onClose={() => setQrOpen(false)} />}
       {tourneyOpen && state.tournament && (
         <TournamentSheet code={state.tournament.code} onClose={() => setTourneyOpen(false)} />
       )}
@@ -351,7 +352,7 @@ function RoomInner({ code, token }: { code: string; token: string }) {
       {rulesOpen && (
         <RulesSheet treachery={state.room.mode === "treachery"} onClose={() => setRulesOpen(false)} />
       )}
-      {qrOpen && <QrSheet code={code} onClose={() => setQrOpen(false)} />}
+      {qrOpen && <QrSheet roomId={state.room.urlId} onClose={() => setQrOpen(false)} />}
       {tourneyOpen && state.tournament && (
         <TournamentSheet code={state.tournament.code} onClose={() => setTourneyOpen(false)} />
       )}
@@ -472,7 +473,7 @@ function Lobby({
   token: string;
   onRename: () => void;
 }) {
-  const joinUrl = `${location.origin}/table?join=${code}`;
+  const joinUrl = invitationLink(location.origin, state.room.urlId);
   const treachery = state.room.mode === "treachery";
   const n = state.players.filter((p) => !p.left).length;
   const [customLife, setCustomLife] = useState("");

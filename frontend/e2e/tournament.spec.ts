@@ -1,4 +1,5 @@
 import { expect, Page, test } from "@playwright/test";
+import { linkIn, waitForMail } from "./mailbox";
 
 const pw = "a good long password";
 const uniq = () => `org${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
@@ -14,14 +15,36 @@ async function signUpOrganizer(page: Page, username: string) {
   await page.getByRole("button", { name: /saved them/i }).click();
 }
 
+/**
+ * Enrol a recovery address and confirm it, the whole way round: the gate asks
+ * for it, a message is sent, and the link in that message is what opens
+ * hosting. Nothing here skips the confirmation — that is the point.
+ */
+async function confirmOrganizerEmail(page: Page, username: string) {
+  const address = `${username}@example.com`;
+  await page.getByPlaceholder(/you@example/i).fill(address);
+  await page.getByPlaceholder(/your password/i).fill(pw);
+  await page.getByRole("button", { name: /send me a confirmation link/i }).click();
+
+  // an address that has only been typed is not an address anyone has proved
+  await expect(page.getByText(/check your inbox/i)).toBeVisible({ timeout: 15_000 });
+
+  const link = linkIn(await waitForMail(address));
+  await page.goto(link);
+  await expect(page.getByRole("heading", { name: /address confirmed/i })).toBeVisible({
+    timeout: 15_000,
+  });
+  await page.goto("/tournament");
+}
+
 test.describe("hosting a tournament", () => {
-  test("an organizer signs up, is asked for an email, and creates an event", async ({ page }) => {
-    await signUpOrganizer(page, uniq());
+  test("an organizer signs up, confirms an email, and creates an event", async ({ page }) => {
+    const username = uniq();
+    await signUpOrganizer(page, username);
 
     // hosting is the one place an email is required, and it says why
     await expect(page.getByText(/needs an email address/i)).toBeVisible({ timeout: 15_000 });
-    await page.getByPlaceholder(/you@example/i).fill("org@example.com");
-    await page.getByRole("button", { name: /save and continue/i }).click();
+    await confirmOrganizerEmail(page, username);
 
     await expect(page.getByRole("heading", { name: /your tournaments/i })).toBeVisible({
       timeout: 15_000,
@@ -37,9 +60,9 @@ test.describe("hosting a tournament", () => {
   });
 
   test("the console has real sections that survive a reload", async ({ page }) => {
-    await signUpOrganizer(page, uniq());
-    await page.getByPlaceholder(/you@example/i).fill("org@example.com");
-    await page.getByRole("button", { name: /save and continue/i }).click();
+    const username = uniq();
+    await signUpOrganizer(page, username);
+    await confirmOrganizerEmail(page, username);
     await page.getByRole("button", { name: /new tournament/i }).click();
     await page.getByPlaceholder(/friday night/i).fill("Sections");
     await page.getByRole("button", { name: /^create tournament$/i }).click();
@@ -55,9 +78,9 @@ test.describe("hosting a tournament", () => {
   });
 
   test("a roster is added and the round plan appears with its provenance", async ({ page }) => {
-    await signUpOrganizer(page, uniq());
-    await page.getByPlaceholder(/you@example/i).fill("org@example.com");
-    await page.getByRole("button", { name: /save and continue/i }).click();
+    const username = uniq();
+    await signUpOrganizer(page, username);
+    await confirmOrganizerEmail(page, username);
     await page.getByRole("button", { name: /new tournament/i }).click();
     await page.getByPlaceholder(/friday night/i).fill("Planned");
     await page.getByRole("button", { name: /^create tournament$/i }).click();
@@ -85,9 +108,9 @@ test.describe("hosting a tournament", () => {
     page,
     browser,
   }) => {
-    await signUpOrganizer(page, uniq());
-    await page.getByPlaceholder(/you@example/i).fill("org@example.com");
-    await page.getByRole("button", { name: /save and continue/i }).click();
+    const username = uniq();
+    await signUpOrganizer(page, username);
+    await confirmOrganizerEmail(page, username);
     await page.getByRole("button", { name: /new tournament/i }).click();
     await page.getByPlaceholder(/friday night/i).fill("Live");
     await page.getByRole("button", { name: /^create tournament$/i }).click();

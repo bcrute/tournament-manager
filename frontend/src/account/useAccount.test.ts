@@ -5,7 +5,10 @@ import { publishAccount, resetAccountCache, useAccount } from "./useAccount";
 const ADA = {
   username: "ada",
   displayName: "Grumpy Platypus 42",
+  // no address, none pending — and the deployment could send one if there were
   hasEmail: false,
+  emailPending: false,
+  mailConfigured: true,
   createdAt: 1,
 };
 

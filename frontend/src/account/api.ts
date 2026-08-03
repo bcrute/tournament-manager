@@ -1,8 +1,14 @@
 /**
  * Accounts. Optional for playing — everything here degrades to anonymous play —
- * but required for hosting a tournament, which additionally needs a recovery
- * email. See `tournament/Host.tsx`.
+ * but required for hosting a tournament, which additionally needs a *confirmed*
+ * recovery email. See `tournament/Host.tsx`.
+ *
+ * Confirmed is the word that carries weight. `hasEmail` used to flip true the
+ * moment an address was stored; it now means the owner clicked a link sent to
+ * it, and `emailPending` is the state in between.
  */
+
+import { apiMessage } from "../retryAfter";
 
 export interface Account {
   /** Typed to sign in: unique, and changing it costs a password. */
@@ -10,8 +16,23 @@ export interface Account {
   /** Pre-filled when this account sits down at a table. Null means the device
    *  decides, which is how every account behaved before this existed. */
   displayName: string | null;
+  /** A recovery address that has been **confirmed**. Nothing else counts. */
   hasEmail: boolean;
+  /** An address is on file and waiting for its link to be clicked. */
+  emailPending: boolean;
+  /** Whether this deployment can send mail at all. False means the recovery
+   *  codes are the only path, and the UI should say that rather than offering
+   *  a form that will 503. */
+  mailConfigured: boolean;
   createdAt: number;
+}
+
+/** What every email route answers with: the account, plus whether a message
+ *  went out. The address itself is never returned by anything — see
+ *  `TestRecoveryEmailIsWriteOnly`. */
+export interface EmailResult extends Account {
+  ok: boolean;
+  sent?: boolean;
 }
 
 /** Totals across the whole history, not the page `/history` returns. */
@@ -73,17 +94,22 @@ export async function account<T>(
       .json()
       .then((d: { detail?: string }) => d.detail)
       .catch(() => undefined);
-    throw new AccountError(r.status, detail ?? r.statusText);
+    throw new AccountError(
+      r.status,
+      apiMessage(r.status, detail ?? r.statusText, r.headers.get("Retry-After")),
+    );
   }
   return r.json() as Promise<T>;
 }
 
 export const getAccount = () => account<{ account: Account | null }>("/me");
 
-export const signup = (username: string, password: string, email?: string) =>
+/** Username and password only. A recovery email is enrolled and confirmed
+ *  separately, from account settings — see the server's SignupBody. */
+export const signup = (username: string, password: string) =>
   account<{ account: Account; recoveryCodes: string[] }>("/signup", {
     method: "POST",
-    body: { username, password, email: email ?? null },
+    body: { username, password },
   });
 
 export const login = (username: string, password: string) =>
@@ -113,8 +139,45 @@ export const setDisplayName = (displayName: string) =>
     body: { displayName },
   });
 
-export const setEmail = (email: string) =>
-  account<{ ok: boolean; hasEmail: boolean }>("/email", { method: "POST", body: { email } });
+/**
+ * Add or replace the recovery address. The password is required: this is the
+ * setting that can hand the account to whoever holds the address, so pointing
+ * it somewhere else is a takeover step rather than a preference.
+ *
+ * Nothing is confirmed by this call — it sends a link and returns with
+ * `emailPending` true.
+ */
+export const setEmail = (email: string, password: string) =>
+  account<EmailResult>("/email", { method: "POST", body: { email, password } });
+
+/** Remove it. Also the password, and for the same reason. */
+export const removeEmail = (password: string) =>
+  account<EmailResult>("/email", { method: "POST", body: { email: null, password } });
+
+/** Send the confirmation again. No password — it can only reach an address the
+ *  owner already chose, and choosing it cost one. */
+export const resendVerification = () =>
+  account<EmailResult>("/email/resend", { method: "POST" });
+
+/** Confirm an address from the link. No session: the link is opened from an
+ *  inbox, routinely on a different device from the one that asked. */
+export const verifyEmail = (token: string) =>
+  account<EmailResult>("/email/verify", { method: "POST", body: { token } });
+
+/**
+ * Start a password reset. Always succeeds and always says the same thing —
+ * whether the account exists, whether it has an address, and whether that
+ * address is confirmed are all things this must not reveal.
+ */
+export const forgotPassword = (username: string) =>
+  account<{ ok: boolean; message: string }>("/forgot", {
+    method: "POST",
+    body: { username },
+  });
+
+/** Finish it. Ends every session and signs this one in. */
+export const resetPassword = (token: string, password: string) =>
+  account<{ account: Account }>("/reset", { method: "POST", body: { token, password } });
 
 /** Every other device is signed out, which is the server's behaviour, not a
  *  courtesy — a password change that leaves old sessions alive is not one. */

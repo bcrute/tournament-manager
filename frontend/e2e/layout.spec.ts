@@ -30,13 +30,13 @@ async function soloRoom(page: Page) {
 /** A real four-player game, for the things that are about a table. */
 async function seatedRoom(page: Page, browser: import("@playwright/test").Browser) {
   await soloRoom(page);
-  const code = (await page.locator(".bar-code").first().textContent())!.trim();
+  const code = page.url().split("/table/r/")[1];
   for (const name of ["Bram", "Cleo", "Dev"]) {
     const ctx = await browser.newContext();
     const p = await ctx.newPage();
     await p.goto("/table");
     await p.evaluate((x) => localStorage.setItem("table.name", x), name);
-    await p.goto(`/table?join=${code}`);
+    await p.goto(`/table#r/${code}`);
     await expect(p).toHaveURL(/\/table\/r\/.+/, { timeout: 15_000 });
     await p.close();
     await ctx.close();

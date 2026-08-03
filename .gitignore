@@ -15,3 +15,7 @@ frontend/playwright-report/
 
 # stray db from running the app inside backend/
 backend/treachery.db
+
+# SQLite sidecars from a local run — transient, never the database itself
+*.db-shm
+*.db-wal

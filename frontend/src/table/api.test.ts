@@ -1,11 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, ApiError } from "./api";
 
-function mockFetch(status: number, body: unknown, jsonThrows = false) {
+function mockFetch(
+  status: number,
+  body: unknown,
+  jsonThrows = false,
+  headers: Record<string, string> = {},
+) {
   const fn = vi.fn().mockResolvedValue({
     ok: status >= 200 && status < 300,
     status,
     statusText: `HTTP ${status}`,
+    // a real Response always has these; the client reads Retry-After off a 429
+    headers: new Headers(headers),
     json: jsonThrows ? () => Promise.reject(new Error("not json")) : () => Promise.resolve(body),
   });
   vi.stubGlobal("fetch", fn);
@@ -47,5 +54,23 @@ describe("api client", () => {
     const err = (await api("/x").catch((e: unknown) => e)) as ApiError;
     expect(err).toBeInstanceOf(ApiError);
     expect(err.message).toBe("HTTP 500");
+  });
+});
+
+describe("being rate limited", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("tells the player how long to wait, from Retry-After", async () => {
+    mockFetch(429, { detail: "too many requests — slow down" }, false, { "Retry-After": "45" });
+    const err = (await api("/rooms/join", { method: "POST" }).catch((e: unknown) => e)) as ApiError;
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(429);
+    expect(err.message).toBe("Too many requests from this network. Try again in 45 seconds.");
+  });
+
+  it("still says something useful when the header is absent", async () => {
+    mockFetch(429, { detail: "too many requests — slow down" });
+    const err = (await api("/rooms/join", { method: "POST" }).catch((e: unknown) => e)) as ApiError;
+    expect(err.message).toBe("Too many requests from this network. Try again shortly.");
   });
 });

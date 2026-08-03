@@ -15,25 +15,25 @@ async function holdSide(page: Page, selector: string, ms: number) {
   await page.mouse.up();
 }
 
-/** Start a game and return its room code. */
+/** Start a game and return the id an invitation carries. */
 async function createRoom(page: Page, name: string) {
   await page.goto("/table");
   await page.getByRole("button", { name: /^create$/i }).click();
   await page.getByPlaceholder(/your name/i).fill(name);
   await page.getByRole("button", { name: /create room/i }).click();
   await expect(page).toHaveURL(/\/table\/r\/.+/);
-  // the address bar carries an opaque id now, not the joinable code — read the
-  // code from the page instead
-  const code = (await page.locator(".bar-code").first().textContent())!.trim();
-  return code;
+  // The address is the invitation now: the five-character code in the bar is a
+  // label the table can say out loud, and opens nothing.
+  return page.url().split("/table/r/")[1];
 }
 
 test.describe("a game at the table", () => {
   test("a player creates a room and lands in it", async ({ page }) => {
-    const code = await createRoom(page, "ada");
-    expect(code).toMatch(/^[A-Z0-9]{5}$/);
-    // the code shows in the bar and again in the lobby heading; either proves it
-    await expect(page.getByText(code).first()).toBeVisible();
+    const roomId = await createRoom(page, "ada");
+    // 128 bits in base64url, not five characters someone could walk
+    expect(roomId).toMatch(/^[A-Za-z0-9_-]{16,}$/);
+    // the five-character code is still shown, as a label to say out loud
+    await expect(page.locator(".bar-code")).toBeVisible();
   });
 
   test("the menu offers the options a player actually has", async ({ page, isMobile }) => {
@@ -65,7 +65,7 @@ test.describe("a game at the table", () => {
 
     const second = await browser.newContext();
     const p2 = await second.newPage();
-    await p2.goto(`/table?join=${code}`);
+    await p2.goto(`/table#r/${code}`);
     await expect(p2).toHaveURL(/\/table\/r\/.+/, { timeout: 15_000 });
 
     // the first player sees them arrive, without reloading
@@ -95,20 +95,74 @@ test.describe("a game at the table", () => {
 });
 
 test.describe("room addresses", () => {
-  test("the address bar never carries the joinable code", async ({ page }) => {
+  test("the address is the invitation, and the code is only a label", async ({ page }) => {
     await page.goto("/table");
     await page.getByRole("button", { name: /^create$/i }).click();
     await page.getByPlaceholder(/your name/i).fill("ada");
     await page.getByRole("button", { name: /create room/i }).click();
     await expect(page).toHaveURL(/\/table\/r\/.+/);
 
+    const roomId = page.url().split("/table/r/")[1];
     const code = (await page.locator(".bar-code").first().textContent())!.trim();
-    const urlId = page.url().split("/table/r/")[1];
+
+    // This asserted the opposite until the boundary moved: the address used to
+    // be deliberately un-joinable and the five-character code was the
+    // credential. A code that short is walkable, which is why it needed a
+    // strike-and-ban mitigation to stand up. The address carries 128 bits now
+    // and is the invitation; the code is a label the table says out loud.
+    expect(roomId).toMatch(/^[A-Za-z0-9_-]{16,}$/);
+    expect(roomId).not.toBe(code);
     expect(code).toMatch(/^[A-Z0-9]{5}$/);
-    // a screenshot of the address bar, or a link in someone's history, must not
-    // hand over something that joins the game
-    expect(urlId).not.toBe(code);
-    expect(urlId.length).toBeGreaterThan(15);
+
+    // and the code opens nothing
+    const ctx = await page.context().browser()!.newContext();
+    const stranger = await ctx.newPage();
+    await stranger.goto(`/table#r/${code}`);
+    await expect(stranger).not.toHaveURL(/\/table\/r\/.+/, { timeout: 5_000 });
+    await ctx.close();
+  });
+
+  test("someone who was sent the link can paste the whole thing", async ({ browser, page }) => {
+    // The realistic path for a player who isn't in the room to scan a QR: the
+    // host sends them a link over chat, and they paste it. Nobody retypes 22
+    // characters of base64, and the old field would have wrecked it anyway —
+    // it upper-cased its input and capped it at five.
+    const roomId = await createRoom(page, "ada");
+    const link = `${new URL(page.url()).origin}/table#r/${roomId}`;
+
+    const ctx = await browser.newContext();
+    const guest = await ctx.newPage();
+    await guest.goto("/table");
+    await guest.getByRole("button", { name: /^join$/i }).click();
+    await guest.getByPlaceholder(/paste the room id or link/i).fill(link);
+    await guest.getByPlaceholder(/your name/i).fill("bram");
+    await guest.getByRole("button", { name: /join room/i }).click();
+
+    await expect(guest).toHaveURL(/\/table\/r\/.+/, { timeout: 15_000 });
+    await expect(page.getByText(/bram/i).first()).toBeVisible({ timeout: 15_000 });
+    await ctx.close();
+  });
+
+  test("the bare id works too, and case is not thrown away", async ({ browser, page }) => {
+    // Regression shape: the field used to upper-case, which is harmless to a
+    // 31-letter code and fatal to base64url. Pick a room id that actually has
+    // a lowercase letter in it before asserting anything about case.
+    const roomId = await createRoom(page, "ada");
+    test.skip(roomId === roomId.toUpperCase(), "this room's id happens to have no lowercase");
+
+    const ctx = await browser.newContext();
+    const guest = await ctx.newPage();
+    await guest.goto("/table");
+    await guest.getByRole("button", { name: /^join$/i }).click();
+    const field = guest.getByPlaceholder(/paste the room id or link/i);
+    await field.fill(roomId);
+    // what the field holds is what was typed — no transformation on the way in
+    await expect(field).toHaveValue(roomId);
+    await guest.getByPlaceholder(/your name/i).fill("cleo");
+    await guest.getByRole("button", { name: /join room/i }).click();
+
+    await expect(guest).toHaveURL(/\/table\/r\/.+/, { timeout: 15_000 });
+    await ctx.close();
   });
 });
 
@@ -119,14 +173,14 @@ test.describe("the commander damage grid", () => {
     await page.getByPlaceholder(/your name/i).fill("Ada");
     await page.getByRole("button", { name: /create room/i }).click();
     await page.waitForURL(/\/table\/r\/.+/);
-    const code = (await page.locator(".bar-code").first().textContent())!.trim();
+    const code = page.url().split("/table/r/")[1];
 
     for (const n of ["Bram", "Cleo", "Dev"]) {
       const ctx = await browser.newContext();
       const p = await ctx.newPage();
       await p.goto("/table");
       await p.evaluate((x) => localStorage.setItem("table.name", x), n);
-      await p.goto(`/table?join=${code}`);
+      await p.goto(`/table#r/${code}`);
       await expect(p).toHaveURL(/\/table\/r\/.+/, { timeout: 15_000 });
       await p.close();
       await ctx.close();
@@ -167,7 +221,6 @@ test.describe("dying happens to you", () => {
     isMobile,
   }) => {
     const code = await createRoom(page, "ada");
-    expect(code).toMatch(/^[A-Z0-9]{5}$/);
     await page.getByRole("button", { name: /^start/i }).first().click();
     await expect(page.getByRole("button", { name: /i lost some other way/i })).toBeVisible({
       timeout: 15_000,
@@ -234,7 +287,7 @@ async function fourPlayerTable(page: Page, browser: import("@playwright/test").B
   await page.getByPlaceholder(/your name/i).fill("Ada");
   await page.getByRole("button", { name: /create room/i }).click();
   await page.waitForURL(/\/table\/r\/.+/);
-  const code = (await page.locator(".bar-code").first().textContent())!.trim();
+  const code = page.url().split("/table/r/")[1];
 
   const contexts = [];
   const others: Record<string, Page> = {};
@@ -243,7 +296,7 @@ async function fourPlayerTable(page: Page, browser: import("@playwright/test").B
     const p = await ctx.newPage();
     await p.goto("/table");
     await p.evaluate((x) => localStorage.setItem("table.name", x), name);
-    await p.goto(`/table?join=${code}`);
+    await p.goto(`/table#r/${code}`);
     await expect(p).toHaveURL(/\/table\/r\/.+/, { timeout: 15_000 });
     contexts.push(ctx);
     others[name] = p;

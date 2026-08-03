@@ -2,8 +2,18 @@ import { getItem, removeItem, setItem, storageAvailable } from "../storage";
 const KEY = "table.session";
 
 export interface Session {
-  /** Opaque id used in the address bar, so links never carry a joinable code. */
+  /**
+   * The room's 128-bit identifier: what appears in the address bar, and the
+   * only thing that opens the room for someone who has no token yet. Treat it
+   * as a credential — it goes in request bodies and link fragments, never a
+   * path.
+   */
   urlId?: string;
+  /**
+   * The five-character code, kept because every route we call *with* a token
+   * still keys on it, and because it is what a host reads aloud. On its own it
+   * opens nothing.
+   */
   code: string;
   token: string;
 }

@@ -11,6 +11,7 @@ from .accounts import router as accounts_router
 from .admin import router as admin_router
 from .db import q
 from .limits import RateLimiter, classify, client_id, client_ip
+from .cards import router as cards_router
 from .table import router as table_router
 from .tournaments import router as tournaments_router
 
@@ -37,6 +38,7 @@ app = FastAPI(
 limiter = RateLimiter(db=q) if os.environ.get("TABLE_RATELIMIT", "on") != "off" else None
 app.state.limiter = limiter  # websocket handler reads it from here
 
+app.include_router(cards_router, prefix="/api/cards")
 app.include_router(table_router, prefix="/api/table")
 app.include_router(accounts_router, prefix="/api/account")
 app.include_router(tournaments_router, prefix="/api/tournament")

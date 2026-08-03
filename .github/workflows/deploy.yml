@@ -27,8 +27,17 @@ jobs:
       # Supply-chain scanning lives in security.yml: weekly, on demand, and
       # whenever a dependency file changes. It was re-verifying unchanged
       # lockfiles on every push and dominating time-to-deploy.
-      - name: Build image (runs pytest + coverage gate + vitest + coverage gate)
-        run: docker build -t mtg:latest .
+      # Runtime target only: no test stage is built here. The image build was
+      # 2m26s of a 2m43s deploy, almost all of it pytest, to re-run a suite
+      # that had already been run locally by `scripts/ci`. Deploys are the
+      # thing that happens most often and the thing least in need of a second
+      # opinion.
+      #
+      # Nothing else gates a push to main, so this is on the person pushing:
+      # run `scripts/ci` first. `full.yml` runs everything including Playwright
+      # when you ask it to.
+      - name: Build image
+        run: docker build --target runtime -t mtg:latest .
 
       - name: Set up SSH key
         run: |

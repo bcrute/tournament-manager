@@ -1,0 +1,106 @@
+name: full suite
+
+# Everything, on request. Nothing here runs on a push.
+#
+# The split, as of 2026-08-02:
+#
+#   deploy.yml   builds `--target runtime` and ships it. No tests. It is the
+#                thing that happens most often, so it is the thing kept cheap.
+#   ci.yml       builds `--target test` on pull requests. Seconds-to-minutes.
+#   full.yml     this — the suites *and* Playwright, which is the expensive part
+#                and the part no other workflow has ever run.
+#
+# Run it from the Actions tab, or `gh workflow run "full suite"`. Use it before
+# a release, after a dependency bump, or when you want the browser suite run
+# somewhere other than your own machine. Day to day, `scripts/ci --all` gives
+# the same answer locally for nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: "Which browser project to run"
+        type: choice
+        default: all
+        options: [all, mobile, desktop]
+      ref:
+        description: "Branch, tag or SHA (defaults to the branch you dispatch from)"
+        type: string
+        default: ""
+
+# One at a time, and a newer request supersedes a queued one — unlike a deploy,
+# where a half-finished run has consequences. Here it is only a report.
+concurrency:
+  group: full-suite-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suites:
+    name: unit suites (pytest, vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        # pinned to the v4.2.2 commit SHA (mutable tags are a supply-chain risk)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Run the suites (vitest + coverage, pytest + coverage gate)
+        run: docker build --target test .
+
+  browser:
+    name: browser suite (playwright)
+    runs-on: ubuntu-latest
+    # Independent of `suites` on purpose: when both are red you want to see
+    # both, and a browser failure is usually a different bug from a unit one.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      # No setup-node or setup-python action: ubuntu-latest ships both, and
+      # this repo pins every action to a SHA, so not adding two is two fewer
+      # things to keep pinned. Same reasoning as security.yml's docker images.
+      - name: Install frontend dependencies
+        run: cd frontend && npm ci
+
+      - name: Build the bundle
+        # Playwright serves frontend/dist through the real app, so this is not
+        # optional — a stale or missing bundle means testing nothing.
+        run: cd frontend && npm run build
+
+      - name: Install backend dependencies
+        # A venv rather than --user, because playwright.config.ts's webServer
+        # invokes `python`, and the venv is what puts that name on PATH.
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet -r backend/requirements.txt -r backend/requirements-dev.txt
+
+      - name: Install Chromium
+        run: cd frontend && npx playwright install --with-deps chromium
+
+      - name: Run the browser suite
+        run: |
+          cd frontend
+          export PATH="$GITHUB_WORKSPACE/.venv/bin:$PATH"
+          if [ "${{ inputs.project }}" = "all" ]; then
+            npx playwright test
+          else
+            npx playwright test --project="${{ inputs.project }}"
+          fi
+
+      - name: Upload traces and screenshots
+        # Only when something failed — that is when a trace is worth the
+        # storage, and it is the only way to debug a browser failure you did
+        # not watch happen.
+        if: failure()
+        # pinned to the v4.6.2 commit SHA
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: playwright-report
+          # The reporter is `list`/`line`, so there is no HTML report to
+          # collect — what exists is the trace and screenshot the config keeps
+          # on failure (playwright.config.ts: retain-on-failure).
+          path: frontend/test-results/
+          retention-days: 7

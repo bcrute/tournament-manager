@@ -347,7 +347,7 @@ this is a genuine fairness knob rather than cosmetics.
 
 | Setting | Options | Default |
 |---|---|---|
-| `organizerAuth` — **not built, and the choice was removed**: hosting always requires an account with a recovery email | `secret` (device-held) · `account` (recoverable, multi-device) | — |
+| `organizerAuth` — **not built, and the choice was removed**: hosting always requires an account with a confirmed recovery email | `secret` (device-held) · `account` (recoverable, multi-device) | — |
 | `collectWizardsEmail` | `off` · `optional` · `required` | `off` |
 | `spectatorView` — **not built**; the roster is public to anyone holding the code | `public` · `code_only` · `off` | `code_only` |
 | `staffRoles` — **not built**; every staff action requires the owning organizer's session | `off` · `judges` (result entry, timer, official calls; no re-pairing or deletion) | `judges` |

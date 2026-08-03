@@ -20,6 +20,7 @@ from app.accounts import router as accounts_router
 from app.db import q
 from app.table import router as table_router
 from app.tournaments import csv_text, new_public_id, router as tournaments_router
+from conftest import verified_email
 
 
 @pytest.fixture(scope="module")
@@ -36,11 +37,12 @@ def client():
 def event(client):
     """An organizer with one entrant, whose public id we then control."""
     client.cookies.clear()
+    username = f"csv{new_public_id()}"
     client.post(
         "/api/account/signup",
-        json={"username": f"csv{new_public_id()}", "password": "correct horse battery"},
+        json={"username": username, "password": "correct horse battery"},
     )
-    client.post("/api/account/email", json={"email": "csv@example.com"})
+    verified_email(username, "csv@example.com")
     code = client.post("/api/tournament", json={"name": "CSV Night"}).json()["code"]
     client.post(f"/api/tournament/{code}/entrants", json={"names": ["Ada Lovelace"]})
     return code

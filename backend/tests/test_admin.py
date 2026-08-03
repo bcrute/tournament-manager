@@ -16,6 +16,7 @@ from app.admin import router as admin_router
 from app.db import q
 from app.table import router as table_router
 from app.tournaments import router as tournaments_router
+from conftest import verified_email
 
 ADMIN = "rootadmin"
 NOT_ADMIN = "ordinaryplayer"
@@ -170,7 +171,7 @@ class TestActions:
         client.cookies.clear()
         client.post("/api/account/signup",
                     json={"username": "orgforadmin", "password": "a good long password"})
-        client.post("/api/account/email", json={"email": "o@example.com"})
+        verified_email("orgforadmin", "o@example.com")
         code = client.post("/api/tournament",
                            json={"name": "abandoned", "settings": {}}).json()["code"]
         client.post(f"/api/tournament/{code}/entrants",

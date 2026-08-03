@@ -458,7 +458,7 @@ function PodCard({
         ))}
       </ol>
       <footer>
-        {pod.roomCode && <span className="hint">room {pod.roomCode}</span>}
+        {pod.roomCode && <span className="hint">table {pod.roomCode}</span>}
         {editing ? (
           <>
             <button className="primary" disabled={busy} onClick={submitPlacement}>

@@ -1,8 +1,7 @@
 import { useState } from "react";
 import Icon from "../Icon";
-import { Account, AccountError, getAccount, login, signup } from "./api";
+import { Account, AccountError, forgotPassword, getAccount, login, signup } from "./api";
 import { looksLikeEmail, suggestUsername } from "../username";
-import { getItem } from "../storage";
 
 /**
  * Sign-in, used in two places that mean different things.
@@ -11,8 +10,12 @@ import { getItem } from "../storage";
  * but "accounts are optional" flat is wrong, because hosting a tournament
  * requires one. The player copy says *playing* never needs an account and
  * names the exception; the organizer copy drops the optional framing entirely,
- * since they are one step from being required to have both an account and a
- * recovery email.
+ * since they are one step from being required to have one.
+ *
+ * Creating an account is a username and a password. A recovery email is not
+ * collected here: it is account state a reset would be sent to, and taking it
+ * at the one moment nobody can prove they own it had an unverified string
+ * doing a credential's job. It is enrolled and confirmed from account settings.
  */
 export default function SignIn({
   onDone,
@@ -28,26 +31,29 @@ export default function SignIn({
 }) {
   const optional = purpose === "optional";
   const [mode, setMode] = useState<"login" | "signup">("login");
-  const [username, setUsername] = useState(getItem("table.name") ?? "");
+  // Blank, always. This used to seed itself from the name you last used at a
+  // table, which quietly proposed a *table* name as an *account* name — two
+  // separate things, and the table one is a spaced, capitalised label like
+  // "Grumpy Platypus 42" that isn't even a legal username. Password managers
+  // fill this through `autocomplete`; the app itself proposes nothing.
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [codes, setCodes] = useState<string[] | null>(null);
   const [emailWarning, setEmailWarning] = useState(false);
+  const [forgot, setForgot] = useState(false);
+  const [forgotSaid, setForgotSaid] = useState<string | null>(null);
   // generated lazily so the same suggestion persists while the notice is up,
   // rather than shuffling under the user's finger on every keystroke
   const [suggestion, setSuggestion] = useState<string | null>(null);
-  const [email, setEmail] = useState("");
-  // only offer to reuse what they typed once; after they touch the field it is
-  // theirs, and re-filling it would fight them
-  const [emailTouched, setEmailTouched] = useState(false);
 
   async function go() {
     setBusy(true);
     setError(null);
     try {
       if (mode === "signup") {
-        const res = await signup(username.trim(), password, email.trim() || undefined);
+        const res = await signup(username.trim(), password);
         setCodes(res.recoveryCodes); // shown once, then never again
         return;
       }
@@ -60,6 +66,74 @@ export default function SignIn({
     }
   }
 
+  async function askForReset() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await forgotPassword(username.trim());
+      // Whatever the server says, it says the same thing every time: whether
+      // the account exists, whether it has an address, and whether that
+      // address is confirmed are all things this screen must not reveal. So
+      // the copy comes from the server rather than being assembled here out of
+      // things this client might think it knows.
+      setForgotSaid(r.message);
+    } catch (e) {
+      setError(e instanceof AccountError ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (forgot) {
+    return (
+      <div className="sheet">
+        <button
+          className="sheet-back"
+          onClick={() => {
+            setForgot(false);
+            setForgotSaid(null);
+          }}
+          aria-label="Back to sign in"
+        >
+          <Icon name="back" /> Back to sign in
+        </button>
+        <h2>Forgotten password</h2>
+        {forgotSaid ? (
+          <>
+            <p className="notice">{forgotSaid}</p>
+            <p className="hint">
+              No email? Your recovery codes still work — sign in with one from the
+              account recovery screen.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="hint">
+              If your account has a confirmed recovery address, we'll send a link to
+              it. Otherwise your recovery codes are the way back in.
+            </p>
+            <input
+              type="text"
+              placeholder="Username"
+              autoCapitalize="none"
+              autoComplete="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+            {error && <p className="error">{error}</p>}
+            <button
+              className="primary"
+              disabled={busy || !username.trim()}
+              onClick={() => void askForReset()}
+            >
+              {busy ? "…" : "Send a reset link"}
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
+
   if (codes) {
     return (
       <div className="sheet">
@@ -68,8 +142,7 @@ export default function SignIn({
         <h2>Save your recovery codes</h2>
         <p className="hint">
           <strong>These are the only way back into your account.</strong> Each code works
-          once. Screenshot them or write them down now — they are never shown again, and
-          an email on file does not replace them.
+          once. Screenshot them or write them down now — they are never shown again.
         </p>
         <ul className="codes">
           {codes.map((c) => (
@@ -102,11 +175,8 @@ export default function SignIn({
       <h2>{mode === "login" ? "Sign in" : "Create an account"}</h2>
       {optional && (
         <p className="notice">
-          <strong>Playing never needs an account.</strong> One only keeps your game
-          history and private notes, and signing up is a username and a password —
-          an email is optional, used for nothing but account recovery.{" "}
-          <em>Hosting</em> a tournament is the one exception: organizers need a way
-          back into their event.
+          <strong>Playing never needs an account.</strong> An account keeps your game
+          history and private notes. Tournament organizers need one.
         </p>
       )}
       <div className="tr-mode">
@@ -128,20 +198,25 @@ export default function SignIn({
           const looksEmail = looksLikeEmail(e.target.value);
           setEmailWarning(looksEmail);
           if (looksEmail && !suggestion) setSuggestion(suggestUsername());
-          // hand what they typed to the field it actually belongs in
-          if (looksEmail && !emailTouched) setEmail(e.target.value.trim());
         }}
       />
-      {emailWarning && (
+      {/* Only while creating an account. On the sign-in tab the username is
+          whatever they already chose, and second-guessing it there is noise in
+          front of someone who just wants to get back in. */}
+      {emailWarning && mode === "signup" && (
         <div className="notice warn">
+          {/* No mention of a recovery address. There used to be an optional
+              email field on this form, and this notice used to point at it —
+              "we've copied your address there for you". Both are gone: the
+              field, and the idea that a username is a stand-in for one. What
+              is left is the one fact that is true on its own. */}
           <p>
-            <strong>Using your email as a username works, but we&rsquo;d suggest not
-            to.</strong> A username is looked up every time you sign in, so it can&rsquo;t
-            be stored encrypted — the optional email field below can be treated as
-            private in a way a username can&rsquo;t. We&rsquo;ve copied your address there
-            for you. You can absolutely carry on with it as your username if you prefer.
+            Using an email address as your username works, and it&rsquo;s your call.
+            Worth knowing: a username is looked up every time you sign in, so it
+            can&rsquo;t be stored scrambled the way a password is. We&rsquo;d suggest
+            something else.
           </p>
-          {mode === "signup" && suggestion && (
+          {suggestion && (
             <p className="suggest-row">
               <button
                 type="button"
@@ -164,28 +239,6 @@ export default function SignIn({
           )}
         </div>
       )}
-      {mode === "signup" && (
-        <>
-          <input
-            type="email"
-            placeholder="Email (optional)"
-            autoComplete="email"
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value);
-              setEmailTouched(true);
-            }}
-          />
-          <p className="hint">
-            <strong>Email is optional.</strong> It stays private, is never shown to
-            anyone, and is only ever used to help you back into your account.{" "}
-            <strong>
-              Either way, save the recovery codes on the next screen — right now they are
-              the only way back in if you forget your password.
-            </strong>
-          </p>
-        </>
-      )}
       <input
         type="password"
         placeholder="Password"
@@ -197,6 +250,13 @@ export default function SignIn({
       <button className="primary" disabled={busy || !username.trim() || password.length < 8} onClick={() => void go()}>
         {busy ? "…" : mode === "login" ? "Sign in" : "Create account"}
       </button>
+      {/* Only on the sign-in tab: somebody creating an account has no password
+          to have forgotten. */}
+      {mode === "login" && (
+        <button type="button" className="link forgot" onClick={() => setForgot(true)}>
+          Forgotten your password?
+        </button>
+      )}
     </div>
   );
 }

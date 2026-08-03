@@ -15,6 +15,7 @@ import pytest
 from uvicorn.logging import AccessFormatter
 
 from app.access_log import RedactingFilter, install, redact
+from conftest import deployment_file
 
 TOKEN = "s3cret-entrant-token-abc123"
 
@@ -158,16 +159,13 @@ class TestProxyVhost:
 
     @pytest.fixture(scope="class")
     def vhost(self):
-        # backend/tests/… → repo root
-        deploy = Path(__file__).resolve().parents[2] / "deploy"
-        # The image build runs this suite with only `app/`, `tests/` and `data/`
-        # copied in, because the vhost is shipped by the deploy job and not by
-        # the container. No `deploy/` tree at all means we are inside that build
-        # and there is nothing here to check. The assertion below still bites in
-        # a real checkout, where the tree exists and the file must.
-        if not deploy.is_dir():
-            pytest.skip("no deploy/ tree — running against the app image, not the repo")
-        path = deploy / "caddy" / "sites" / "mtg.caddy"
+        # This used to skip when `deploy/` was absent, which is what happened
+        # in every CI build — the tree was outside the image's build context,
+        # so the one place it mattered was the one place it never ran. The
+        # Dockerfile copies it into the test stage now, and this asserts rather
+        # than skips: if it goes missing again, that is a finding, not a
+        # no-op.
+        path = deployment_file("deploy/caddy/sites/mtg.caddy")
         assert path.is_file(), path
         return path.read_text()
 
@@ -180,3 +178,31 @@ class TestProxyVhost:
     def test_still_only_ships_the_mtg_vhost(self, vhost):
         # deploy/README.md: this repo must never write another app's routing
         assert "social" not in vhost.split("mtg.skadoosh.dev {")[1]
+
+
+class TestRoomIdentifiersToo:
+    """A room's `url_id` is a credential now, so it gets the same treatment.
+
+    Mostly it is not in a request target at all — the anonymous routes take it
+    in a POST body, and invitations put it in a fragment the browser never
+    sends. The exception is the legacy `?join=` link, which the client still
+    reads, and which does reach a log line.
+    """
+
+    def test_a_legacy_join_link_does_not_land_in_the_log(self):
+        line = '"GET /table?join=kJ3xR_9pQz-A1BcDeFgHi HTTP/1.1" 200'
+        out = redact(line)
+        assert "kJ3xR_9pQz-A1BcDeFgHi" not in out
+        assert "join=REDACTED" in out
+        assert "/table" in out, "the path is what makes the line worth keeping"
+
+    def test_a_room_id_parameter_by_any_name(self):
+        for name in ("roomId", "room_id", "roomUrlId"):
+            out = redact(f"/api/table/rooms/seats?{name}=kJ3xR_9pQz-A1BcDeFgHi")
+            assert "kJ3xR_9pQz-A1BcDeFgHi" not in out, name
+
+    def test_the_five_character_code_is_still_logged(self):
+        """It is a label, not a credential — redacting it would cost the one
+        thing that makes a room's log lines traceable to a room."""
+        line = '"GET /api/table/rooms/7Q4KP/me HTTP/1.1" 200'
+        assert redact(line) == line

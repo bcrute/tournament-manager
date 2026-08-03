@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { adm, AdminError, ago, closeRoom, endTournament, getOverview, getSecurity, liftBan } from "./api";
 
-function mockFetch(body: unknown = { ok: true }, status = 200) {
+function mockFetch(body: unknown = { ok: true }, status = 200, headers: Record<string, string> = {}) {
   const fn = vi.fn().mockResolvedValue({
     ok: status < 400,
     status,
     statusText: "Mocked",
+    headers: new Headers(headers),
     json: () => Promise.resolve(body),
   });
   vi.stubGlobal("fetch", fn);

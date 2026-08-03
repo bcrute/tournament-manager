@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { t } from "../i18n";
 import Icon from "../Icon";
-import { codeFromScan } from "./qrPayload";
+import { roomIdFromScan } from "./qrPayload";
 
 /**
  * Scan a room's QR code with the device camera.
@@ -78,7 +78,7 @@ export default function QrScanner({
           try {
             const found = await detector.detect(video.current);
             for (const b of found) {
-              const code = codeFromScan(b.rawValue);
+              const code = roomIdFromScan(b.rawValue);
               if (code) {
                 stop();
                 onCode(code);

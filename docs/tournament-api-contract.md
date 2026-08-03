@@ -103,8 +103,11 @@ Only one round is active at a time. Opening a second while one is active is a
 ## 3. Endpoints
 
 ### `POST /api/tournament`
-Create. **Organizer session required, and the account must have an email** —
-without one this returns **409**, not 403. Rationale in §6.
+Create. **Organizer session required, and the account must have a *confirmed*
+email** — without one this returns **409**, not 403. Confirmed is the operative
+word: an unconfirmed address returns the same 409, because an address nobody
+has proved they can read is exactly the one that fails when an organizer is
+locked out. Rationale in §6.
 
 ```jsonc
 // request
@@ -141,10 +144,13 @@ Optional `?token=` (entrant). Organizer recognized by cookie.
   "round": { "number", "status", "kind": "swiss",   // swiss | elimination
              "endsAt", "pausedAt",
              "now": 1784500123 },      // server clock; clients derive an offset
-  "pods": [ { "podId", "table", "name", "status", "roomCode", "extensionSeconds",
+  "pods": [ { "podId", "table", "name", "status", "extensionSeconds",
+              "roomCode",                // organizer only; null for everyone else
+              "roomUrlId",               // null here, always — see below
               "endsAt",                  // round.endsAt + this pod's extension
               "seats": [ {"seat", "entrantId", "name", "place", "points"} ] } ],
-  "myPod": { /* same shape, plus: */ "roomToken": "…", "mySeat": 2 },
+  "myPod": { /* same shape, plus: */ "roomToken": "…", "mySeat": 2,
+             "roomUrlId": "…" },        // the caller's own pod only
   "me": { "entrantId", "name" },       // null when anonymous
   "standings": [ {"entrantId","name","points","opponentPoints",
                   "podsPlayed","claimed","dropped","rank"} ],
@@ -171,6 +177,13 @@ decided on points; who is still in it, and who won it, are in `cut`.
 `cut.champion` is set only once the last bracket round is closed with one
 player left standing.
 
+`roomUrlId` is how a seated entrant's phone actually reaches its table, and it
+is a credential: it is the only identifier that opens a room, so it appears on
+`myPod` and nowhere else. `roomCode` is a five-character label the organizer
+calls out — it opens nothing on its own, which is why publishing it to the
+organizer is safe and publishing `roomUrlId` to the field would not be. Pinned
+by `TestTournamentPodHandoff`.
+
 `pods[].name` is the organizer's label for the table (§3, *seating overrides*)
 and is `null` until one is set. `table` is the number and stays the pod's
 identity either way — clients show the name and keep the number beside it.
@@ -196,10 +209,10 @@ would be protecting anything.
   "isOrganizer": false }
 ```
 
-The pod view is built by the same code as the snapshot's, so the three rules in
-§1 hold here identically: `roomCode` is organizer-only (plus the caller's own
-pod), `roomToken` appears only on `myPod`, and `entrantId` is always the public
-id. `result` is the latest version — an override appends rather than mutates —
+The pod view is built by the same code as the snapshot's, so the rules in §1
+hold here identically: `roomCode` is organizer-only (plus the caller's own pod),
+`roomToken` and `roomUrlId` appear only on `myPod`, and `entrantId` is always
+the public id. `result` is the latest version — an override appends rather than mutates —
 and it is carried because a draw awards every seat place 1, so seat placings
 alone cannot tell a drawn pod from a four-way win. `result` is `null` for a pod
 with no ruling yet. The organizer's `note` is a ruling written for staff and is
@@ -455,8 +468,8 @@ players are still polling would be worse than either. Pinned by
 ### `POST /api/tournament/{code}/rounds`  *(organizer)*
 Pair, seat, and create one room per pod — unless the game's profile has no
 modes, in which case the pods are seated roomless and the organizer reports each
-result by hand (§8). Such a pod's `roomCode` and `roomToken` are `null`
-everywhere they appear, and time called decides it straight away, since there is
+result by hand (§8). Such a pod's `roomCode`, `roomUrlId` and `roomToken` are
+`null` everywhere they appear, and time called decides it straight away, since there is
 no live table state to rank or turns to count.
 
 ```jsonc
@@ -829,7 +842,7 @@ than accepting a socket it will not serve — the same check the room socket doe
 
 ---
 
-## 6. Why hosting requires an email
+## 6. Why hosting requires a confirmed email
 
 Playing needs neither an account nor an email, anywhere in the app. Hosting
 needs both: an organizer locked out mid-event strands every table, and recovery
@@ -838,17 +851,59 @@ true of players and false of organizers, so the UI never says it unqualified.
 It is enforced at create time (**409**), never at signup, so the requirement
 lands on the person choosing to host rather than on everyone.
 
-The address is stored plainly and is never returned by any endpoint —
-`/api/account/me` exposes `hasEmail: bool`, not the value. Nor is it read for
-anything else: the only code that touches the column coerces it to a bool (the
-`hasEmail` flag and the hosting gate). It is collected against the day recovery
-mail exists — today it recovers nothing, because the server sends no mail at
-all and `/recover` authenticates on a one-time code (§10).
+**Confirmed, since 2026-08-02.** The gate reads `accounts.email_verified_at`,
+not `accounts.email`. It used to read the latter, which meant the requirement
+was satisfied by typing a string into a box — and a typo is precisely the case
+that produces the locked-out organizer this section exists to prevent. Every
+address already on file was migrated to unverified rather than grandfathered.
+
+Between typing an address and confirming it, `hasEmail` is false and
+`emailPending` is true; hosting stays shut and the UI says which state it is
+in. On a deployment with no mail transport configured, no address can ever be
+confirmed, `POST /api/account/email` returns **503**, and hosting is
+unavailable — deliberately, rather than falling back to accepting a string.
+
+**Account creation takes a username and a password, and nothing else.** An
+address used to be an optional signup field; it is account state a password
+reset would be sent to, and collecting it at the one moment nobody can prove
+they own it had an unverified string doing a credential's job. `SignupBody` has
+no `email` field, so a stale client still sending one is ignored rather than
+quietly storing it (`test_a_stale_client_sending_one_does_not_store_it`). An
+address is enrolled from account settings instead.
+
+The address is stored plainly and is **never returned by any endpoint** —
+`/api/account/me` exposes `hasEmail` and `emailPending`, both booleans, and
+never the value. That boundary predates the recovery flow and survived it: an
+address is a takeover target in its own right, and a stolen session cookie
+should not yield one. The screen that wants to name the inbox echoes what the
+client itself just submitted.
+
+It is read now, which is new. Two messages go to it — a confirmation link and a
+password reset — and nothing else, ever. `/recover` still authenticates on a
+one-time code (§10) and still needs no address at all, which is what makes it
+the floor rather than a fallback.
+
+### 6c. The account email endpoints
+
+| Route | Session | Password | Notes |
+| --- | --- | --- | --- |
+| `POST /api/account/email` | required | **required** | `{email, password}` enrols or replaces; `{email: null, password}` removes. Never confirms anything — it sends a link and answers with `emailPending: true`. **503** if the deployment cannot send mail. Removing also kills any live reset link, since removal is what someone does when an address is compromised. |
+| `POST /api/account/email/resend` | required | no | Sends the confirmation again and retires the previous link. No password: it can only reach an address the owner already chose, and choosing it cost one. |
+| `POST /api/account/email/verify` | **no** | no | `{token}`. The link is opened from an inbox, routinely on another device; the token is the authorization. Single-use, 24-hour expiry, and refused if the account's address changed since it was minted. |
+| `POST /api/account/forgot` | no | no | `{username}`. Always **200**, always the same body, whatever is true about the account. |
+| `POST /api/account/reset` | no | no | `{token, password}`. Single-use, one-hour expiry. Ends every session and signs the caller in. |
+
+Tokens are `secrets.token_urlsafe(32)`, stored only as a SHA-256 hash, in two
+separate tables — a confirmation token cannot be redeemed as a reset, by
+construction rather than by a `WHERE` clause. Both travel in link **fragments**
+(`…/account/reset#<token>`), which browsers never transmit, so an emailed
+credential cannot reach an access log.
 
 Usernames, by contrast, cannot be encrypted: they're looked up on every sign-in,
 and searchable encryption means deterministic encryption or a blind index, both
-of which leak equality. That's why signup discourages email-as-username — a
-warning, not a block.
+of which leak equality. That's why account creation discourages
+email-as-username — a warning, not a block, and shown only while creating an
+account rather than while signing back into one.
 
 ### 6b. The two names on an account
 
@@ -1116,11 +1171,14 @@ Two details the table does not show:
   table name (§3 *seating overrides*) — but the organizer screen offers none of
   it, so today it is reachable only by a client that calls the endpoints
   directly. Re-roll is in the same position: in the API, no UI control.
-- **The recovery email recovers nothing yet.** Hosting is gated on a stored
-  address (§6), but there is no mail-sending code in the server: the only
-  working recovery path is a one-time code. An organizer who loses both their
-  password and their codes is not rescued by the address we made them give.
-  Either wire up mail or stop calling it a recovery email.
+- **Resolved 2026-08-02: the recovery email recovers something.** This entry
+  read "recovers nothing yet" — hosting was gated on a stored address with no
+  mail-sending code behind it, so an organizer who lost their password and
+  their codes was not rescued by the address we made them give. Confirmation
+  and password reset both exist now, and hosting is gated on
+  `email_verified_at` rather than on the string. The remaining condition is a
+  deployment one: with no SMTP configured the server sends nothing, says so,
+  and hosting is unavailable.
 - **Rename and export have no UI control yet.** Both endpoints are complete and
   tested (§3); the organizer screen has no rename field and no download button,
   so today they are reachable only by an API client.

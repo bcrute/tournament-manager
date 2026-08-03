@@ -1,0 +1,112 @@
+{
+  "names": [
+    "Doubling Season",
+    "Rhystic Study",
+    "Lightning Bolt",
+    "Lightning Helix",
+    "Deflecting Swat",
+    "Jace, the Mind Sculptor",
+    "Sword of Feast and Famine",
+    "Gaea's Cradle",
+    "Lim-Dûl the Necromancer",
+    "Aetherflux Reservoir",
+    "Smothering Tithe"
+  ],
+  "cards": {
+    "doubling season": {
+      "id": "f2c4f80e-84a0-463b-82c3-5c6503809351",
+      "name": "Doubling Season",
+      "type_line": "Enchantment",
+      "mana_cost": "{4}{G}",
+      "oracle_text": "If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead.\nIf an effect would put one or more counters on a permanent you control, it puts twice that many of those counters on that permanent instead.",
+      "set_name": "Foundations",
+      "scryfall_uri": "https://scryfall.com/card/fdn/216/doubling-season?utm_source=api"
+    },
+    "rhystic study": {
+      "id": "9f37c5b6-a59c-45cd-9a99-e9357fe9ea1b",
+      "name": "Rhystic Study",
+      "type_line": "Enchantment",
+      "mana_cost": "{2}{U}",
+      "oracle_text": "Whenever an opponent casts a spell, you may draw a card unless that player pays {1}.",
+      "set_name": "Jumpstart 2022",
+      "scryfall_uri": "https://scryfall.com/card/j22/114/rhystic-study?utm_source=api"
+    },
+    "lightning bolt": {
+      "id": "7673784e-db4b-43a1-8d55-1bb9fc1e284f",
+      "name": "Lightning Bolt",
+      "type_line": "Instant",
+      "mana_cost": "{R}",
+      "oracle_text": "Lightning Bolt deals 3 damage to any target.",
+      "set_name": "Marvel Super Heroes Commander",
+      "scryfall_uri": "https://scryfall.com/card/msc/806/lightning-bolt?utm_source=api"
+    },
+    "deflecting swat": {
+      "id": "b4b36435-55b3-4615-8812-af41d4fc64d9",
+      "name": "Deflecting Swat",
+      "type_line": "Instant",
+      "mana_cost": "{2}{R}",
+      "oracle_text": "If you control a commander, you may cast this spell without paying its mana cost.\nYou may choose new targets for target spell or ability.",
+      "set_name": "Commander Masters",
+      "scryfall_uri": "https://scryfall.com/card/cmm/214/deflecting-swat?utm_source=api"
+    }
+  },
+  "rulings": {
+    "f2c4f80e-84a0-463b-82c3-5c6503809351": [
+      {
+        "published_at": "2024-11-08",
+        "comment": "Planeswalkers will enter with double the normal number of loyalty counters. However, if you activate an ability whose cost has you put loyalty counters on a planeswalker, the number you put on isn't doubled. This is because those counters are put on as a cost, not as an effect.",
+        "source": "wotc"
+      },
+      {
+        "published_at": "2024-11-08",
+        "comment": "Everything that is specified by the effect creating the original token or tokens will also be true about the additional token or tokens created by Doubling Season's replacement effect. For example, if an effect tells you to create a token \"tapped and attacking,\" the additional tokens will also be tapped and attacking.",
+        "source": "wotc"
+      },
+      {
+        "published_at": "2024-11-08",
+        "comment": "Doubling Season affects permanents that enter with counters.",
+        "source": "wotc"
+      },
+      {
+        "published_at": "2024-11-08",
+        "comment": "Battles will enter with double the normal number of defense counters.",
+        "source": "wotc"
+      },
+      {
+        "published_at": "2024-11-08",
+        "comment": "If there are two Doubling Seasons on the battlefield, then the number of tokens or counters is four times the original number. If there are three on the battlefield, then the number of tokens or counters is eight times the original number, and so on.",
+        "source": "wotc"
+      }
+    ],
+    "9f37c5b6-a59c-45cd-9a99-e9357fe9ea1b": [
+      {
+        "published_at": "2023-09-01",
+        "comment": "Rhystic Study's triggered ability resolves before the spell that caused it to trigger. It resolves even if that spell is countered. The player gets the option to pay when this triggered ability resolves.",
+        "source": "wotc"
+      },
+      {
+        "published_at": "2023-09-01",
+        "comment": "You don't have to decide whether or not to draw a card until after the player decides whether or not to pay.",
+        "source": "wotc"
+      }
+    ],
+    "7673784e-db4b-43a1-8d55-1bb9fc1e284f": [],
+    "b4b36435-55b3-4615-8812-af41d4fc64d9": [
+      {
+        "published_at": "2020-04-17",
+        "comment": "If the target spell has damage divided as it was cast (like Mythos of Vadrok), the division can't be changed although the targets receiving that damage still can. The same is true of spells that distribute counters.",
+        "source": "wotc"
+      },
+      {
+        "published_at": "2020-04-17",
+        "comment": "If you choose new targets for the target spell, the new targets must be legal.",
+        "source": "wotc"
+      },
+      {
+        "published_at": "2020-04-17",
+        "comment": "If the target spell has a variable number of targets, you can't change how many targets it has.",
+        "source": "wotc"
+      }
+    ]
+  }
+}

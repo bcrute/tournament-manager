@@ -155,10 +155,76 @@ fail, the change is wrong until proven otherwise:
 
 | Boundary | Test |
 | --- | --- |
-| A pod's room token reaches only its own seat holder | `TestPlayerView` (poll), `TestTournamentSocket` (push) |
+| A room is opened by its 128-bit `url_id`; the five-character `code` opens nothing | `TestTheCodeOpensNothing`, `TestIdentifierQuality` |
+| A pod's room identifier reaches only its own seat holder | `TestPlayerView` (poll), `TestTournamentSocket` (push), `TestTournamentPodHandoff` |
 | Entrant ids on the wire are opaque; the integer PK never leaves the server | `TestEntrantIdsAreOpaque` |
 | Claiming a tournament spot never links an account, even when signed in | `TestIdentityStaysSeparate` |
 | An organizer's ruling is never overwritten by an automatic result | `TestResults` |
+| The anonymous room lookups have a budget of their own, and one flooder cannot deny a room to the people at it | `TestTheBudget`, `TestStrikesInPractice` |
+| `X-Forwarded-For` is trusted only because the deployment makes it unspoofable | `TestTheTrustBoundary` |
+| `hasEmail` means *confirmed*; an unverified address never satisfies anything | `TestHosting`, `TestTheMigration` |
+| The forgotten-password endpoint reveals nothing about which accounts exist | `TestForgotIsBlind` |
+| A confirmation token cannot reset a password, and vice versa | `TestConfirming`, `TestResetting` |
+| No endpoint ever returns a recovery address | `TestRecoveryEmailIsWriteOnly` |
+
+### Two credentials that are not what they look like
+
+Two things in this codebase read like identifiers and behave like passwords.
+Both were treated as the former for a long time, and both were corrected in the
+same week; the shape of the mistake is worth recognising because it will happen
+again somewhere else.
+
+A **room's `url_id`** and an **emailed link token** are credentials. Neither may
+appear in a URL path or query string, because both would then be in an access
+log, a `Referer`, and a browser history. Both travel in POST bodies or link
+fragments, and both are 128 bits or more. When adding anything that hands out
+access without a session, ask which of those two shapes it is — and if it is a
+short human-readable string, it is not a credential and must not be made into
+one.
+
+### The two room identifiers
+
+`rooms.code` is five characters from a 31-letter alphabet — read aloud across a
+table, and therefore walkable in about a day. `rooms.url_id` is
+`secrets.token_urlsafe(16)`, 128 bits, base64url, **case-sensitive**.
+
+Only `url_id` opens a room. Every unauthenticated route — `POST /rooms/join`,
+`POST /rooms/seats`, `POST /rooms/reclaim` — takes it as `roomId` in the request
+**body**, never in the path, so it stays out of access logs and `Referer`
+headers. Invitation links put it in a **fragment** (`/table#r/<id>`), which
+browsers never send to a server. Routes that already have a player token keep
+keying on `code`: it is not a secret, it just is not a credential on its own,
+and sessions held before this change had to keep working.
+
+`ANONYMOUS_DOORS` in `backend/tests/test_room_boundary.py` is the explicit list
+of routes that take a room identifier without a credential. A new one belongs
+in that list.
+
+### Sending email
+
+`backend/app/mail.py` is the only module that talks to an SMTP server, and a
+test asserts that. `mail_providers.py` beside it is a registry of settings, not
+a stack of API clients — every provider worth using speaks SMTP, and what
+actually differs between them is host, port, TLS flavour and what they expect
+in the username field. `scripts/mailcheck` prints that per provider and will
+send a test message; use it rather than guessing, because the classic failure
+(Resend wants the literal string `resend` in the username) fails as though the
+password were wrong.
+
+The default is `fastmail`, and the reasoning is worth keeping: `skadoosh.dev`
+already has Fastmail MX, SPF and DKIM records, so sending through the mailbox
+provider that already handles the domain's mail needs no new account, no DNS
+work, and adds nobody new to the list of parties who learn that someone is
+recovering an account. Do not reach for a transactional service unless that
+route is genuinely outgrown — two messages per user is not close. Nothing is configured by default: `build_mailer` returns
+`OffMailer`, which raises, and the routes turn that into a 503. That is
+deliberate — a silently swallowed send produces a recovery flow that tells the
+user to check an inbox nothing will arrive in. `docker-compose.yml` lists the
+variables and what leaving them unset costs.
+
+Tests use `FakeMailer` (recording, installed in `conftest.py`); the browser
+suite uses `FileMailer` through `TABLE_MAIL_FILE`, so it reads a real
+confirmation link out of a real message rather than skipping confirmation.
 
 ## Engineering expectations
 
@@ -168,6 +234,169 @@ fail, the change is wrong until proven otherwise:
   image. Looking only at the workflow would tell you no gate exists. Regression
   tests for user-reported bugs are expected — several exist precisely because a
   bug came back.
+- **Run the gate here, not on GitHub's dime — a deploy no longer runs one.**
+  Since 2026-08-02 `deploy.yml` builds `--target runtime`, which runs **no
+  tests at all**. The image build was 2m26s of a 2m43s deploy, nearly all of it
+  re-running a suite that had already passed locally. Measured cold, from
+  scratch: the runtime target is 27s and the test target 155s — the suites are
+  the entire difference. A push straight to `main`
+  is now gated by `scripts/ci` and by nothing else. That is a process gate, not
+  a mechanism: the shipped image used to carry a `/tests-passed` marker making
+  an untested build impossible, and it does not any more.
+
+  | | runs | when |
+  | --- | --- | --- |
+  | `deploy.yml` | `--target runtime`, ship | push to `main` |
+  | `ci.yml` | `--target test` | pull requests |
+  | `full.yml` | `--target test` **and Playwright** | `workflow_dispatch` only |
+  | `security.yml` | semgrep, pip-audit, npm audit | weekly, or a lockfile change |
+
+  Locally, `scripts/ci` builds both targets — the same signal as a PR, for no
+  minutes. `--fast` skips Docker for iteration and is not a substitute: it uses
+  whatever Python and packages this machine has, which is the class of
+  difference that makes a build pass here and fail there. `--e2e` rebuilds the
+  bundle and runs Playwright; `--all` does everything.
+
+- **Nothing runs Playwright automatically, on any event.** Not on push, not on
+  a PR. It needs a browser download and a live server, so it lives in
+  `full.yml` behind `workflow_dispatch` — `gh workflow run "full suite"`, with
+  a `project` input to run just `mobile` or just `desktop`. A green badge says
+  nothing about the browser suite; `scripts/ci --e2e` before anything that
+  touches the table, the account area, or a layout.
+
+- **A settings flag that promises behaviour must implement it.** This project
+  shipped three that were read by nothing (`timeCalledPolicy`,
+  `collectWizardsEmail`, and a status that could never be reached). All three
+  are now genuinely read — but the failure mode inverted rather than went away:
+  settings are whitelist-filtered on create, so a key the server does not
+  implement is **dropped silently and returns 200**. A design doc promising a
+  setting that does not exist is now the likelier defect. See
+  `docs/tournament-api-contract.md` §6a, which is the authoritative list.
+- **Do not invent a citation.** Standards, control IDs, and tournament rules
+  must be ones you have actually read. See `docs/tournament-api-contract.md`
+  for how rules citations are handled.
+- **Surface the tradeoff instead of quietly taking it.** Say the secure option
+  costs something and let a human choose.
+- **Reporting a gap is not fixing it.** The schema endpoints were flagged three
+  times across three sessions before anyone turned them off — they are off now,
+  behind `TABLE_DEV_DOCS`. Three sessions is the number to beat.
+
+### What does not apply here
+
+HIPAA, SOC 2, vendor governance, and audit-evidence process. This project has
+no regulated data, no contractual commitments, no vendors processing data, and
+no auditor. Mapping it to SOC 2 would spend effort away from the controls that
+matter.
+
+**That changes at payment tier 2** (`docs/events-platform.md` §9). Processing
+payment data on a shop's behalf makes them the controller and us the processor,
+which brings data processing agreements, breach notification duties and
+subprocessor disclosure. None of it applies today; all of it applies the day
+automated payment tracking ships, and this section must be rewritten in that
+same change rather than after it.
+
+## Boundaries this project defends
+
+These are enforced and pinned by tests. If a change makes one of these tests
+fail, the change is wrong until proven otherwise:
+
+| Boundary | Test |
+| --- | --- |
+| A room is opened by its 128-bit `url_id`; the five-character `code` opens nothing | `TestTheCodeOpensNothing`, `TestIdentifierQuality` |
+| A pod's room identifier reaches only its own seat holder | `TestPlayerView` (poll), `TestTournamentSocket` (push), `TestTournamentPodHandoff` |
+| Entrant ids on the wire are opaque; the integer PK never leaves the server | `TestEntrantIdsAreOpaque` |
+| Claiming a tournament spot never links an account, even when signed in | `TestIdentityStaysSeparate` |
+| An organizer's ruling is never overwritten by an automatic result | `TestResults` |
+| The anonymous room lookups have a budget of their own, and one flooder cannot deny a room to the people at it | `TestTheBudget`, `TestStrikesInPractice` |
+| `X-Forwarded-For` is trusted only because the deployment makes it unspoofable | `TestTheTrustBoundary` |
+| `hasEmail` means *confirmed*; an unverified address never satisfies anything | `TestHosting`, `TestTheMigration` |
+| The forgotten-password endpoint reveals nothing about which accounts exist | `TestForgotIsBlind` |
+| A confirmation token cannot reset a password, and vice versa | `TestConfirming`, `TestResetting` |
+| No endpoint ever returns a recovery address | `TestRecoveryEmailIsWriteOnly` |
+
+### Two credentials that are not what they look like
+
+Two things in this codebase read like identifiers and behave like passwords.
+Both were treated as the former for a long time, and both were corrected in the
+same week; the shape of the mistake is worth recognising because it will happen
+again somewhere else.
+
+A **room's `url_id`** and an **emailed link token** are credentials. Neither may
+appear in a URL path or query string, because both would then be in an access
+log, a `Referer`, and a browser history. Both travel in POST bodies or link
+fragments, and both are 128 bits or more. When adding anything that hands out
+access without a session, ask which of those two shapes it is — and if it is a
+short human-readable string, it is not a credential and must not be made into
+one.
+
+### The two room identifiers
+
+`rooms.code` is five characters from a 31-letter alphabet — read aloud across a
+table, and therefore walkable in about a day. `rooms.url_id` is
+`secrets.token_urlsafe(16)`, 128 bits, base64url, **case-sensitive**.
+
+Only `url_id` opens a room. Every unauthenticated route — `POST /rooms/join`,
+`POST /rooms/seats`, `POST /rooms/reclaim` — takes it as `roomId` in the request
+**body**, never in the path, so it stays out of access logs and `Referer`
+headers. Invitation links put it in a **fragment** (`/table#r/<id>`), which
+browsers never send to a server. Routes that already have a player token keep
+keying on `code`: it is not a secret, it just is not a credential on its own,
+and sessions held before this change had to keep working.
+
+`ANONYMOUS_DOORS` in `backend/tests/test_room_boundary.py` is the explicit list
+of routes that take a room identifier without a credential. A new one belongs
+in that list.
+
+### Sending email
+
+`backend/app/mail.py` is the only module that talks to an SMTP server, and a
+test asserts that. `mail_providers.py` beside it is a registry of settings, not
+a stack of API clients — every provider worth using speaks SMTP, and what
+actually differs between them is host, port, TLS flavour and what they expect
+in the username field. `scripts/mailcheck` prints that per provider and will
+send a test message; use it rather than guessing, because the classic failure
+(Resend wants the literal string `resend` in the username) fails as though the
+password were wrong.
+
+The default is `fastmail`, and the reasoning is worth keeping: `skadoosh.dev`
+already has Fastmail MX, SPF and DKIM records, so sending through the mailbox
+provider that already handles the domain's mail needs no new account, no DNS
+work, and adds nobody new to the list of parties who learn that someone is
+recovering an account. Do not reach for a transactional service unless that
+route is genuinely outgrown — two messages per user is not close. Nothing is configured by default: `build_mailer` returns
+`OffMailer`, which raises, and the routes turn that into a 503. That is
+deliberate — a silently swallowed send produces a recovery flow that tells the
+user to check an inbox nothing will arrive in. `docker-compose.yml` lists the
+variables and what leaving them unset costs.
+
+Tests use `FakeMailer` (recording, installed in `conftest.py`); the browser
+suite uses `FileMailer` through `TABLE_MAIL_FILE`, so it reads a real
+confirmation link out of a real message rather than skipping confirmation.
+
+## Engineering expectations
+
+- **Tests are a gate, not a courtesy.** The gate is `--cov-fail-under=90` in
+  the **Dockerfile**, alongside `npm run test` and the thresholds in
+  `frontend/vite.config.ts` — not in `.github/workflows/`, which only builds the
+  image. Looking only at the workflow would tell you no gate exists. Regression
+  tests for user-reported bugs are expected — several exist precisely because a
+  bug came back.
+- **Run the gate here, not on GitHub's dime.** `scripts/ci` runs `docker build`,
+  which is the entire thing any workflow does — same signal, no minutes. Use it
+  before opening a PR or pushing to `main`; those are the only two events that
+  spend anything, and a failure discovered on the runner costs a full build to
+  learn what a local one would have told you.
+
+  `scripts/ci --fast` skips Docker and runs the same three checks directly for
+  iteration. It is not a substitute: it uses whatever Python and packages are
+  installed on this machine, which is the class of difference that makes a build
+  pass locally and fail in CI.
+
+  `scripts/ci --e2e` rebuilds the bundle and runs Playwright — **which no
+  workflow runs at all.** There is no browser job anywhere in
+  `.github/workflows/`, so the e2e suite has only ever run on a developer's
+  machine. A green CI badge says nothing about it. It rebuilds first because
+  testing a stale `dist/` has fooled this project more than once.
 - **A settings flag that promises behaviour must implement it.** Adding a
   config key with no code behind it is worse than omitting the feature; see the
   agent rules above for how this one has evolved.
@@ -199,6 +428,37 @@ it lives.
 | **Table** | Anyone at a game, no account | Nothing. Mobile-first. A player may be anonymous, may have joined by QR, may lose their token | `backend/app/table.py`, `frontend/src/table/` |
 | **Tournament** | Organizers (account + email) and entrants (token) | An event exists and someone is running it. Mobile-first throughout — the console gains a sidebar on wide screens, it is not designed for one | `backend/app/tournaments.py`, `frontend/src/tournament/` |
 | **Admin** | Operators of this deployment, set by `TABLE_ADMINS` | Full trust. Acts across all events and rooms | `backend/app/admin.py`, `frontend/src/admin/` |
+
+**Card rulings (`/rulings`) is a play aid, not a fourth surface.** It assumes
+what the Table surface assumes — anyone, no account, mobile-first — but it is
+not room-scoped, so it lives in `backend/app/cards.py` and
+`frontend/src/cards/` rather than inside the table. It deliberately does not go
+through `games.py`'s profile registry. Both games in that registry are card
+games — as everything in this app always will be, see `docs/multi-game.md` —
+but rulings are not a solved shape across them: MTG has an official, freely
+published corpus behind a good API, and Lorcana has nothing equivalent.
+Generalising across one worked example and one absence is how you get the wrong
+abstraction, so the second card game with a real rulings source is what should
+trigger it.
+
+**Why this app may show Magic content at all:** it is noncommercial,
+permanently — decided August 2026, and that is the whole licence position. The
+Wizards Fan Content Policy is noncommercial, Scryfall serves under it, and the
+commercial vehicle is the separate events/social project which ships no Magic
+content. A Scryfall integration was removed from here in July 2026 to drop
+exactly this chain, back when a paid tier was still possible; the regression
+test that pinned the removal was later deleted in a refactor, so when rulings
+arrived nothing objected. `backend/tests/test_licence_position.py` and
+`frontend/src/fanContent.test.ts` are the replacement — they fail if a payment
+dependency appears, if the attribution goes, or if the reasoning stops being
+written down. Read `docs/commercial-position.md` before touching any of it.
+
+It is also the app's **only outbound dependency**. `scryfall.py` is the seam and
+a test asserts it is the only module in `app/` that reaches the network. The
+browser never talks to Scryfall — it cannot, the CSP is `default-src 'self'` —
+so everything is proxied and cached. That is not a workaround: it means
+Scryfall learns that *this server* asked about a card, not that a particular
+player did, mid-game, from their address.
 
 **Choosing:**
 

@@ -1,7 +1,9 @@
 """Three contract accuracy claims, pinned.
 
 - §5's rate-limit classification is the code's suffix list, not a per-area rule.
-- §6's recovery email is write-only: nothing reads the value, ever.
+- §6's recovery email is write-only: nothing *returns* the value, ever. It is
+  read now — mail is sent to it, as of 2026-08-02 — and the boundary that
+  matters survived that: no response body contains the address.
 - §2's per-pod extension is added on *read*, in both read paths, and never
   mutates the round deadline.
 """
@@ -14,6 +16,7 @@ from app.accounts import router as accounts_router
 from app.limits import classify
 from app.table import router as table_router
 from app.tournaments import router as tournaments_router
+from conftest import verified_email
 
 
 @pytest.fixture(scope="module")
@@ -29,7 +32,7 @@ def client():
 def organizer(client, username, email=None):
     client.cookies.clear()
     client.post("/api/account/signup", json={"username": username, "password": "a good long password"})
-    client.post("/api/account/email", json={"email": email or f"{username}@example.com"})
+    verified_email(username, email)
     return client
 
 
@@ -87,7 +90,15 @@ class TestRateLimitClassification:
 
 
 class TestRecoveryEmailIsWriteOnly:
-    """§6: stored, never returned, and read by nothing but a truthiness test."""
+    """§6: stored and never returned.
+
+    The second half of the original claim — "read by nothing but a truthiness
+    test" — stopped being true on 2026-08-02, when the address started
+    receiving confirmation and password-reset messages. That was the point of
+    the change. What had to survive it is this: a session cookie, an organizer
+    console, a roster export and a public tournament page still contain no
+    address anywhere.
+    """
 
     def test_no_endpoint_ever_returns_the_address(self, client):
         addr = "hostmail-secret@example.com"
@@ -108,16 +119,17 @@ class TestRecoveryEmailIsWriteOnly:
             assert addr not in body
         assert client.get("/api/account/me").json()["account"]["hasEmail"] is True
 
-    def test_recovery_does_not_use_the_address(self, client):
-        """The claim in §6 is that the address is used *only* for recovery. The
-        honest form is narrower: recovery is one-time-code only, so the address
-        is not used at all. Pin that, so adding a mail path is a deliberate
-        change and not an accident."""
+    def test_code_recovery_still_needs_no_address(self, client):
+        """The one-time codes remain a complete path back into an account: an
+        address is supplied nowhere in the request, and an account that has
+        never had one recovers identically. That mattered when it was the only
+        path; it matters more now that it is the fallback for every deployment
+        that cannot send mail."""
         client.cookies.clear()
         r = client.post("/api/account/signup",
                         json={"username": "mailB", "password": "a good long password"})
         codes = r.json()["recoveryCodes"]
-        client.post("/api/account/email", json={"email": "mailb@example.com"})
+        verified_email("mailB", "mailb@example.com")
         client.cookies.clear()
         # no address is supplied anywhere in the recovery request
         rec = client.post("/api/account/recover",
@@ -136,15 +148,17 @@ class TestRecoveryEmailIsWriteOnly:
         assert rec2.status_code == 200, rec2.text
         assert rec2.json()["account"]["hasEmail"] is False
 
-    def test_the_server_sends_no_mail(self):
-        """§10 says the recovery email recovers nothing yet. If that stops
-        being true this test should fail and the gap note should go."""
+    def test_mail_is_sent_from_exactly_one_module(self):
+        """This asserted the opposite until 2026-08-02: that no file in `app/`
+        so much as mentioned `smtplib`, so that adding a mail path would be a
+        deliberate change rather than an accident. It was, and this is the
+        successor — the transport seam is real only if there is one of it.
+        """
         import pathlib
 
         app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
-        source = "\n".join(p.read_text() for p in app_dir.glob("*.py"))
-        for marker in ("smtplib", "sendmail", "send_mail", "send_email"):
-            assert marker not in source
+        senders = [p.name for p in app_dir.glob("*.py") if "smtplib" in p.read_text()]
+        assert senders == ["mail.py"], senders
 
 
 class TestExtensionIsAddedOnRead:

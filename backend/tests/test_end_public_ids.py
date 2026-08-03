@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from app.accounts import router as accounts_router
 from app.db import q
 from app.tournaments import router as tournaments_router
+from conftest import verified_email
 
 
 @pytest.fixture(scope="module")
@@ -32,7 +33,7 @@ def organizer(client, username):
         json={"username": username, "password": "a good long password"},
     )
     # hosting requires a recovery email
-    client.post("/api/account/email", json={"email": f"{username}@example.com"})
+    verified_email(username)
     return client
 
 
