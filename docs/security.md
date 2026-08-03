@@ -387,6 +387,19 @@ game open on a phone and a table display.
 
 ---
 
+## Outbound dependencies
+
+| Question | Decision | Rationale |
+| --- | --- | --- |
+| What we call | Scryfall, for card names and rulings (`/rulings`). Nothing else. | It is the only external service in the request path, and it is read-only, unauthenticated and public data. |
+| Who is exposed | **The server, never the player.** The browser cannot reach Scryfall — CSP is `default-src 'self'`, and `privacy.spec.ts` asserts no page makes a third-party request — so every lookup is proxied. | Fetching from the browser would have handed a third party the player's IP, their timing, and the fact that they are mid-game, on every keystroke. Proxying costs a hop and buys all of that back. |
+| What is sent | A card name. No identifier, no session, no address. | There is nothing else the request needs. |
+| Autocomplete | The full card-name catalogue (~35,000 strings) is fetched once and held in SQLite; keystrokes never leave this server. | One request a week instead of one per character. It is also what makes the feature usable on modest hardware and survivable when Scryfall is down. |
+| Failure | Cached data first, then a stale cache, then a 503 that still carries a working Scryfall link. Failures back off for 5 minutes rather than retrying per keystroke. | A rulings page that sometimes shows nothing is worse than a link — the player has already spent the taps. |
+| Isolation | One module, `scryfall.py`, behind an interface with fake and file-backed implementations. `test_only_one_module_reaches_the_network` pins that nothing else in `app/` opens a socket. | An outbound call added somewhere else would quietly widen this section without anyone editing it. |
+
+---
+
 ## Integrations and external providers
 
 Not applicable today. The app has no inbound webhooks, no outbound API calls,

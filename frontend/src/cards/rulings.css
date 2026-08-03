@@ -1,0 +1,192 @@
+/**
+ * Card rulings — its own stylesheet, its own `ruling-` prefix, and nothing
+ * else in the app uses that prefix.
+ *
+ * The rule this follows is written up in `account.css`: `table.css` is one
+ * flat sheet and three layout regressions have shipped from two components
+ * quietly sharing a class name. A new area gets a namespace rather than
+ * another neighbour in the flat file. `e2e/layout.spec.ts` guards the ones
+ * that already burned us.
+ *
+ * Mobile-first, because the entire premise is a phone held over a table while
+ * four people wait.
+ */
+
+.ruling {
+  display: grid;
+  gap: 1rem;
+}
+
+.ruling-head h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.ruling-tagline {
+  margin: 0.25rem 0 0;
+  opacity: 0.7;
+  font-size: 0.9rem;
+}
+
+/* ---------- the search box ---------- */
+
+/* The suggestion list is absolutely positioned against this, so the box is
+   the containing block. Without `position: relative` the list anchors to the
+   page and lands somewhere else entirely once the card below it renders. */
+.ruling-search {
+  position: relative;
+}
+
+.ruling-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.ruling-label {
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.ruling-input {
+  width: 100%;
+  box-sizing: border-box;
+  /* 16px or larger, or iOS Safari zooms the page on focus — which on a phone
+     held over a table is a genuinely disruptive thing to happen. */
+  font-size: 1rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid #2a2f3a;
+  background: #0f131a;
+  color: inherit;
+}
+
+.ruling-input:focus-visible {
+  outline: 2px solid #6c8cff;
+  outline-offset: 1px;
+}
+
+/* ---------- suggestions ---------- */
+
+.ruling-suggestions {
+  position: absolute;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  background: #161a23;
+  border: 1px solid #2a2f3a;
+  border-radius: 0.5rem;
+  overflow: hidden auto;
+  /* Capped so the list cannot cover the whole screen on a short phone in
+     landscape; it scrolls instead. */
+  max-height: 55vh;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+}
+
+.ruling-suggestion {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  /* A comfortable thumb target — this is the control the whole feature is
+     built around. */
+  padding: 0.7rem 0.75rem;
+  cursor: pointer;
+}
+
+.ruling-suggestion.on,
+.ruling-suggestion:hover {
+  background: #232936;
+}
+
+.ruling-suggestion:focus-visible {
+  outline: 2px solid #6c8cff;
+  outline-offset: -2px;
+}
+
+/* ---------- the answer ---------- */
+
+.ruling-card {
+  background: #161a23;
+  border: 1px solid #2a2f3a;
+  border-radius: 0.6rem;
+  padding: 1rem;
+}
+
+.ruling-name {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.ruling-type {
+  margin: 0.2rem 0 0;
+  opacity: 0.7;
+  font-size: 0.9rem;
+}
+
+.ruling-oracle {
+  margin: 0.75rem 0 0;
+  /* Oracle text is written with hard line breaks between abilities, and
+     collapsing them turns a three-ability card into a wall. */
+  white-space: pre-wrap;
+  font-size: 0.95rem;
+}
+
+.ruling-section {
+  margin: 1.1rem 0 0.5rem;
+  font-size: 0.95rem;
+  opacity: 0.8;
+}
+
+.ruling-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.ruling-item p {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.ruling-meta {
+  margin-top: 0.2rem !important;
+  font-size: 0.8rem !important;
+  opacity: 0.6;
+}
+
+.ruling-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  opacity: 0.75;
+}
+
+.ruling-out {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.9rem;
+  color: #8fb0ff;
+}
+
+.ruling-credit {
+  margin: 0;
+  font-size: 0.8rem;
+  opacity: 0.6;
+}
+
+.ruling-credit .ruling-out {
+  margin-top: 0;
+}
+
+@media (min-width: 40rem) {
+  .ruling-head h1 {
+    font-size: 1.7rem;
+  }
+}

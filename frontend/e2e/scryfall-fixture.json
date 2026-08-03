@@ -1,0 +1,65 @@
+{
+  "names": [
+    "Lightning Bolt",
+    "Lightning Helix",
+    "Jace, the Mind Sculptor",
+    "Sword of Feast and Famine",
+    "Gaea's Cradle",
+    "Lim-Dûl the Necromancer",
+    "Aetherflux Reservoir",
+    "Counterspell",
+    "Rhystic Study",
+    "Smothering Tithe"
+  ],
+  "cards": {
+    "lightning bolt": {
+      "id": "bolt-id",
+      "name": "Lightning Bolt",
+      "type_line": "Instant",
+      "mana_cost": "{R}",
+      "oracle_text": "Lightning Bolt deals 3 damage to any target.",
+      "set_name": "Limited Edition Alpha",
+      "scryfall_uri": "https://scryfall.com/card/lea/161/lightning-bolt"
+    },
+    "counterspell": {
+      "id": "counter-id",
+      "name": "Counterspell",
+      "type_line": "Instant",
+      "mana_cost": "{U}{U}",
+      "oracle_text": "Counter target spell.",
+      "set_name": "Limited Edition Alpha",
+      "scryfall_uri": "https://scryfall.com/card/lea/54/counterspell"
+    },
+    "lightning helix": {
+      "id": "helix-id",
+      "name": "Lightning Helix",
+      "type_line": "Instant",
+      "mana_cost": "{R}{W}",
+      "oracle_text": "Lightning Helix deals 3 damage to any target and you gain 3 life.",
+      "set_name": "Ravnica: City of Guilds",
+      "scryfall_uri": "https://scryfall.com/card/rav/216/lightning-helix"
+    }
+  },
+  "rulings": {
+    "bolt-id": [
+      {
+        "published_at": "2021-03-19",
+        "comment": "Any target means any creature, player, battle, or planeswalker.",
+        "source": "wotc"
+      },
+      {
+        "published_at": "2004-10-04",
+        "comment": "The damage is dealt when the spell resolves, not when it is cast.",
+        "source": "wotc"
+      }
+    ],
+    "counter-id": [],
+    "helix-id": [
+      {
+        "published_at": "2005-10-01",
+        "comment": "You gain the life even if the damage is prevented.",
+        "source": "wotc"
+      }
+    ]
+  }
+}

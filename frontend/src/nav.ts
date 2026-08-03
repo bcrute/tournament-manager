@@ -25,6 +25,7 @@ export interface NavItem {
  *  nav is for destinations, not small print. */
 export const SITE_NAV: NavItem[] = [
   { label: "Play", to: "/table", icon: "heart", listed: true },
+  { label: "Rulings", to: "/rulings", icon: "note", listed: true },
   { label: "Tournaments", to: "/tournament", icon: "crown", listed: true },
   { label: "Account", to: "/account", icon: "user", listed: true },
 ];

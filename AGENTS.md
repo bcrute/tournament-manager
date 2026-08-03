@@ -429,6 +429,21 @@ it lives.
 | **Tournament** | Organizers (account + email) and entrants (token) | An event exists and someone is running it. Mobile-first throughout — the console gains a sidebar on wide screens, it is not designed for one | `backend/app/tournaments.py`, `frontend/src/tournament/` |
 | **Admin** | Operators of this deployment, set by `TABLE_ADMINS` | Full trust. Acts across all events and rooms | `backend/app/admin.py`, `frontend/src/admin/` |
 
+**Card rulings (`/rulings`) is a play aid, not a fourth surface.** It assumes
+what the Table surface assumes — anyone, no account, mobile-first — but it is
+not room-scoped, so it lives in `backend/app/cards.py` and
+`frontend/src/cards/` rather than inside the table. It deliberately does not go
+through `games.py`'s profile registry: rulings are a Wizards-and-Scryfall
+shaped problem, and building an abstraction from one example is how you get the
+wrong one.
+
+It is also the app's **only outbound dependency**. `scryfall.py` is the seam and
+a test asserts it is the only module in `app/` that reaches the network. The
+browser never talks to Scryfall — it cannot, the CSP is `default-src 'self'` —
+so everything is proxied and cached. That is not a workaround: it means
+Scryfall learns that *this server* asked about a card, not that a particular
+player did, mid-game, from their address.
+
 **Choosing:**
 
 - If an ordinary player at a table needs it → **table**.

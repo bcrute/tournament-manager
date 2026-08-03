@@ -109,6 +109,32 @@ _db.executescript(
         last_seen INTEGER,
         expires_at INTEGER NOT NULL
     );
+    -- The card-name index behind ruling search autocomplete. One row per card
+    -- name, refreshed from Scryfall about weekly. It lives in SQLite rather
+    -- than in memory so a restart does not mean a cold fetch before the first
+    -- player can type, and `fold` is the lowercased, punctuation-stripped form
+    -- the prefix match actually runs against — precomputed because doing it
+    -- per row per keystroke over 35,000 rows is the difference between
+    -- instant and noticeable.
+    CREATE TABLE IF NOT EXISTS card_names (
+        name TEXT PRIMARY KEY,
+        fold TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS card_names_fold ON card_names (fold);
+    -- When that index was last rebuilt. One row, and its own table rather than
+    -- a sentinel row in card_rulings pretending to be a card.
+    CREATE TABLE IF NOT EXISTS card_index (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        fetched_at INTEGER NOT NULL
+    );
+    -- Rulings as fetched, per card. Cached because they change rarely (a card
+    -- gets a ruling when it is printed and then almost never again) and
+    -- because an uncached lookup is a request to somebody else's server.
+    CREATE TABLE IF NOT EXISTS card_rulings (
+        name TEXT PRIMARY KEY,      -- the exact Scryfall name, as stored in card_names
+        payload TEXT NOT NULL,      -- JSON: the card summary plus its rulings
+        fetched_at INTEGER NOT NULL
+    );
     -- Private per-game notes, written during or after a game.
     CREATE TABLE IF NOT EXISTS notes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -402,6 +428,23 @@ class Result:
 
     def __iter__(self):
         return iter(self.fetchall())
+
+
+def qmany(sql, seq):
+    """One statement, many rows, **one commit**.
+
+    `q()` commits every write, which is right for the one-row writes the rest
+    of the app does and catastrophic for a bulk load: rebuilding the 35,000-row
+    card-name index through `q()` would be 35,000 commits. This is the only
+    caller so far, and it exists rather than the alternative — letting a caller
+    reach for `_db` directly — because reaching past the lock is exactly the
+    mistake that produced the shared-cursor bug.
+    """
+    rows = list(seq)
+    with _db_lock:
+        _db.executemany(sql, rows)
+        _db.commit()
+    return len(rows)
 
 
 def q(sql, params=()):

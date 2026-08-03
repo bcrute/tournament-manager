@@ -48,6 +48,11 @@ export default defineConfig({
           // way to skip confirming — which would leave the one flow that most
           // needs end-to-end coverage covered only by unit tests.
           `TABLE_MAIL_FILE=${MAILBOX} TABLE_PUBLIC_URL=http://127.0.0.1:8099 ` +
+          // Card data from a fixture rather than Scryfall. The suite runs with
+          // no internet and must not depend on somebody else's uptime to pass;
+          // the fixture is read through the same seam the real client
+          // implements, so the routes take the production path.
+          "TABLE_SCRYFALL_FIXTURE=../frontend/e2e/scryfall-fixture.json " +
           "python -m uvicorn app.main:app --host 127.0.0.1 --port 8099",
         url: "http://127.0.0.1:8099/api/health",
         // Never reuse: a server left running from an earlier session keeps the
