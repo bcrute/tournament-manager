@@ -106,7 +106,7 @@ test.describe("creating an account", () => {
 
   test("warns about an email-shaped username only while signing up", async ({ page }) => {
     await page.goto("/account");
-    const warning = /should not be treated as private recovery information/i;
+    const warning = /looked up every time you sign in/i;
 
     // signing in: they already chose it, so second-guessing is just noise
     await page.getByPlaceholder(/^username$/i).fill("someone@example.com");
@@ -116,8 +116,12 @@ test.describe("creating an account", () => {
     await page.getByPlaceholder(/^username$/i).fill("someone@example.com");
     await expect(page.getByText(warning)).toBeVisible();
 
-    // it must not promise anything about a field that no longer exists
-    await expect(page.getByText(/field below|copied your address/i)).toHaveCount(0);
+    // It must not point at a recovery address, in any of the three ways it
+    // once did: the field it offered, the copy it made into that field, and
+    // the framing that a username is a worse version of one.
+    await expect(
+      page.getByText(/field below|copied your address|recovery information/i),
+    ).toHaveCount(0);
     // it recommends, it does not block: with a password filled the account can
     // still be created under the email-shaped username
     await page.getByPlaceholder(/^password$/i).fill("a good long password");

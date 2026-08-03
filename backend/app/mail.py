@@ -8,7 +8,9 @@ promise `docs/security.md` names.
 
 Three transports, one interface:
 
-- **smtp** — the real one. Selected by configuring `TABLE_SMTP_HOST`.
+- **smtp** — the real one. Either name a provider (`TABLE_MAIL_PROVIDER=brevo`,
+  which fills in host, port and TLS from `mail_providers.py`) or point at a
+  host yourself (`TABLE_SMTP_HOST`). The raw host wins if both are set.
 - **console** — writes the message to stdout. For development, and it must be
   asked for explicitly (`TABLE_MAIL_CONSOLE=1`), because a password-reset link
   in a container log on a real deployment is a credential in a log.
@@ -151,10 +153,65 @@ class SmtpMailer(Mailer):
             server.send_message(msg)
 
 
+class MailMisconfigured(RuntimeError):
+    """Configuration that cannot work, raised at startup.
+
+    Distinct from `MailNotConfigured`, which means "nothing was asked for and
+    that is allowed". This one means something *was* asked for and is wrong —
+    a provider name with a typo, or a key with no from-address. Failing at
+    startup is the whole point: the alternative is a deployment that looks
+    healthy until the first person forgets their password.
+    """
+
+
+def _smtp_from_provider(env: dict[str, str], key: str) -> SmtpMailer:
+    from .mail_providers import resolve
+
+    provider = resolve(key)  # raises UnknownProvider, listing the known ones
+    password = env.get("TABLE_SMTP_PASSWORD") or None
+    username = (env.get("TABLE_SMTP_USER") or "").strip() or None
+    sender = (env.get("TABLE_MAIL_FROM") or "").strip()
+
+    if not password:
+        raise MailMisconfigured(
+            f"TABLE_MAIL_PROVIDER={provider.key} needs TABLE_SMTP_PASSWORD "
+            f"(get one at {provider.credentials_at})"
+        )
+    if not username:
+        raise MailMisconfigured(
+            f"TABLE_MAIL_PROVIDER={provider.key} needs TABLE_SMTP_USER — "
+            f"for this provider that is {provider.username_is}"
+        )
+    if not sender:
+        # No default invented here, unlike the raw-host path below. Every one
+        # of these providers refuses to deliver from an unverified address, so
+        # a guessed sender is a guaranteed bounce dressed up as a working
+        # config.
+        raise MailMisconfigured(
+            f"TABLE_MAIL_PROVIDER={provider.key} needs TABLE_MAIL_FROM, and the "
+            "address must be one you have verified with them"
+        )
+
+    # Host, port and TLS flavour come from the registry; a deployment that
+    # needs to override them wants TABLE_SMTP_HOST and the raw path instead.
+    return SmtpMailer(
+        host=provider.host,
+        port=int(env.get("TABLE_SMTP_PORT") or provider.port),
+        username=username,
+        password=password,
+        sender=sender,
+        use_tls=provider.tls == "starttls",
+    )
+
+
 def build_mailer(env: dict[str, str] | None = None) -> Mailer:
     """Choose a transport from the environment. Pure, so a test can ask what a
     given deployment config would produce without setting real variables."""
     env = os.environ if env is None else env
+
+    # A raw host wins over a named provider: the registry is a convenience over
+    # SMTP, never a gate in front of it, and anyone who has typed an explicit
+    # host means it.
     host = (env.get("TABLE_SMTP_HOST") or "").strip()
     if host:
         return SmtpMailer(
@@ -166,6 +223,11 @@ def build_mailer(env: dict[str, str] | None = None) -> Mailer:
             or f"no-reply@{host}",
             use_tls=(env.get("TABLE_SMTP_TLS") or "on").lower() != "off",
         )
+
+    provider = (env.get("TABLE_MAIL_PROVIDER") or "").strip()
+    if provider:
+        return _smtp_from_provider(env, provider)
+
     path = (env.get("TABLE_MAIL_FILE") or "").strip()
     if path:
         return FileMailer(path)

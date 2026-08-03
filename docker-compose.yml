@@ -21,12 +21,30 @@ services:
     # to send the link. Recovery codes still work, so accounts and play are
     # unaffected. See backend/app/mail.py and docs/security.md.
     #
+    # The short way — a named provider fills in host, port and TLS from
+    # backend/app/mail_providers.py. `scripts/mailcheck` prints what each one
+    # wants and will send a test message.
+    #
+    #   TABLE_MAIL_PROVIDER brevo | mailjet | resend | postmark | sendgrid | smtp2go
+    #   TABLE_SMTP_USER     NOT always your login — Resend wants the literal
+    #                       string "resend", SendGrid wants "apikey". Run
+    #                       `scripts/mailcheck <provider>` rather than guessing.
+    #   TABLE_SMTP_PASSWORD the API key
+    #   TABLE_MAIL_FROM     required, and must be an address verified with them.
+    #                       Never guessed for a named provider: every one of
+    #                       them refuses to deliver from an unverified sender,
+    #                       so a guess is a bounce dressed as a working config.
+    #
+    # The long way, for a self-hosted relay or a provider not in that list.
+    # An explicit host wins over a named provider.
+    #
     #   TABLE_SMTP_HOST     setting this selects the SMTP transport
     #   TABLE_SMTP_PORT     587 (STARTTLS, the default) or 465 (implicit TLS)
     #   TABLE_SMTP_USER     omit for an unauthenticated relay
     #   TABLE_SMTP_PASSWORD
     #   TABLE_SMTP_TLS      "off" to skip STARTTLS on a local relay
-    #   TABLE_MAIL_FROM     defaults to no-reply@<smtp host>
+    #   TABLE_MAIL_FROM     defaults to no-reply@<smtp host> on this path only
+    #
     #   TABLE_PUBLIC_URL    where the links point. NOT derived from the request:
     #                       a Host header is attacker-controlled, and a reset
     #                       link built from one points at their server.

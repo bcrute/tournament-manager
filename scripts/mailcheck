@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+#
+# What the mail configuration currently is, and whether it actually works.
+#
+# Setting up transactional email is mostly a credentials-in-the-wrong-field
+# problem — half these providers do not want your account login in the SMTP
+# username — and the failure mode is a 535 that reads like a bad password. This
+# prints what each one expects, and will send a real message so you find out
+# now rather than when somebody forgets their password.
+#
+# Usage:
+#   scripts/mailcheck                    list every provider and its setup notes
+#   scripts/mailcheck brevo              just that one
+#   scripts/mailcheck --current          what THIS environment would build
+#   scripts/mailcheck --send you@a.com   actually send a test message
+#
+# It reads the same environment the app does, so on the VPS:
+#   set -a; . /opt/apps/mtg/mtg.env; set +a; scripts/mailcheck --send you@a.com
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+VENV=${VENV:-"$PWD/backend/.venv"}
+PY="$VENV/bin/python"
+[ -x "$PY" ] || PY=python3
+
+cd backend
+exec "$PY" - "$@" <<'PYTHON'
+import sys
+
+from app.mail import (
+    ConsoleMailer,
+    FileMailer,
+    MailMisconfigured,
+    Message,
+    OffMailer,
+    SmtpMailer,
+    build_mailer,
+    public_base_url,
+)
+from app.mail_providers import RECOMMENDED, UnknownProvider, describe
+
+args = sys.argv[1:]
+
+
+def current():
+    try:
+        mailer = build_mailer()
+    except (UnknownProvider, MailMisconfigured) as e:
+        print(f"misconfigured: {e}")
+        return None
+    if isinstance(mailer, OffMailer):
+        print(
+            "transport: off — nothing is configured, so no mail is sent.\n"
+            "  Account recovery codes still work; hosting a tournament does not,\n"
+            "  because it needs a confirmed address and nothing can confirm one.\n"
+            f"  Start with: TABLE_MAIL_PROVIDER={RECOMMENDED}"
+        )
+    elif isinstance(mailer, SmtpMailer):
+        print(
+            f"transport: smtp\n"
+            f"  host    {mailer.host}:{mailer.port} "
+            f"({'starttls' if mailer.use_tls else 'implicit tls / none'})\n"
+            f"  user    {mailer.username or '(none — unauthenticated relay)'}\n"
+            f"  pass    {'set' if mailer.password else 'NOT SET'}\n"
+            f"  from    {mailer.sender}"
+        )
+    elif isinstance(mailer, FileMailer):
+        print(f"transport: file — appending to {mailer.path}")
+    elif isinstance(mailer, ConsoleMailer):
+        print("transport: console — messages go to stdout")
+    print(f"  links   {public_base_url()}/account/reset#<token>")
+    return mailer
+
+
+if not args:
+    print(describe())
+    print(f"Recommended: {RECOMMENDED}. Set TABLE_MAIL_PROVIDER to one of the keys above.\n")
+    current()
+    sys.exit(0)
+
+if args[0] == "--current":
+    sys.exit(0 if current() else 1)
+
+if args[0] == "--send":
+    if len(args) < 2:
+        print("--send needs an address", file=sys.stderr)
+        sys.exit(2)
+    to = args[1]
+    mailer = current()
+    if mailer is None:
+        sys.exit(1)
+    print(f"\nsending a test message to {to} …")
+    try:
+        mailer.send(
+            Message(
+                to=to,
+                subject="Lifetap mail check",
+                # Deliberately shaped like the real thing: same From, same
+                # length, one link. A test message that looks nothing like the
+                # real ones can land in an inbox while the real ones are
+                # filtered.
+                body=(
+                    "This is a test from the Lifetap mail check.\n\n"
+                    f"If a real message were here, the link would look like this:\n"
+                    f"{public_base_url()}/account/reset#example-token-not-a-real-one\n\n"
+                    "Nothing was changed on any account by this message."
+                ),
+            )
+        )
+    except Exception as e:  # noqa: BLE001 — the whole job is reporting this
+        print(f"FAILED: {type(e).__name__}: {e}")
+        print(
+            "\nMost common causes, in order:\n"
+            "  1. TABLE_SMTP_USER holds the wrong thing — check the provider's\n"
+            "     'SMTP user' line above; several want a literal string, not your login.\n"
+            "  2. TABLE_MAIL_FROM is an address you have not verified with them.\n"
+            "  3. The API key was created without sending permission."
+        )
+        sys.exit(1)
+    print("sent. Check the inbox, and check spam — first messages from a new")
+    print("sender domain often land there until SPF and DKIM are in place.")
+    sys.exit(0)
+
+try:
+    print(describe(args[0]))
+except UnknownProvider as e:
+    print(e, file=sys.stderr)
+    sys.exit(2)
+PYTHON

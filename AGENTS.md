@@ -203,7 +203,13 @@ in that list.
 ### Sending email
 
 `backend/app/mail.py` is the only module that talks to an SMTP server, and a
-test asserts that. Nothing is configured by default: `build_mailer` returns
+test asserts that. `mail_providers.py` beside it is a registry of settings, not
+a stack of API clients — every provider worth using speaks SMTP, and what
+actually differs between them is host, port, TLS flavour and what they expect
+in the username field. `scripts/mailcheck` prints that per provider and will
+send a test message; use it rather than guessing, because the classic failure
+(Resend wants the literal string `resend` in the username) fails as though the
+password were wrong. Nothing is configured by default: `build_mailer` returns
 `OffMailer`, which raises, and the routes turn that into a 503. That is
 deliberate — a silently swallowed send produces a recovery flow that tells the
 user to check an inbox nothing will arrive in. `docker-compose.yml` lists the
@@ -337,7 +343,13 @@ in that list.
 ### Sending email
 
 `backend/app/mail.py` is the only module that talks to an SMTP server, and a
-test asserts that. Nothing is configured by default: `build_mailer` returns
+test asserts that. `mail_providers.py` beside it is a registry of settings, not
+a stack of API clients — every provider worth using speaks SMTP, and what
+actually differs between them is host, port, TLS flavour and what they expect
+in the username field. `scripts/mailcheck` prints that per provider and will
+send a test message; use it rather than guessing, because the classic failure
+(Resend wants the literal string `resend` in the username) fails as though the
+password were wrong. Nothing is configured by default: `build_mailer` returns
 `OffMailer`, which raises, and the routes turn that into a 503. That is
 deliberate — a silently swallowed send produces a recovery flow that tells the
 user to check an inbox nothing will arrive in. `docker-compose.yml` lists the

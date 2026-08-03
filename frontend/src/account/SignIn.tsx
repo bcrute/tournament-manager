@@ -205,10 +205,16 @@ export default function SignIn({
           front of someone who just wants to get back in. */}
       {emailWarning && mode === "signup" && (
         <div className="notice warn">
+          {/* No mention of a recovery address. There used to be an optional
+              email field on this form, and this notice used to point at it —
+              "we've copied your address there for you". Both are gone: the
+              field, and the idea that a username is a stand-in for one. What
+              is left is the one fact that is true on its own. */}
           <p>
-            Using an email address as your username works, but usernames must be looked
-            up when you sign in and should not be treated as private recovery
-            information. We recommend using a different username.
+            Using an email address as your username works, and it&rsquo;s your call.
+            Worth knowing: a username is looked up every time you sign in, so it
+            can&rsquo;t be stored scrambled the way a password is. We&rsquo;d suggest
+            something else.
           </p>
           {suggestion && (
             <p className="suggest-row">

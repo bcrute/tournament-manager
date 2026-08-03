@@ -23,6 +23,7 @@ from app.accounts import router as accounts_router
 from app.db import q
 from app.mail import (
     ConsoleMailer,
+    MailMisconfigured,
     FakeMailer,
     FileMailer,
     MailNotConfigured,
@@ -227,6 +228,174 @@ class TestTheTransportsThemselves:
         assert calls["login"] is None
         assert calls["starttls"] == 0
         assert calls["sent"] is not None
+
+
+class TestNamedProviders:
+    """`TABLE_MAIL_PROVIDER=brevo` instead of four variables copied off a docs
+    page. The registry is a convenience over SMTP, so the things worth pinning
+    are that it fills in the right values, that it never blocks the raw path,
+    and that a misconfiguration is loud at startup rather than silent until
+    somebody forgets their password."""
+
+    def test_a_name_fills_in_host_port_and_tls(self):
+        mailer = build_mailer(
+            {
+                "TABLE_MAIL_PROVIDER": "brevo",
+                "TABLE_SMTP_USER": "me@example.com",
+                "TABLE_SMTP_PASSWORD": "key",
+                "TABLE_MAIL_FROM": "no-reply@example.com",
+            }
+        )
+        assert isinstance(mailer, SmtpMailer)
+        assert (mailer.host, mailer.port, mailer.use_tls) == (
+            "smtp-relay.brevo.com",
+            587,
+            True,
+        )
+
+    def test_every_registered_provider_builds(self):
+        """A typo in the registry is a provider nobody can use."""
+        from app.mail_providers import PROVIDERS
+
+        for provider in PROVIDERS:
+            mailer = build_mailer(
+                {
+                    "TABLE_MAIL_PROVIDER": provider.key,
+                    "TABLE_SMTP_USER": "u",
+                    "TABLE_SMTP_PASSWORD": "p",
+                    "TABLE_MAIL_FROM": "no-reply@example.com",
+                }
+            )
+            assert isinstance(mailer, SmtpMailer), provider.key
+            assert mailer.host and "." in mailer.host, provider.key
+            assert provider.tls in ("starttls", "implicit"), provider.key
+            # implicit TLS is port 465 and must not also send STARTTLS
+            assert (mailer.port == 465) == (provider.tls == "implicit"), provider.key
+
+    def test_the_name_is_case_and_space_insensitive(self):
+        for spelling in ("Brevo", " brevo ", "BREVO"):
+            mailer = build_mailer(
+                {
+                    "TABLE_MAIL_PROVIDER": spelling,
+                    "TABLE_SMTP_USER": "u",
+                    "TABLE_SMTP_PASSWORD": "p",
+                    "TABLE_MAIL_FROM": "f@example.com",
+                }
+            )
+            assert mailer.host == "smtp-relay.brevo.com", spelling
+
+    def test_a_typo_names_the_alternatives_rather_than_guessing(self):
+        from app.mail_providers import UnknownProvider
+
+        with pytest.raises(UnknownProvider) as caught:
+            build_mailer({"TABLE_MAIL_PROVIDER": "brevoo", "TABLE_SMTP_PASSWORD": "p"})
+        message = str(caught.value)
+        assert "brevo" in message and "mailjet" in message
+        assert "TABLE_SMTP_HOST" in message, "the escape hatch has to be discoverable"
+
+    @pytest.mark.parametrize(
+        "missing,expected",
+        [
+            ("TABLE_SMTP_PASSWORD", "TABLE_SMTP_PASSWORD"),
+            ("TABLE_SMTP_USER", "TABLE_SMTP_USER"),
+            ("TABLE_MAIL_FROM", "TABLE_MAIL_FROM"),
+        ],
+    )
+    def test_half_a_configuration_fails_at_startup_not_at_send_time(self, missing, expected):
+        """Silence here is a deployment that looks healthy until the first
+        person needs it."""
+        env = {
+            "TABLE_MAIL_PROVIDER": "brevo",
+            "TABLE_SMTP_USER": "u",
+            "TABLE_SMTP_PASSWORD": "p",
+            "TABLE_MAIL_FROM": "f@example.com",
+        }
+        del env[missing]
+        with pytest.raises(MailMisconfigured) as caught:
+            build_mailer(env)
+        assert expected in str(caught.value)
+
+    def test_a_missing_credential_says_where_to_get_one(self):
+        with pytest.raises(MailMisconfigured) as caught:
+            build_mailer({"TABLE_MAIL_PROVIDER": "resend"})
+        assert "resend.com" in str(caught.value)
+
+    def test_a_missing_username_says_what_that_provider_wants_in_it(self):
+        """The single most common way to get this wrong: Resend wants the
+        literal string 'resend' there, not an account name, and a wrong value
+        fails as though the password were bad."""
+        with pytest.raises(MailMisconfigured) as caught:
+            build_mailer({"TABLE_MAIL_PROVIDER": "resend", "TABLE_SMTP_PASSWORD": "p"})
+        assert "resend" in str(caught.value).lower()
+
+    def test_no_sender_is_ever_invented_for_a_provider(self):
+        """The raw-host path guesses `no-reply@<host>` because a local relay
+        will accept it. No provider here will: they all refuse to deliver from
+        an unverified address, so a guess is a guaranteed bounce wearing the
+        costume of a working config."""
+        with pytest.raises(MailMisconfigured):
+            build_mailer(
+                {
+                    "TABLE_MAIL_PROVIDER": "brevo",
+                    "TABLE_SMTP_USER": "u",
+                    "TABLE_SMTP_PASSWORD": "p",
+                }
+            )
+
+    def test_an_explicit_host_wins_over_a_named_provider(self):
+        """The registry must never be a gate in front of plain SMTP. Someone
+        who typed a host means it — a self-hosted relay, or a provider that
+        isn't listed."""
+        mailer = build_mailer(
+            {
+                "TABLE_MAIL_PROVIDER": "brevo",
+                "TABLE_SMTP_HOST": "smtp.myown.example",
+                "TABLE_SMTP_PASSWORD": "p",
+            }
+        )
+        assert mailer.host == "smtp.myown.example"
+
+    def test_a_port_can_still_be_overridden(self):
+        """Some networks block 587."""
+        mailer = build_mailer(
+            {
+                "TABLE_MAIL_PROVIDER": "brevo",
+                "TABLE_SMTP_PORT": "2525",
+                "TABLE_SMTP_USER": "u",
+                "TABLE_SMTP_PASSWORD": "p",
+                "TABLE_MAIL_FROM": "f@example.com",
+            }
+        )
+        assert mailer.port == 2525
+
+    def test_naming_no_provider_still_means_off(self):
+        """Adding the registry must not have made an unconfigured deployment
+        start claiming it can send."""
+        assert isinstance(build_mailer({}), OffMailer)
+        assert isinstance(build_mailer({"TABLE_MAIL_PROVIDER": ""}), OffMailer)
+
+    def test_the_recommendation_is_one_of_the_listed_providers(self):
+        from app.mail_providers import BY_KEY, RECOMMENDED
+
+        assert RECOMMENDED in BY_KEY
+
+    def test_the_setup_notes_say_the_things_people_get_wrong(self):
+        """`describe()` exists because the failure is a person with the right
+        password in the wrong field. If it stops saying so, it stops earning
+        its place."""
+        from app.mail_providers import describe
+
+        text = describe()
+        for provider in ("brevo", "resend", "sendgrid"):
+            assert f"TABLE_MAIL_PROVIDER={provider}" in text
+        assert "apikey" in text, "SendGrid's literal username is the classic trap"
+        assert "https://" in text, "somewhere to actually get the credential"
+
+    def test_describing_one_provider_describes_only_that_one(self):
+        from app.mail_providers import describe
+
+        assert "Brevo" in describe("brevo")
+        assert "SendGrid" not in describe("brevo")
 
 
 class TestWhenMailCannotBeSent:
