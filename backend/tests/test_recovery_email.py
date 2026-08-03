@@ -374,10 +374,65 @@ class TestNamedProviders:
         assert isinstance(build_mailer({}), OffMailer)
         assert isinstance(build_mailer({"TABLE_MAIL_PROVIDER": ""}), OffMailer)
 
+    def test_the_mailbox_route_uses_implicit_tls_end_to_end(self, monkeypatch):
+        """Sending through an account you already have is the "no mail server"
+        answer, and it lands on port 465 — implicit TLS, where calling STARTTLS
+        would be an error rather than extra safety. Exercised through the real
+        SmtpMailer so the port choice and the TLS choice are checked together."""
+        mailer = build_mailer(
+            {
+                "TABLE_MAIL_PROVIDER": "fastmail",
+                "TABLE_SMTP_USER": "robot@skadoosh.dev",
+                "TABLE_SMTP_PASSWORD": "an-app-password",
+                "TABLE_MAIL_FROM": "Lifetap <no-reply@skadoosh.dev>",
+            }
+        )
+        assert (mailer.host, mailer.port, mailer.use_tls) == (
+            "smtp.fastmail.com",
+            465,
+            False,
+        )
+        calls = TestTheTransportsThemselves().fake_smtp(monkeypatch, "SMTP_SSL")
+        mailer.send(Message("who@example.com", "s", "b"))
+        assert calls["starttls"] == 0, "STARTTLS on an implicit-TLS socket is an error"
+        assert calls["login"] == ("robot@skadoosh.dev", "an-app-password")
+        assert calls["sent"]["From"] == "Lifetap <no-reply@skadoosh.dev>"
+
+    def test_every_mailbox_provider_says_it_wants_an_app_password(self):
+        """The trap for this route, and it is a different trap from the
+        transactional one: these all reject an account's login password over
+        SMTP, and the rejection reads as "wrong password" rather than as "you
+        need to mint a different credential"."""
+        from app.mail_providers import PROVIDERS
+
+        for provider in (p for p in PROVIDERS if p.kind == "mailbox"):
+            text = provider.username_is.lower() + " " + provider.notes.lower()
+            assert "app password" in text or "mailbox you created" in text, provider.key
+
+    def test_the_two_kinds_are_labelled(self):
+        from app.mail_providers import PROVIDERS
+
+        kinds = {p.kind for p in PROVIDERS}
+        assert kinds == {"mailbox", "transactional"}
+
+    def test_the_listing_separates_them(self):
+        """A reader deciding between "use what I have" and "sign up for
+        something" should not have to infer which is which from the names."""
+        from app.mail_providers import describe
+
+        text = describe()
+        assert "mailbox you already have" in text
+        assert "application mail" in text
+        assert text.index("Fastmail") < text.index("Brevo"), "cheapest route first"
+
     def test_the_recommendation_is_one_of_the_listed_providers(self):
-        from app.mail_providers import BY_KEY, RECOMMENDED
+        from app.mail_providers import BY_KEY, RECOMMENDED, RECOMMENDED_TRANSACTIONAL
 
         assert RECOMMENDED in BY_KEY
+        assert BY_KEY[RECOMMENDED].kind == "mailbox", (
+            "the default should be the route that needs no new account"
+        )
+        assert BY_KEY[RECOMMENDED_TRANSACTIONAL].kind == "transactional"
 
     def test_the_setup_notes_say_the_things_people_get_wrong(self):
         """`describe()` exists because the failure is a person with the right

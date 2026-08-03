@@ -25,15 +25,25 @@ services:
     # backend/app/mail_providers.py. `scripts/mailcheck` prints what each one
     # wants and will send a test message.
     #
+    # Send it yourself, through a mailbox that already exists:
+    #   TABLE_MAIL_PROVIDER fastmail | google | migadu
+    # Or a service built for application mail, if that is ever outgrown:
     #   TABLE_MAIL_PROVIDER brevo | mailjet | resend | postmark | sendgrid | smtp2go
+    #
+    # `fastmail` is the one to use here: skadoosh.dev's MX, SPF and DKIM
+    # already point at Fastmail, so mail from an @skadoosh.dev address passes
+    # authentication with no new account, no new DNS, and nobody new learning
+    # who is recovering an account. It needs an app password, not the login
+    # password.
     #   TABLE_SMTP_USER     NOT always your login — Resend wants the literal
     #                       string "resend", SendGrid wants "apikey". Run
     #                       `scripts/mailcheck <provider>` rather than guessing.
     #   TABLE_SMTP_PASSWORD the API key
-    #   TABLE_MAIL_FROM     required, and must be an address verified with them.
-    #                       Never guessed for a named provider: every one of
-    #                       them refuses to deliver from an unverified sender,
-    #                       so a guess is a bounce dressed as a working config.
+    #   TABLE_MAIL_FROM     required. For a mailbox provider, an address that
+    #                       mailbox is allowed to send as; for a transactional
+    #                       one, an address verified with them. Never guessed
+    #                       for a named provider — a guess is a bounce dressed
+    #                       as a working config.
     #
     # The long way, for a self-hosted relay or a provider not in that list.
     # An explicit host wins over a named provider.

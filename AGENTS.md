@@ -209,7 +209,14 @@ actually differs between them is host, port, TLS flavour and what they expect
 in the username field. `scripts/mailcheck` prints that per provider and will
 send a test message; use it rather than guessing, because the classic failure
 (Resend wants the literal string `resend` in the username) fails as though the
-password were wrong. Nothing is configured by default: `build_mailer` returns
+password were wrong.
+
+The default is `fastmail`, and the reasoning is worth keeping: `skadoosh.dev`
+already has Fastmail MX, SPF and DKIM records, so sending through the mailbox
+provider that already handles the domain's mail needs no new account, no DNS
+work, and adds nobody new to the list of parties who learn that someone is
+recovering an account. Do not reach for a transactional service unless that
+route is genuinely outgrown — two messages per user is not close. Nothing is configured by default: `build_mailer` returns
 `OffMailer`, which raises, and the routes turn that into a 503. That is
 deliberate — a silently swallowed send produces a recovery flow that tells the
 user to check an inbox nothing will arrive in. `docker-compose.yml` lists the
@@ -349,7 +356,14 @@ actually differs between them is host, port, TLS flavour and what they expect
 in the username field. `scripts/mailcheck` prints that per provider and will
 send a test message; use it rather than guessing, because the classic failure
 (Resend wants the literal string `resend` in the username) fails as though the
-password were wrong. Nothing is configured by default: `build_mailer` returns
+password were wrong.
+
+The default is `fastmail`, and the reasoning is worth keeping: `skadoosh.dev`
+already has Fastmail MX, SPF and DKIM records, so sending through the mailbox
+provider that already handles the domain's mail needs no new account, no DNS
+work, and adds nobody new to the list of parties who learn that someone is
+recovering an account. Do not reach for a transactional service unless that
+route is genuinely outgrown — two messages per user is not close. Nothing is configured by default: `build_mailer` returns
 `OffMailer`, which raises, and the routes turn that into a 503. That is
 deliberate — a silently swallowed send produces a recovery flow that tells the
 user to check an inbox nothing will arrive in. `docker-compose.yml` lists the
