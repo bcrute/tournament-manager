@@ -9,8 +9,14 @@ export default defineConfig({
     // different test runner and fail at collection here
     exclude: ["node_modules/**", "dist/**", "e2e/**", "shots/**"],
     coverage: {
-      // gate the regression-prone logic modules; presentational components are
-      // intentionally excluded (they change constantly and break loudly in use)
+      // Gate the regression-prone logic modules; presentational components are
+      // intentionally excluded (they change constantly and break loudly in
+      // use, and the browser suite covers them).
+      //
+      // This list is hand-written and therefore drifts —
+      // `src/coverageGate.test.ts` fails when a `.ts` module is in neither
+      // this list nor its EXEMPT map. Adding a module here without tests will
+      // pull the whole gate down, which is the intended pressure.
       include: [
         "src/table/api.ts",
         "src/table/session.ts",
@@ -35,6 +41,11 @@ export default defineConfig({
         // shared by all four API layers: a bad Retry-After parse shows every
         // rate-limited user "in NaN seconds"
         "src/retryAfter.ts",
+        "src/cards/api.ts",
+        "src/cards/useSuggest.ts",
+        // 170 lines of user-facing strings with a lookup around them; it had
+        // tests and no gate, so its coverage could rot unnoticed
+        "src/i18n.ts",
       ],
       thresholds: {
         statements: 90,

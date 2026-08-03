@@ -1,5 +1,14 @@
-import { describe, expect, it } from "vitest";
-import { catalogs, en, FALLBACK, pickLocale, translate } from "./i18n";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  catalogs,
+  en,
+  FALLBACK,
+  getLocale,
+  pickLocale,
+  setLocale,
+  t,
+  translate,
+} from "./i18n";
 
 const registry = {
   en,
@@ -89,6 +98,52 @@ describe("catalog hygiene", () => {
       for (const [key, value] of Object.entries(catalog)) {
         expect(placeholders(value), `${locale}:${key}`).toEqual(placeholders(en[key] ?? ""));
       }
+    }
+  });
+});
+
+/**
+ * The module-level accessors, which had no tests at all — `setLocale`,
+ * `getLocale` and `t` were 40% of this file's functions and none of them
+ * covered. They are three lines each, but `t` is what every screen calls, and
+ * `setLocale` writing to storage is the one that can throw.
+ */
+describe("the active locale", () => {
+  afterEach(() => {
+    localStorage.clear();
+    setLocale("en");
+  });
+
+  it("translates through the active locale", () => {
+    setLocale("en");
+    expect(t("qr.copy")).toBe(translate("en", "qr.copy"));
+  });
+
+  it("switching it changes what t returns", () => {
+    const before = t("qr.copy");
+    setLocale("xx-not-a-locale");
+    // an unknown locale falls back rather than returning a key or throwing
+    expect(t("qr.copy")).toBe(before);
+    expect(getLocale()).toBe("xx-not-a-locale");
+  });
+
+  it("remembers the choice", () => {
+    setLocale("en");
+    expect(localStorage.getItem("table.locale")).toBe("en");
+  });
+
+  it("survives storage being unavailable", () => {
+    // Safari private mode throws on setItem. Losing the preference is fine;
+    // throwing out of a language switch is not.
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = () => {
+      throw new Error("QuotaExceededError");
+    };
+    try {
+      expect(() => setLocale("en")).not.toThrow();
+      expect(getLocale()).toBe("en");
+    } finally {
+      Storage.prototype.setItem = original;
     }
   });
 });
