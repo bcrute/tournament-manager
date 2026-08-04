@@ -34,7 +34,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .accounts import SESSION_COOKIE, account_for_session, current_account, require_account
-from .audit import AUTHZ_DENY, security_event
+from .audit import AUTH_FAIL, AUTHZ_DENY, security_event
 from .db import q
 from .games import DEFAULT_GAME, canonical_policy, known_games, profile_for, structure_for
 from .importers import ImportProblem, adapter_for, known_sources
@@ -1209,12 +1209,25 @@ def plan(code: str, request: Request, players: int | None = None):
 def viewing_as_organizer(t, request: Request) -> bool:
     """Is this reader the organizer? A missing or foreign session is not an
     error on a read path — it just means a plainer view, so this never raises.
+
+    The `except` used to be silent, and `docs/security.md` called it the
+    concerning one of the three swallowed failures here: it fails *closed*, so
+    it is not a vulnerability, but it turns a genuine authentication bug into
+    something indistinguishable from "that reader simply is not the organizer".
+    Someone would debug a permissions problem that was really a broken session
+    lookup. It still degrades rather than raising — a read path is the wrong
+    place to surface it — but it now leaves a trace to find.
     """
     try:
         from .accounts import current_account
 
         acct = current_account(request)
-    except Exception:
+    except Exception as e:  # noqa: BLE001 - a read path must not 500 over this
+        security_event(
+            AUTH_FAIL,
+            None,
+            f"organizer-view lookup failed: {type(e).__name__}",
+        )
         acct = None
     return bool(acct and acct["id"] == t["organizer_account_id"])
 

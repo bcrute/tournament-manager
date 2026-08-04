@@ -1,5 +1,10 @@
 """The one outbound dependency, behind a seam.
 
+**Not for reuse in the commercial project** — see `cards.py` and
+`docs/commercial-position.md` §3. Scryfall serves under the Wizards Fan Content
+Policy, which is noncommercial; this app qualifies and a paid product would
+not.
+
 Card rulings are written by Wizards and published by Scryfall, who make them
 available freely and ask three things in return: identify yourself, accept
 JSON, and do not hammer them. All three are honoured here.

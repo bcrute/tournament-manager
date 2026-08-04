@@ -23,6 +23,15 @@ a working Scryfall link the player can follow. The feature is "make it easy to
 find rulings", and a link that works beats an inline panel that sometimes
 doesn't.
 
+**This module must not be reused in the commercial project.** It is the newest
+and most self-contained code here, which makes it the most tempting to lift,
+and it is precisely what `docs/commercial-position.md` §3 forbids: a commercial
+product may not ship Magic card content, and Scryfall's data comes under the
+Wizards Fan Content Policy, which is noncommercial. That rule lives three
+documents away, so it is repeated here where somebody about to copy the file
+will read it. The account, mail, audit and rate-limiting modules are the ones
+that port cleanly.
+
 MTG only, and apart from `games.py`'s profile registry deliberately. This app
 is card games and nothing else, so a second game here is a realistic prospect —
 but rulings are not a solved shape across card games. Magic has an official

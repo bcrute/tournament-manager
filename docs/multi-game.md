@@ -5,8 +5,13 @@ to be picked up independently.*
 
 ## What this project is
 
-A standalone, open-source tournament manager for tabletop games. It is a
-portfolio piece: it takes no money, makes no money, and has no commercial tier.
+A standalone tournament manager for card games, licensed
+[Apache 2.0](../LICENSE). It is a portfolio piece: it takes no money, makes no
+money, and has no commercial tier.
+
+("Open-source" used to appear here with no licence file behind it, which
+granted nobody anything — the same shape of claim as a recovery email that
+recovers nothing. Fixed 2026-08-04.)
 Success is that a shop owner or a league organizer could actually run their
 Friday night on it, for whichever game they play, and that the code reads like
 someone thought about it.
@@ -16,13 +21,14 @@ that is a separate, larger project and nothing here is a slice of it. Where
 this repo's docs refer to `events-platform.md` — a file that does not exist
 here and never will — the reference is wrong and should be cut (see W0).
 
-**Card games, and only card games.** Confirmed 2026-08-03. The registry today
-holds MTG and Lorcana; Pokémon, Flesh and Blood or Star Wars: Unlimited would
-be at home here. Anything that is not played with a deck of cards — RC racing,
-motorsport, the other verticals in the events-platform plan — belongs to that
-separate project and not to this one. This matters when scoping: a feature here
-should be built for card games well, not generalised in advance for a vertical
-this repo will never host.
+**Card games, and only card games.** Confirmed 2026-08-03, restated 2026-08-04.
+The registry today holds MTG and Lorcana; Pokémon, Flesh and Blood or Star
+Wars: Unlimited would be at home here. Anything not played with a deck of cards
+belongs to a different project. This matters when scoping: a feature here
+should be built for card games well, and **not** generalised in advance for a
+vertical this repo will never host. If a design here starts growing a seam for
+something that is not a card game, that seam is speculative and should come
+out.
 
 The goal of this document: **adding Pokémon, Flesh and Blood, or another card
 game should mean writing one profile and its tests, and touching nothing
@@ -297,11 +303,11 @@ Grouped so that independent tracks can run in parallel; within a phase, items
 don't depend on each other.
 
 **Phase 0 — clear the ground.**
-W0: cut the `events-platform.md` references from `AGENTS.md` (3 places) and
-`docs/ideas.md` (2), and rewrite the "table layer is frozen" rule so it stands
-on its own reasoning rather than citing a document that isn't here. M4: the
-conformance suite. M5: begin the rules research — long lead time, no
-dependencies.
+~~W0~~ **done 2026-08-04**: the `events-platform.md` references are cut from
+`AGENTS.md` and `docs/ideas.md`, and the "table layer is frozen" rule now
+stands on its own reasoning — direction of dependency — rather than citing a
+document that isn't here. M4: the conformance suite. M5: begin the rules
+research — long lead time, no dependencies.
 
 **Phase 1 — make duels work.** B1 and B2 together, as one change with tests at
 pod sizes 2 through 5. Nothing else should land between them; a pairer that

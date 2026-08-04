@@ -58,9 +58,19 @@ jobs:
       - name: Ship image to VPS
         run: docker save mtg:latest | gzip | ssh vps 'gunzip | docker load'
 
-      - name: Deploy
+      # Before the new image starts and runs its migrations. On 2026-08-04 a
+      # deploy applied a schema migration with no backup in existence
+      # anywhere; a bad one would have been unrecoverable. Failing here fails
+      # the deploy on purpose — shipping a migration over an unprotected
+      # database is the thing worth stopping for.
+      - name: Back up the database first
         run: |
           ssh vps 'mkdir -p /opt/apps/mtg'
+          scp deploy/backup.sh vps:/opt/apps/mtg/backup.sh
+          ssh vps 'chmod +x /opt/apps/mtg/backup.sh && /opt/apps/mtg/backup.sh --label predeploy'
+
+      - name: Deploy
+        run: |
           scp docker-compose.yml vps:/opt/apps/mtg/docker-compose.yml
           ssh vps 'cd /opt/apps/mtg && docker compose up -d'
 

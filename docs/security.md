@@ -285,7 +285,8 @@ a busy venue rather than a false negative on an attacker.
 
 | Question | Decision | Rationale |
 | --- | --- | --- |
-| Backup frequency/retention | **Deferred.** SQLite file on the VPS, no scheduled off-host backup. Owner: Ben. Trigger: before the first real tournament runs on it. | Honest gap. Losing the DB today loses game history and accounts — annoying, not catastrophic, but a live event mid-round would be. |
+| Backup frequency/retention | Nightly plus pre-deploy, 14 kept, on the host (`deploy/backup.sh`, `/etc/cron.d/mtg-backup`). Off-host still deferred — see gaps. | The pre-deploy one is the load-bearing half: migrations run on deploy, and a bad one against an unprotected database is unrecoverable. Same-disk copies still lose to host loss, which is why the gap stays open rather than closing. |
+| Monitoring and alerting | **None, deliberately.** `restart: unless-stopped` recovers a crashed container; nothing watches uptime and nobody is paged. | This is a free, noncommercial app for game nights with no availability promise to anyone. An outage costs a group of friends a life tracker for an evening, and they have paper. Recorded because everything else here is a decision somebody wrote down, and this was simply absent — which reads as an oversight rather than a choice. Trigger to revisit: the first event somebody plans around it. |
 | Backup encryption | Deferred with the above. | |
 | RTO/RPO | Not committed. No SLA is offered to anyone. | Stating a number we don't measure would be worse than stating none. |
 | Backup access isolation | Deferred with the above. | |
@@ -477,7 +478,22 @@ internal detail. It was reaching the client and coming back trusted.
 
 ## Known gaps, carried deliberately
 
-1. **No off-host backup.** The largest real risk. Deferred with a trigger above.
+1. **Backups exist on the host; off-host is still open.** Half closed
+   2026-08-04. `deploy/backup.sh` takes a consistent copy via SQLite's online
+   backup API (not `cp` — the database runs WAL with a live writer, and a torn
+   copy looks fine until it does not), gzips it, keeps the newest 14, and
+   refuses to keep a file too small to be a database. It runs nightly from
+   `/etc/cron.d/mtg-backup` **and before every deploy**, which is the case that
+   prompted it: on 2026-08-04 a deploy applied a schema migration with no
+   backup in existence anywhere. Verified by restoring one and running
+   `PRAGMA integrity_check`.
+
+   What remains: those copies sit on the same disk as the database, so losing
+   the host loses both. Closing that needs a destination and a credential for
+   it, and the files contain scrypt password hashes and private notes — so a
+   public bucket, or a GitHub artifact, is not an option. Owner: Ben. Trigger:
+   before the first event that would be painful to lose, which is now a lower
+   bar than it was, since the database holds accounts rather than only rooms.
 2. **Closed 2026-08-02: email recovery is implemented.** The gap that stood
    here — an address stored, nothing sent to it, `hasEmail` claiming a
    capability the app lacked — is gone. Confirmation and password reset both

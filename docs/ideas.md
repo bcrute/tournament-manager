@@ -10,7 +10,7 @@ If something here graduates, it gets its own design doc and moves out.
 
 ## Paid registration through a payment processor
 
-> **Superseded 2026-07-20 by [`events-platform.md`](./events-platform.md) §9**,
+> **Superseded 2026-07-20** by the separate events-platform project (§9 there),
 > which splits participant payments into three tiers and separates them from
 > subscription billing. The conclusions below survive and are load-bearing
 > there — never hold money, never touch card data, containment rather than
@@ -181,7 +181,7 @@ deliberate upgrade is a separate path and needs its own tests.
 
 ## Event directory
 
-> **Folded into [`events-platform.md`](./events-platform.md) §3** as the
+> **Folded into the separate events-platform project** (§3 there) as the
 > directory surface, where events are the base object rather than tournaments.
 > The two constraints below — venue-centred rather than device location, and
 > verification before public listings — carried over unchanged.
