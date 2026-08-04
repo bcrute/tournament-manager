@@ -386,6 +386,20 @@ def expire_idle_rooms():
     """Close rooms nobody has touched in IDLE_TIMEOUT. History is kept — only the
     room stops accepting play, so an abandoned code can't be rejoined forever.
 
+    **Opportunistic, not scheduled.** This runs when somebody creates a room and
+    at no other time — there is no background task anywhere in this app, which
+    is the same choice as having no `logging` and no scheduler: fewer moving
+    parts on a single small container. The consequence is worth stating plainly,
+    because "rooms idle out at 3h" is only true of a deployment with traffic: on
+    a quiet one the last room stays open until the next room is created, however
+    long that takes. Observed in production on 2026-08-04, where a room sat open
+    for ten hours and closed the instant the next one was made.
+
+    That is acceptable rather than ideal: the room is still only reachable with
+    its 128-bit `url_id`, so what lingers is a joinable-by-invitation room, not
+    an exposed one. If it ever stops being acceptable, the fix is a scheduled
+    sweep and the cost is a background task.
+
     A pod of a live tournament is exempt: three hours is a room's clock, and a
     field breaking for lunch must not come back to closed tables. The exemption
     lasts exactly as long as the tournament does — see tournaments.LIVE_TOURNAMENT

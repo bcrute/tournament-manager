@@ -85,7 +85,7 @@ an open threat.
 | T9 | 5 | Brute-force a password or recovery code | scrypt n=2^16; sensitive endpoints 20 per 10 min; escalating IP bans 1h→6h→24h→7d | Mitigated |
 | T10 | any | Probe the app without leaving a trace | `security_log` via `audit.py`: auth failures, unknown-user attempts, admin denials, tournament organizer-authority denials (`AUTHZ_DENY`), rate-limit trips and bans, keyed to a salted client id or username. 30-day retention, pruned on the hourly sweep | Mitigated — the authorization chokepoints across all three surfaces now log; residual gap is narrow, see gaps |
 | T11 | 2 | Entrant token captured from a URL | Token travels as `?token=`; the reverse proxy must strip query strings from access logs | **Partially mitigated** — depends on proxy config not in this repo |
-| T12 | 1 | Denial of service by room or event creation | Per-client rate limits; rooms idle out at 3h, tournaments at 12h | Mitigated |
+| T12 | 1 | Denial of service by room or event creation | Per-client rate limits; rooms idle out at 3h, tournaments at 12h — **opportunistically**, on the next request rather than on a timer (see below) | Mitigated |
 | T18 | 1 | Enumerate room URLs to find live games | The address bar carries `rooms.url_id` — 128 random bits — not the five-character code. Pinned by `TestRoomUrlId` and a browser test | Mitigated |
 | T18a | 1 | Read a room identifier out of a log, a `Referer` or a screenshot of a link | The identifier is now a credential, so it travels in POST bodies rather than paths, and invitation links carry it in a fragment the browser never transmits | Mitigated — `TestTheCodeOpensNothing`, `qrcode.test.ts` |
 | T19 | 1 | Guess a room identifier at the join endpoint | 128 bits, so guessing is not a strategy — this stopped being a rate-limiting problem and became an entropy one. The behavioural layer remains underneath: a lookup naming no room is a strike into the existing ban ladder, and the three anonymous lookups share a `room_lookup` budget of 120 per 300s per client, sized so a whole venue behind one NAT is never the thing it stops | Mitigated — `TestJoinEnumeration`, `TestIdentifierQuality`, `TestTheBudget` |
@@ -322,6 +322,16 @@ on a single container is neither.
 | Audit granularity | Game events record actor, action, target and timestamp. Result changes are versioned with source (`auto` vs `organizer`) and a note. | An organizer overriding a result is the one action with real consequences, so it keeps history rather than mutating. |
 | Audit retention | Tied to the room's lifetime; account history persists until the account is deleted. | |
 | Denial logging | Admin denials (`ADMIN_DENY`), authentication failures, and tournament organizer-authority denials (`AUTHZ_DENY`, at `require_organizer` — the single chokepoint all 13 organizer actions route through) are recorded. Residual: the two player-seat checks (`advance_turn`, `call_official`) still don't log, deliberately — they reject anonymous wrong-table callers, the same ordinary-friction class the table surface chooses not to log, and have no account username to key on. | The layer that produced five authorization defects — all in the organizer/pod authorization class — now shows a sixth being probed. Player-seat friction is noise, kept out for the same reason `join.unknown_room` is the table layer's only entry. |
+
+**The sweeps are request-driven.** Room expiry runs when a room is created;
+security-log pruning and rate-limiter housekeeping run from the rate-limit
+middleware, throttled to once an hour. There is no scheduled task anywhere in
+this app — the same choice as having no `logging` module and no scheduler, and
+for the same reason. So every retention figure here means "at the next request
+after that point", not "on the hour". On a deployment with any traffic the
+difference is invisible; on an idle one, nothing expires at all until somebody
+turns up. Confirmed in production 2026-08-04: a room stayed open ten hours past
+its three, and closed the moment the next room was created.
 
 **Never logged:** tokens, passwords, recovery codes, room `url_id`s, or raw IP
 addresses. A failed lookup records that a client tried an unknown room
