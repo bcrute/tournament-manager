@@ -22,6 +22,7 @@ import {
   LogEntry,
   Overview,
   SecurityEntry,
+  wipeBans,
 } from "./api";
 
 /**
@@ -75,13 +76,15 @@ export default function Admin() {
     void load();
   }, [load]);
 
-  async function act(fn: () => Promise<unknown>, confirmText: string) {
+  async function act(fn: (reason?: string) => Promise<unknown>, confirmText: string) {
     if (!window.confirm(confirmText)) return;
+    // the reason is asked for because the audit log has a column for it — so
+    // it goes to the action, rather than being collected and dropped
     const reason = window.prompt("Reason (recorded in the audit log):") ?? undefined;
     setBusy(true);
     setError(null);
     try {
-      await fn();
+      await fn(reason);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "That didn't go through");
@@ -161,7 +164,7 @@ export default function Admin() {
                       disabled={busy}
                       onClick={() =>
                         void act(
-                          () => endTournament(t.code),
+                          (reason) => endTournament(t.code, reason),
                           `End tournament ${t.code}? Standings are kept.`,
                         )
                       }
@@ -200,7 +203,7 @@ export default function Admin() {
                       disabled={busy}
                       onClick={() =>
                         void act(
-                          () => closeRoom(r.code),
+                          (reason) => closeRoom(r.code, reason),
                           `Close room ${r.code}? History is kept.`,
                         )
                       }
@@ -223,6 +226,24 @@ export default function Admin() {
           Subjects are salted hashes of a client address. The address itself is never
           stored, so it cannot be shown here.
         </p>
+        <p className="adm-actions">
+          <button
+            disabled={busy || overview.bans === 0}
+            onClick={() =>
+              void act(
+                (reason) => wipeBans(reason),
+                `Lift all ${overview.bans} active ban${overview.bans === 1 ? "" : "s"}? ` +
+                  "Lapsed records are kept, so a repeat offender still escalates.",
+              )
+            }
+          >
+            Lift all active bans
+          </button>
+          <span className="hint">
+            {overview.bans} in force. Rows that have already expired stay listed — they
+            are the strike history, and wiping them would reset every past offender.
+          </span>
+        </p>
         <table>
           <thead>
             <tr><th>Subject</th><th>Strikes</th><th>Expires</th><th /></tr>
@@ -237,7 +258,10 @@ export default function Admin() {
                   <button
                     disabled={busy}
                     onClick={() =>
-                      void act(() => liftBan(b.subject), "Lift this ban and clear its strikes?")
+                      void act(
+                        (reason) => liftBan(b.subject, reason),
+                        "Lift this ban and clear its strikes?",
+                      )
                     }
                   >
                     Lift

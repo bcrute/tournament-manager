@@ -71,6 +71,7 @@ class TestAccess:
         assert client.post("/api/admin/rooms/ABCDE/close", json={}).status_code == 404
         assert client.post("/api/admin/tournaments/ABCDE/end", json={}).status_code == 404
         assert client.post("/api/admin/bans/whatever/lift", json={}).status_code == 404
+        assert client.post("/api/admin/bans/wipe", json={}).status_code == 404
 
     def test_the_configured_admin_gets_in(self, client):
         signin(client, ADMIN)
@@ -166,6 +167,71 @@ class TestActions:
         assert client.post("/api/admin/bans/subject-to-lift/lift",
                            json={"reason": "false positive"}).status_code == 200
         assert q("SELECT 1 FROM bans WHERE subject = ?", ("subject-to-lift",)).fetchone() is None
+
+    def test_wiping_lifts_every_live_ban_at_once(self, client):
+        """The whole point: a venue behind one NAT gets unstuck in one action,
+        not one hash at a time while an event waits."""
+        signin(client, ADMIN)
+        q("DELETE FROM bans")
+        for subject in ("wipe-a", "wipe-b", "wipe-c"):
+            q("INSERT INTO bans (subject, until, strikes) VALUES (?, unixepoch()+3600, 1)",
+              (subject,))
+        r = client.post("/api/admin/bans/wipe", json={"reason": "store event, one NAT"})
+        assert r.status_code == 200 and r.json()["wiped"] == 3
+        assert q("SELECT COUNT(*) c FROM bans").fetchone()["c"] == 0
+
+    def test_wiping_keeps_the_lapsed_records_that_escalate_repeat_offenders(self, client):
+        """A lapsed row is strike history, not a ban. Clearing it as a side
+        effect would hand every past abuser a clean ladder."""
+        signin(client, ADMIN)
+        q("DELETE FROM bans")
+        q("INSERT INTO bans (subject, until, strikes) VALUES (?, unixepoch()-60, 3)", ("old-one",))
+        q("INSERT INTO bans (subject, until, strikes) VALUES (?, unixepoch()+3600, 1)", ("live-one",))
+        assert client.post("/api/admin/bans/wipe", json={}).json()["wiped"] == 1
+        rows = {r["subject"]: r["strikes"] for r in q("SELECT subject, strikes FROM bans")}
+        assert rows == {"old-one": 3}
+
+    def test_wiping_is_recorded_with_how_many_it_took(self, client):
+        signin(client, ADMIN)
+        q("DELETE FROM bans")
+        q("INSERT INTO bans (subject, until, strikes) VALUES (?, unixepoch()+3600, 1)", ("logged",))
+        client.post("/api/admin/bans/wipe", json={"reason": "false positives"})
+        entry = client.get("/api/admin/log").json()["entries"][0]
+        assert entry["action"] == "ban.wipe" and entry["actor"] == ADMIN
+        assert entry["target"] == "1 subjects" and entry["detail"] == "false positives"
+
+    def test_wiping_nothing_succeeds_without_writing_to_the_log(self, client):
+        """Not an error — there was simply nothing in force. But the audit log
+        records actions that changed something."""
+        signin(client, ADMIN)
+        q("DELETE FROM bans")
+        before = len(client.get("/api/admin/log").json()["entries"])
+        r = client.post("/api/admin/bans/wipe", json={})
+        assert r.status_code == 200 and r.json()["wiped"] == 0
+        assert len(client.get("/api/admin/log").json()["entries"]) == before
+
+    def test_a_removed_ban_stops_applying_in_the_running_limiter(self, client):
+        """The limiter answers from memory before it reads the table, so both
+        removal paths have to tell it. Without this, an unbanned client stayed
+        banned in the worker until the ban would have expired anyway."""
+        from app.limits import RateLimiter
+
+        limiter = RateLimiter(db=q)
+        client.app.state.limiter = limiter
+        try:
+            signin(client, ADMIN)
+            q("DELETE FROM bans")
+            for subject in ("still-banned", "wiped-out"):
+                q("INSERT INTO bans (subject, until, strikes) VALUES (?, unixepoch()+3600, 1)",
+                  (subject,))
+            assert limiter.ban_until("still-banned") and limiter.ban_until("wiped-out")
+
+            client.post("/api/admin/bans/still-banned/lift", json={})
+            assert limiter.ban_until("still-banned") is None
+            client.post("/api/admin/bans/wipe", json={})
+            assert limiter.ban_until("wiped-out") is None
+        finally:
+            del client.app.state.limiter
 
     def test_ending_a_tournament_also_closes_its_open_round(self, client):
         client.cookies.clear()

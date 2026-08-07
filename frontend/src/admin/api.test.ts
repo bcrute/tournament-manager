@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { adm, AdminError, ago, closeRoom, endTournament, getOverview, getSecurity, liftBan } from "./api";
+import {
+  adm,
+  AdminError,
+  ago,
+  closeRoom,
+  endTournament,
+  getOverview,
+  getSecurity,
+  liftBan,
+  wipeBans,
+} from "./api";
 
 function mockFetch(body: unknown = { ok: true }, status = 200, headers: Record<string, string> = {}) {
   const fn = vi.fn().mockResolvedValue({
@@ -47,6 +57,16 @@ describe("actions", () => {
     const fn = mockFetch();
     await endTournament("AB123");
     expect(last(fn).body).toEqual({ reason: null });
+  });
+
+  it("wipes bans through one call, not one request per subject", async () => {
+    const fn = mockFetch({ ok: true, wiped: 4 });
+    const r = await wipeBans("store event, one NAT");
+    expect(last(fn).url).toBe("/api/admin/bans/wipe");
+    expect(last(fn).opts.method).toBe("POST");
+    expect(last(fn).body).toEqual({ reason: "store event, one NAT" });
+    expect(r.wiped).toBe(4);
+    expect(fn).toHaveBeenCalledTimes(1);
   });
 
   it("escapes a ban subject rather than pasting it into the path", async () => {

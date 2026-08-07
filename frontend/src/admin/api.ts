@@ -119,6 +119,15 @@ export const liftBan = (subject: string, reason?: string) =>
     body: { reason: reason ?? null },
   });
 
+/** Lifts every ban currently in force. Lapsed rows — the strike history that
+ * escalates a repeat offender — are left alone; the server decides that, this
+ * only asks. */
+export const wipeBans = (reason?: string) =>
+  adm<{ ok: boolean; wiped: number }>("/bans/wipe", {
+    method: "POST",
+    body: { reason: reason ?? null },
+  });
+
 /** Unix seconds to something readable at a glance. */
 export function ago(ts: number | null, now = Date.now()): string {
   if (!ts) return "—";

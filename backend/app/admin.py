@@ -59,6 +59,21 @@ def require_admin(request: Request):
 record = admin_action   # the writer lives in audit.py; this is the local name
 
 
+def forget_bans(request: Request, subject: str | None = None):
+    """Tell the running limiter to drop what it cached, after a ban row goes.
+
+    The limiter answers from memory before it reads the table, so a DELETE
+    here is invisible to it — an unbanned client stayed banned in the worker
+    until the original expiry. Best-effort by design: the ban is already gone
+    from the database, and a limiter that isn't installed (the tests build a
+    bare app; `TABLE_RATELIMIT=off` disables it) is not a reason to fail an
+    action that succeeded.
+    """
+    limiter = getattr(request.app.state, "limiter", None)
+    if limiter is not None:
+        limiter.forget(subject)
+
+
 # ---- read ----
 
 
@@ -169,8 +184,44 @@ def lift_ban(subject: str, body: ReasonBody, request: Request):
     if not q("SELECT 1 FROM bans WHERE subject = ?", (subject,)).fetchone():
         raise HTTPException(404, "no such ban")
     q("DELETE FROM bans WHERE subject = ?", (subject,))
+    forget_bans(request, subject)
     record(acct["username"], "ban.lift", subject, body.reason)
     return {"ok": True}
+
+
+@router.post("/bans/wipe")
+def wipe_bans(body: ReasonBody, request: Request):
+    """Lift every ban that is currently in force, in one action.
+
+    The blunt instrument, for when the limiter caught a whole venue rather
+    than an abuser: a room full of people behind one NAT share a subject, and
+    lifting those one hash at a time while an event waits is not a workable
+    answer.
+
+    Two deliberate limits on how far it reaches:
+
+    - **Only live bans.** A lapsed row is kept on purpose — it is the strike
+      history that makes a repeat offender's next ban longer than their last
+      (`limits.BAN_STEPS`), and erasing that would hand every past abuser a
+      clean slate as a side effect of unsticking today's event. Those rows
+      age out on their own at `BAN_RETENTION`.
+    - **No new ban is prevented.** Whoever is still misbehaving strikes again
+      and is banned again, from the bottom of the ladder.
+
+    Wiping nothing is not an error, but it is not logged either: the audit
+    log records actions that changed something.
+    """
+    acct = require_admin(request)
+    subjects = [
+        r["subject"] for r in q("SELECT subject FROM bans WHERE until > unixepoch()").fetchall()
+    ]
+    if not subjects:
+        return {"ok": True, "wiped": 0}
+    q("DELETE FROM bans WHERE until > unixepoch()")
+    for subject in subjects:
+        forget_bans(request, subject)
+    record(acct["username"], "ban.wipe", f"{len(subjects)} subjects", body.reason)
+    return {"ok": True, "wiped": len(subjects)}
 
 
 @router.post("/rooms/{code}/close")

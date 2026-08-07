@@ -126,11 +126,28 @@ class RateLimiter:
 
     def clear(self, cid: str):
         """Explicit unban — forgets the history too."""
+        self.forget(cid)
+        if self.db:
+            self.db("DELETE FROM bans WHERE subject = ?", (cid,))
+
+    def forget(self, cid: str | None = None):
+        """Drop the in-memory ban state for one subject, or for everyone.
+
+        The cache is checked *before* the database (`ban_until`), so deleting
+        the row is not enough on its own: a caller that removes a ban with its
+        own SQL — the admin surface does, because it has an audit entry to
+        write in the same breath — leaves this process still refusing the
+        client until the ban would have expired anyway. Whoever writes the
+        delete calls this after it.
+        """
+        if cid is None:
+            self._bans.clear()
+            self._strikes.clear()
+            self._ban_count.clear()
+            return
         self._bans.pop(cid, None)
         self._strikes.pop(cid, None)
         self._ban_count.pop(cid, None)
-        if self.db:
-            self.db("DELETE FROM bans WHERE subject = ?", (cid,))
 
     def strike(self, cid: str) -> float | None:
         """Public entry for callers outside the request-rate path.
@@ -235,6 +252,7 @@ SENSITIVE_SUFFIXES = (
     # seat in an event in seconds
     "/claim",
     "/lift",       # admin: privileged, and a prober shouldn't get free retries
+    "/wipe",       # admin: the same, for the one that clears every ban at once
     "/entrants",
     "/turn",
     "/display",

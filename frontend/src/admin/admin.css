@@ -61,6 +61,15 @@
   border-top: 1px solid #2a2f3a;
 }
 
+/* A panel-wide action, next to the sentence that says what it will do. */
+.adm-actions {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
 .adm-panel .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
