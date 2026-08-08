@@ -136,7 +136,7 @@ These are part of the model, not omissions from it:
 | Identity provider dependency | None — no external IdP. | No third-party dependency to be unavailable. |
 | Break-glass access | The admin surface *is* the break-glass path. It is off unless `TABLE_ADMINS` names an account, and every action it takes is logged. | A deployment that never sets the variable has no admin surface at all, which is the default. |
 | Strong authenticators | Not supported. | See second-factor recovery. |
-| Bootstrap/first admin | Admins are named in `TABLE_ADMINS` (an environment variable), matched case-insensitively against an ordinary account. There is no in-app promotion. | Privilege from the environment, not the database: a flag in `accounts` is one bad `UPDATE` or one signup bug away from escalation. Changing it requires restarting the process, which needs host access already. |
+| Bootstrap/first admin | Admins are named in `TABLE_ADMINS` (an environment variable), matched case-insensitively against an ordinary account. There is no in-app promotion. The value is set by the deploy from a GitHub Actions *repository variable*, which upserts that one key into `mtg.env` on the host; every other variable there is still hand-edited. | Privilege from the environment, not the database: a flag in `accounts` is one bad `UPDATE` or one signup bug away from escalation. Granting it needs repo admin and a deploy — the same authority that can already ship code to this host, so nothing widens — rather than an SSH session, which is what made the list unmaintainable from anywhere but the one machine holding the key. |
 
 **A room has two identifiers, and only one of them opens it.** This was
 inverted on 2026-07-31.
@@ -216,7 +216,7 @@ the authorization, and they grant nothing outside their room or tournament.
 | Role model | Four: admin (named in `TABLE_ADMINS`), organizer (owns a tournament), player (holds a token), anonymous. Permissions are additive from nothing. | No role can be over-privileged by default because there is no default grant. |
 | Custom roles | Not supported. | No demand, and a role editor is a large attack surface for a game app. |
 | Sensitive export | No bulk export exists. | Nothing to export — see data minimisation. |
-| Access review cadence | Review `TABLE_ADMINS` whenever it changes, and read `admin_log` after any incident. | The list is short and lives in deployment config, so drift is visible in the diff. |
+| Access review cadence | Review `TABLE_ADMINS` whenever it changes, and read `admin_log` after any incident. | The list is short and lives in one repository variable, so the current value is a settings page rather than an archaeology exercise. It is *not* in the git history, so a change leaves no diff — the record is GitHub's audit log and the deploy run that applied it. |
 | Separation of duties | An organizer both runs and rules on their own event, and an admin can act on any event unreviewed. Both accepted. | Inherent to a one-person tournament; the alternative is requiring two staff, which the target user doesn't have. Results are versioned so an override leaves a trail. |
 
 **Enforcement boundaries** — the ones a change could plausibly break:

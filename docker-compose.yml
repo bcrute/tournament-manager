@@ -12,7 +12,10 @@ services:
     # works.
     #
     #   TABLE_IP_SALT       required; changing it resets every ban
-    #   TABLE_ADMINS        optional; no admin surface exists without it
+    #   TABLE_ADMINS        optional; no admin surface exists without it.
+    #                       Do not edit this one on the host: the deploy
+    #                       upserts it from the repository variable of the
+    #                       same name and would overwrite the change.
     #   TABLE_DEV_DOCS      optional
     #
     # Sending mail. With none of these set the app sends nothing, says so with

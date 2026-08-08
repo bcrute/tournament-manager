@@ -69,10 +69,57 @@ jobs:
           scp deploy/backup.sh vps:/opt/apps/mtg/backup.sh
           ssh vps 'chmod +x /opt/apps/mtg/backup.sh && /opt/apps/mtg/backup.sh --label predeploy'
 
+      # Who the admins are, from repository configuration rather than a file
+      # edited by hand on the host. The property that matters is unchanged:
+      # privilege comes from the environment, never from a column in
+      # `accounts` (docs/security.md T16). What changes is who can grant it —
+      # repo admin plus a deploy, instead of an SSH session. That is not a
+      # widening: anyone who can set this variable can already ship arbitrary
+      # code to this host through this workflow.
+      #
+      # Set it in Settings → Secrets and variables → Actions → Variables, as
+      # `TABLE_ADMINS`: a comma-separated list of account usernames, matched
+      # case-insensitively. A *variable*, not a secret — it is configuration,
+      # and a masked value that never appears in a log is harder to review
+      # than one that does. Unset or empty removes the line, and the app then
+      # has no admin surface at all, which is the safe default and the state
+      # this repo shipped in until now.
+      #
+      # Only this one key is touched. mtg.env also holds TABLE_IP_SALT and the
+      # mail credentials, which exist only on the host — rewriting the file
+      # would reset every ban and stop mail.
+      - name: Set the admin list on the VPS
+        env:
+          # never interpolated into the run script; it travels through the
+          # environment here and stdin below, so its content can't become shell
+          TABLE_ADMINS: ${{ vars.TABLE_ADMINS }}
+        run: |
+          changed=$(printf '%s' "$TABLE_ADMINS" | ssh vps '
+            set -eu
+            umask 077
+            cd /opt/apps/mtg
+            admins=$(cat)
+            touch mtg.env
+            grep -v "^TABLE_ADMINS=" mtg.env > mtg.env.next || true
+            if [ -n "$admins" ]; then printf "TABLE_ADMINS=%s\n" "$admins" >> mtg.env.next; fi
+            if cmp -s mtg.env mtg.env.next; then
+              rm -f mtg.env.next
+            else
+              mv mtg.env.next mtg.env && chmod 600 mtg.env && echo changed
+            fi
+          ')
+          # compose recreates on a new image, which nearly every deploy has —
+          # but a re-run on an unchanged image would otherwise leave the old
+          # container, and its environment, running.
+          if [ "$changed" = changed ]; then
+            echo 'admin list updated'
+            echo 'RECREATE=--force-recreate' >> "$GITHUB_ENV"
+          fi
+
       - name: Deploy
         run: |
           scp docker-compose.yml vps:/opt/apps/mtg/docker-compose.yml
-          ssh vps 'cd /opt/apps/mtg && docker compose up -d'
+          ssh vps "cd /opt/apps/mtg && docker compose up -d ${RECREATE:-}"
 
       # The VPS Caddy fronts every app on the host (social.skadoosh.dev too).
       # This repo ships ONLY its own vhost file; the root Caddyfile and other

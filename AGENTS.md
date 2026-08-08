@@ -42,9 +42,20 @@ not in it and never should be:
 3. **Server environment variables**, which live on the deployment in
    `/opt/apps/mtg/mtg.env` (mode 600, never in the repo; the deploy copies
    `docker-compose.yml` over the VPS dir but not this file, and compose loads it
-   via an optional `env_file`): `TABLE_ADMINS` (admin surface is absent without
-   it — currently unset, so admin is off), `TABLE_IP_SALT` (set 2026-07-23, so
-   bans survive redeploys), `TABLE_DEV_DOCS` (unset → docs off in production).
+   via an optional `env_file`): `TABLE_IP_SALT` (set 2026-07-23, so bans
+   survive redeploys), `TABLE_DEV_DOCS` (unset → docs off in production), and
+   the mail settings.
+
+   **`TABLE_ADMINS` is the exception — do not hand-edit it.** The deploy owns
+   that one key: it upserts it into `mtg.env` from the `TABLE_ADMINS`
+   *repository variable* (Settings → Secrets and variables → Actions →
+   Variables), leaving every other line alone, then recreates the container if
+   the value changed. Unset or empty means no admin surface, which stays the
+   default. Privilege still comes from the environment and never from a column
+   in `accounts` (`docs/security.md` T16); what moved is only who can grant it,
+   from someone with an SSH session to someone with repo admin — and repo
+   admin can already ship arbitrary code to this host through this workflow.
+   An edit made by hand on the VPS survives exactly until the next deploy.
 
 4. **VPS SSH access — only for manual host operations.** Routine deploys never
    need it: the workflow has its own key in the repo's Actions secrets
